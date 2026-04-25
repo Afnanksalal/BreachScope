@@ -66,9 +66,9 @@ breachscope scan --url https://myapp.com
 breachscope login
 ```
 
-Opens a browser to authenticate with breachscope.dev. Once connected, every scan result is pushed to your dashboard automatically — scan history, per-finding details, severity trends, and more.
+Opens a browser to authenticate with breachscoope.vercel.app. Once connected, every scan result is pushed to your dashboard automatically — scan history, per-finding details, severity trends, and more.
 
-Sign up at breachscope.dev — free, with GitHub or Google OAuth, or email and password.
+Sign up at breachscoope.vercel.app — free, with GitHub or Google OAuth, or email and password.
 
 ## Next steps
 

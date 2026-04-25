@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { saveCredentials, loadCredentials, clearCredentials } from "../core/auth.js";
 import { logger } from "../core/logger.js";
 
-const DASHBOARD_URL = process.env.BREACHSCOPE_DASHBOARD_URL ?? "https://breachscope.dev";
+const DASHBOARD_URL = process.env.BREACHSCOPE_DASHBOARD_URL ?? "https://breachscoope.vercel.app";
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -22,7 +22,7 @@ export function makeLoginCommand(): Command {
   return new Command("login")
     .description("Authenticate the CLI with your BreachScope dashboard")
     .option("--token <token>", "Authenticate directly with an API key (skip browser flow)")
-    .option("--dashboard <url>", "Dashboard URL (default: https://breachscope.dev)")
+    .option("--dashboard <url>", "Dashboard URL (default: https://breachscoope.vercel.app)")
     .action(async (opts) => {
       const dashboardUrl = opts.dashboard ?? DASHBOARD_URL;
 

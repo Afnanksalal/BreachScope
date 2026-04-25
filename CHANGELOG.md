@@ -21,7 +21,7 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 - Multi-signal tool detection: package.json, import statements, env files, config files
 - Dependency graph builder for visualization and cycle detection
 - `breachscope toolchain` command — dedicated sub-chain scan
-- `breachscope login` command — device flow authentication with breachscope.dev
+- `breachscope login` command — device flow authentication with breachscoope.vercel.app
 - AI multi-agent pipeline: Orchestrator → Dependency / Code / Toolchain / Blackbox / Report agents
 - Firecrawl integration for live advisory/changelog crawling
 - OpenSSF Scorecard API integration
@@ -31,7 +31,7 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 - Flagged supply chain packages: `flatmap-stream` (event-stream 2018), `coa`, `rc` (2021 hijack batch)
 
 **Web Dashboard**
-- Next.js 15 dashboard at breachscope.dev with full scan history and findings browser
+- Next.js 15 dashboard at breachscoope.vercel.app with full scan history and findings browser
 - Authentication: email/password (bcrypt), GitHub OAuth, Google OAuth via NextAuth v5 (JWT strategy)
 - Scan overview: 30-day stats (total scans, critical/high counts, tools audited), finding trends chart, category breakdown
 - Scan history page with search, mode filter, depth filter, clickable rows

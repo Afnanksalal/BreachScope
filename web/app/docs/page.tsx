@@ -218,7 +218,7 @@ thresholds:
           <section id="login" className="mb-10">
             <h2 className="text-2xl font-semibold text-white mb-3">breachscope login</h2>
             <p className="text-white/50 mb-4">
-              Authenticate the CLI with your breachscope.dev account using the device authorization flow.
+              Authenticate the CLI with your breachscoope.vercel.app account using the device authorization flow.
               Opens a browser — sign in once, and all future scans automatically push results to your dashboard.
             </p>
             <CodeBlock code="breachscope login" />
@@ -258,7 +258,7 @@ thresholds:
           <section id="dashboard" className="mb-10">
             <h2 className="text-2xl font-semibold text-white mb-3">Web Dashboard</h2>
             <p className="text-white/50 mb-4">
-              breachscope.dev is a hosted dashboard for viewing scan history, browsing findings,
+              breachscoope.vercel.app is a hosted dashboard for viewing scan history, browsing findings,
               and managing CLI authentication. Sign up free with GitHub, Google, or email.
             </p>
             <p className="text-white/50 mb-4">

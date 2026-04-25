@@ -79,7 +79,7 @@ package.json · import statements · .env files · config files
                                                                 │
                                                                 ▼
                                                      [Web Dashboard]
-                                                  breachscope.dev — scan history,
+                                                  breachscoope.vercel.app — scan history,
                                                   findings, API key management
 ```
 
@@ -140,7 +140,7 @@ breachscope probe <url>        Blackbox HTTP probe
 breachscope smoke <url>        Smoke tests against live URL
 breachscope deps               Dependency + lockfile scan
 breachscope toolchain          Sub-toolchain risk dashboard
-breachscope login              Authenticate CLI with breachscope.dev
+breachscope login              Authenticate CLI with breachscoope.vercel.app
 breachscope init               Create breachscope.yaml config
 ```
 
@@ -161,7 +161,7 @@ breachscope init               Create breachscope.yaml config
 
 ## Web Dashboard
 
-BreachScope includes a hosted dashboard at **breachscope.dev** for viewing scan history, browsing findings, and managing CLI authentication.
+BreachScope includes a hosted dashboard at **breachscoope.vercel.app** for viewing scan history, browsing findings, and managing CLI authentication.
 
 ### Connect the CLI
 
@@ -346,7 +346,7 @@ breachscope/
 │       ├── scanners/            # Static scanners (dep, code, toolchain, blackbox, smoke)
 │       ├── agents/              # AI multi-agent system
 │       └── reporters/           # Console, JSON, risk dashboard, AI console
-├── web/                         # Next.js 15 dashboard (breachscope.dev)
+├── web/                         # Next.js 15 dashboard (breachscoope.vercel.app)
 │   ├── app/
 │   │   ├── dashboard/           # Overview, scans, scan detail, API keys, settings
 │   │   ├── api/                 # REST endpoints (scans, findings, keys, settings, auth)

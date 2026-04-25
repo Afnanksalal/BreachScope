@@ -12,7 +12,7 @@
 
 If you discover a vulnerability in BreachScope itself, report it responsibly:
 
-**Email:** security@breachscope.dev  
+**Email:** security@breachscoope.vercel.app  
 **PGP:** Available on request
 
 ### What to include
@@ -33,7 +33,7 @@ If you discover a vulnerability in BreachScope itself, report it responsibly:
 
 In scope:
 - The `breachscope` CLI package
-- The web application (`breachscope.dev`)
+- The web application (`breachscoope.vercel.app`)
 - Supply chain of our published npm package
 
 Out of scope:
