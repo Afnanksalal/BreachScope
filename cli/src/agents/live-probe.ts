@@ -158,6 +158,7 @@ export interface LiveProbeResult {
   service: string;
   findings: Finding[];
   tokensUsed: number;
+  steps: string[];
 }
 
 export async function runLiveProbe(
@@ -168,6 +169,7 @@ export async function runLiveProbe(
 
   const system = buildSystemPrompt(service);
   const userMessage = buildUserMessage(service, credentials);
+  const steps: string[] = [];
 
   const { content, tokensUsed } = await agentLoop(
     {
@@ -185,14 +187,25 @@ export async function runLiveProbe(
           const headers = (args["headers"] ?? {}) as Record<string, string>;
           const body    = args["body"] ? String(args["body"]) : undefined;
           logger.debug(`  [${service.id}] ${method} ${url}`);
-          return httpRequest(method, url, headers, body);
+          const result = await httpRequest(method, url, headers, body);
+          const parsed = JSON.parse(result) as { status?: number };
+          const path = url.replace(/^https?:\/\/[^/]+/, "").slice(0, 60) || "/";
+          steps.push(`${method} ${path} → ${parsed.status ?? "err"}`);
+          return result;
         }
         case "decode_jwt":
+          steps.push(`decode JWT token`);
           return decodeJwt(String(args["token"] ?? ""));
-        case "web_search":
-          return webSearch(String(args["query"] ?? ""));
-        case "crawl_url":
-          return crawlUrl(String(args["url"] ?? ""));
+        case "web_search": {
+          const query = String(args["query"] ?? "");
+          steps.push(`web search: "${query.slice(0, 60)}"`);
+          return webSearch(query);
+        }
+        case "crawl_url": {
+          const url = String(args["url"] ?? "");
+          steps.push(`crawl ${url.replace(/^https?:\/\//, "").slice(0, 60)}`);
+          return crawlUrl(url);
+        }
         default:
           return "Unknown tool";
       }
@@ -200,5 +213,5 @@ export async function runLiveProbe(
   );
 
   const findings = parseFindings(content, "toolchain");
-  return { service: service.id, findings, tokensUsed };
+  return { service: service.id, findings, tokensUsed, steps };
 }

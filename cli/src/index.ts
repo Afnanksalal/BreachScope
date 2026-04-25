@@ -30,6 +30,7 @@ program
   .option("-c, --config <path>", "path to breachscope.yaml config file")
   .option("--ci", "exit code 1 if findings exceed severity threshold (for CI pipelines)")
   .option("--ai", "enable AI multi-agent analysis (requires OPENAI_API_KEY + FIRECRAWL_API_KEY)")
+  .option("--browser", "launch authenticated browser probe — logs in and runs passive security checks (requires --url and --ai)")
   .option("--breach", "focus on CVE, supply chain, and SaaS incident intelligence")
   .option("--bug", "focus on code audit, static analysis, and vulnerability testing")
   .option("-v, --verbose", "verbose debug output")

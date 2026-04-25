@@ -20,6 +20,7 @@ import { runSubchainScan } from "../engine/index.js";
 import { discoverServices } from "../core/services.js";
 import { promptText, promptSecret, promptConfirm, SecureStore } from "../core/interactive.js";
 import { runLiveProbe } from "../agents/live-probe.js";
+import { runAttackProbe } from "../agents/attack-probe.js";
 import { pushScanToDashboard } from "../core/push-scan.js";
 import type { SubchainScanResult } from "../core/types.js";
 
@@ -65,6 +66,13 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   logger.blank();
 
   const findings: Finding[] = [];
+
+  // Probe activity log — sent to dashboard for the Probe Activity tab
+  const probeServices: Array<{
+    id: string; name: string; category: string;
+    steps: string[]; findingsCount: number; tokensUsed: number;
+  }> = [];
+  let probeAttack: { url: string; attacks: string[]; pagesVisited: string[]; findingsCount: number; tokensUsed: number } | undefined;
 
   // ── Static scanners ───────────────────────────────────────────────────────
   if (target === "all" || target === "dependency") {
@@ -221,6 +229,10 @@ export async function runScan(opts: ScanOptions): Promise<void> {
         try {
           const result = await runLiveProbe(def, store.toRecord());
           findings.push(...result.findings);
+          probeServices.push({
+            id: def.id, name: def.name, category: def.category,
+            steps: result.steps, findingsCount: result.findings.length, tokensUsed: result.tokensUsed,
+          });
           spinner.succeed(`${def.name} probe — ${result.findings.length} issue(s) (${result.tokensUsed.toLocaleString()} tokens)`);
         } catch (e) {
           spinner.fail(`${def.name} probe failed`);
@@ -230,6 +242,48 @@ export async function runScan(opts: ScanOptions): Promise<void> {
         }
 
         logger.blank();
+      }
+    }
+  }
+
+  // ── Active attack probe (authenticated browser pentest) ───────────────────
+  if (opts.browser && opts.url && process.stdin.isTTY) {
+    logger.blank();
+    logger.section("Active Penetration Test");
+    console.log(chalk.gray("  Launches a real browser, logs in, then actively probes for: SQLi, XSS,"));
+    console.log(chalk.gray("  JWT attacks, IDOR, CORS misconfig, rate limiting, sensitive paths, and more.\n"));
+    const { promptText: pt, promptSecret: ps } = await import("../core/interactive.js");
+    const loginUrl = await pt(`  Login page URL (leave blank to use ${opts.url}): `);
+    const username = await pt("  Username / email: ");
+    const password = await ps("  Password: ");
+
+    if (!username || !password) {
+      console.log(chalk.yellow("  Skipping — username and password are required."));
+    } else {
+      const spinner = ora("Launching attack probe — this may take a few minutes...").start();
+      try {
+        const result = await runAttackProbe(opts.url, {
+          username,
+          password,
+          loginUrl: loginUrl || opts.url,
+        });
+        findings.push(...result.findings);
+        probeAttack = {
+          url: opts.url, attacks: result.attacksSummary,
+          pagesVisited: result.pagesVisited, findingsCount: result.findings.length, tokensUsed: result.tokensUsed,
+        };
+        spinner.succeed(
+          `Attack probe — ${result.findings.length} finding(s) across ${result.pagesVisited.length} page(s) (${result.tokensUsed.toLocaleString()} tokens)`
+        );
+        if (result.attacksSummary.length > 0) {
+          console.log(chalk.gray(`  Attacks run: ${result.attacksSummary.slice(0, 6).join("  │  ")}`));
+        }
+        if (result.pagesVisited.length > 0) {
+          console.log(chalk.gray(`  Pages visited: ${result.pagesVisited.slice(0, 5).join(", ")}`));
+        }
+      } catch (e) {
+        spinner.fail(`Attack probe failed: ${String(e)}`);
+        logger.debug(e);
       }
     }
   }
@@ -254,7 +308,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
       renderJsonReport(aiResult, opts.file);
     }
 
-    await pushScan(aiResult, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target), subchainResult });
+    await pushScan(aiResult, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, probeAttack });
 
     exitOnThreshold(opts, mergedFindings, config.thresholds.failOn);
     return;
@@ -271,14 +325,19 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     if (opts.file) renderJsonReport(result, opts.file);
   }
 
-  await pushScan(result, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target), subchainResult });
+  await pushScan(result, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, probeAttack });
 
   exitOnThreshold(opts, findings, config.thresholds.failOn);
 }
 
 async function pushScan(
   result: ScanResult,
-  opts: { mode: string; scanMode: string; url?: string; explicitFlags?: boolean; subchainResult?: SubchainScanResult | null }
+  opts: {
+    mode: string; scanMode: string; url?: string; explicitFlags?: boolean;
+    subchainResult?: SubchainScanResult | null;
+    probeServices?: Array<{ id: string; name: string; category: string; steps: string[]; findingsCount: number; tokensUsed: number }>;
+    probeAttack?: { url: string; attacks: string[]; pagesVisited: string[]; findingsCount: number; tokensUsed: number };
+  }
 ): Promise<void> {
   const spinner = ora("Uploading results to dashboard…").start();
 
@@ -298,6 +357,10 @@ async function pushScan(
     findingsCount:   r.findings.length,
   })) ?? undefined;
 
+  const probeData = (opts.probeServices?.length || opts.probeAttack)
+    ? { services: opts.probeServices ?? [], attack: opts.probeAttack }
+    : undefined;
+
   const [scanId] = await Promise.all([
     pushScanToDashboard(result, {
       mode:         opts.mode,
@@ -309,6 +372,7 @@ async function pushScan(
           : acc;
       }, { count: 0, tools: new Set<string>() }).count,
       toolRiskData,
+      probeData,
     }),
     // Sync mode settings back to dashboard if user passed explicit flags
     opts.explicitFlags ? syncRemoteConfig(opts.mode, opts.scanMode) : Promise.resolve(),

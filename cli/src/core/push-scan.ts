@@ -18,6 +18,11 @@ export interface ToolRiskEntry {
   findingsCount: number;
 }
 
+export interface ProbeData {
+  services?: Array<{ id: string; name: string; category: string; steps: string[]; findingsCount: number; tokensUsed: number }>;
+  attack?: { url: string; attacks: string[]; pagesVisited: string[]; findingsCount: number; tokensUsed: number };
+}
+
 export async function pushScanToDashboard(
   result: ScanResult,
   opts: {
@@ -26,6 +31,7 @@ export async function pushScanToDashboard(
     url?: string;
     toolsScanned?: number;
     toolRiskData?: ToolRiskEntry[];
+    probeData?: ProbeData;
   }
 ): Promise<string | null> {
   const creds = loadCredentials();
@@ -43,6 +49,7 @@ export async function pushScanToDashboard(
     completedAt:  result.completedAt.toISOString(),
     toolsScanned: opts.toolsScanned ?? 0,
     riskData:     opts.toolRiskData ? JSON.stringify(opts.toolRiskData) : undefined,
+    probeData:    opts.probeData    ? JSON.stringify(opts.probeData)    : undefined,
     findings:     result.findings.map((f: Finding) => ({
       title:       f.title,
       severity:    f.severity,
