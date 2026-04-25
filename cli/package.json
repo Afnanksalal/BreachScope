@@ -1,0 +1,59 @@
+{
+  "name": "breachscope",
+  "version": "0.1.0",
+  "description": "Supply chain & toolchain breach scanner — audit your stack before it audits you.",
+  "bin": {
+    "breachscope": "./dist/index.js",
+    "bs": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1",
+    "inquirer": "^10.1.8",
+    "axios": "^1.7.7",
+    "semver": "^7.6.3",
+    "glob": "^11.0.0",
+    "js-yaml": "^4.1.0",
+    "dotenv": "^16.4.5",
+    "table": "^6.8.2",
+    "boxen": "^8.0.1",
+    "gradient-string": "^2.0.2",
+    "node-fetch": "^3.3.2",
+    "fast-glob": "^3.3.2",
+    "json5": "^2.2.3",
+    "toml": "^3.0.0",
+    "xml2js": "^0.6.2",
+    "openai": "^4.77.0",
+    "@mendable/firecrawl-js": "^1.15.0",
+    "p-limit": "^6.1.0",
+    "tiktoken": "^1.0.17",
+    "open": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/semver": "^7.5.8",
+    "@types/js-yaml": "^4.0.9",
+    "@types/xml2js": "^0.4.14",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5",
+    "eslint": "^9.9.0",
+    "@typescript-eslint/parser": "^8.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.0.1",
+    "ts-node": "^10.9.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["security", "supply-chain", "toolchain", "breach", "audit", "cli"],
+  "license": "MIT"
+}
