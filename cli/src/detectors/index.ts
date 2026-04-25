@@ -164,6 +164,68 @@ export async function detectTools(cwd: string): Promise<DetectedTool[]> {
 
 // ─── JS detection ─────────────────────────────────────────────────────────────
 
+/**
+ * Read exact installed versions from package-lock.json (npm v1/v2/v3) or
+ * node_modules/<pkg>/package.json. Range specifiers like ^1.2.3 are not valid
+ * OSV versions — we need the actual resolved version.
+ */
+function readNpmExactVersions(cwd: string): Record<string, string> {
+  // npm v7+ lockfile (lockfileVersion 2 or 3): packages["node_modules/foo"].version
+  const lockPath = path.join(cwd, "package-lock.json");
+  if (fs.existsSync(lockPath)) {
+    try {
+      const lock = JSON.parse(fs.readFileSync(lockPath, "utf-8")) as {
+        lockfileVersion?: number;
+        packages?: Record<string, { version?: string }>;
+        dependencies?: Record<string, { version?: string }>;
+      };
+      const out: Record<string, string> = {};
+
+      if (lock.packages) {
+        // v2/v3
+        for (const [key, val] of Object.entries(lock.packages)) {
+          if (key.startsWith("node_modules/") && val.version) {
+            const name = key.slice("node_modules/".length);
+            out[name] = val.version;
+          }
+        }
+        return out;
+      }
+
+      if (lock.dependencies) {
+        // v1
+        for (const [name, val] of Object.entries(lock.dependencies)) {
+          if (val.version) out[name] = val.version;
+        }
+        return out;
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Fallback: read installed version from node_modules directly
+  const nmDir = path.join(cwd, "node_modules");
+  if (!fs.existsSync(nmDir)) return {};
+  const out: Record<string, string> = {};
+  try {
+    for (const entry of fs.readdirSync(nmDir)) {
+      const pkgFile = path.join(nmDir, entry, "package.json");
+      if (fs.existsSync(pkgFile)) {
+        try {
+          const p = JSON.parse(fs.readFileSync(pkgFile, "utf-8")) as { version?: string };
+          if (p.version) out[entry] = p.version;
+        } catch { /* skip */ }
+      }
+    }
+  } catch { /* skip */ }
+  return out;
+}
+
+/** Strip npm range operators; return undefined if no valid semver can be extracted. */
+function stripRangeOps(v: string): string | undefined {
+  const s = v.trim().replace(/^[=^~><!]+/, "").split(/[\s,|]/)[0] ?? "";
+  return /^\d/.test(s) ? s : undefined;
+}
+
 async function detectFromPackageJson(cwd: string): Promise<Array<{ name: string; version: string }>> {
   const pkgPath = path.join(cwd, "package.json");
   if (!fs.existsSync(pkgPath)) return [];
@@ -174,7 +236,12 @@ async function detectFromPackageJson(cwd: string): Promise<Array<{ name: string;
       ...(pkg["devDependencies"] as Record<string, string> ?? {}),
       ...(pkg["peerDependencies"] as Record<string, string> ?? {}),
     };
-    return Object.entries(deps).map(([name, version]) => ({ name, version }));
+    const exactVersions = readNpmExactVersions(cwd);
+    return Object.entries(deps).map(([name, rangeVer]) => ({
+      name,
+      // Prefer lockfile exact version; fall back to stripping the range specifier
+      version: exactVersions[name] ?? stripRangeOps(rangeVer) ?? rangeVer,
+    }));
   } catch { return []; }
 }
 

@@ -84,8 +84,22 @@ const TOOLS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "read_file",
+      description: "Read the full content of a source file from the project. Use this to audit files you want to inspect for vulnerabilities.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Relative file path (e.g. src/auth/login.ts)" },
+        },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "web_search",
-      description: "Search for security information about a code pattern, library vulnerability, or API key format",
+      description: "Search for a known CVE or verify an API key format. Use sparingly — prioritize reading actual code.",
       parameters: {
         type: "object",
         properties: {
@@ -97,21 +111,22 @@ const TOOLS: ChatCompletionTool[] = [
   },
 ];
 
-const MAX_FILE_CHARS = 40000;
+// Pre-load just enough high-priority content so GPT has immediate context
+const PRELOAD_CHARS = 24_000;
 
 export async function runCodeAgent(ctx: AgentContext): Promise<AgentResult> {
   const scanMode = ctx.scanMode ?? "all";
   const sourcesCrawled: string[] = [];
 
-  const system = scanMode === "full" ? `${SYSTEM_BUG}\n\n---\n\nADDITIONALLY — this is a FULL scan. After finding code bugs, also hunt for:\n${SYSTEM_BREACH}`
-    : scanMode === "bug" ? SYSTEM_BUG
+  const system = scanMode === "full"
+    ? `${SYSTEM_BUG}\n\n---\n\nADDITIONALLY — this is a FULL scan. After finding code bugs, also hunt for:\n${SYSTEM_BREACH}`
+    : scanMode === "bug"    ? SYSTEM_BUG
     : scanMode === "breach" ? SYSTEM_BREACH
     : SYSTEM_ALL;
 
-  // In breach mode prioritize auth/config/secret files; in bug mode prioritize routes/api/db
   const priorityPatterns = scanMode === "breach"
     ? [/auth/i, /secret|token|key|cred/i, /config|env|setting/i, /\.env/i, /db|database/i]
-    : [/auth/i, /api\//i, /route/i, /db|database/i, /config/i, /secret|token/i, /middleware/i, /service/i];
+    : [/auth/i, /route|api\//i, /db|database/i, /config/i, /secret|token/i, /middleware/i, /service/i];
 
   const fileEntries = Object.entries(ctx.files);
   const prioritized = [
@@ -119,32 +134,44 @@ export async function runCodeAgent(ctx: AgentContext): Promise<AgentResult> {
     ...fileEntries.filter(([p]) => !priorityPatterns.some((rx) => rx.test(p))),
   ];
 
-  let fileSnapshot = "";
+  // Pre-load the highest-priority files so GPT has immediate context
+  let preloaded = "";
+  const preloadedPaths = new Set<string>();
   for (const [filePath, content] of prioritized) {
     const chunk = `\n\n=== ${filePath} ===\n${content}`;
-    if (fileSnapshot.length + chunk.length > MAX_FILE_CHARS) break;
-    fileSnapshot += chunk;
+    if (preloaded.length + chunk.length > PRELOAD_CHARS) break;
+    preloaded += chunk;
+    preloadedPaths.add(filePath);
   }
 
+  // File tree for the rest — GPT requests what it needs via read_file
+  const remaining = fileEntries
+    .filter(([p]) => !preloadedPaths.has(p))
+    .map(([p]) => p)
+    .join("\n");
+
   const modeHint = scanMode === "full"
-    ? "MAXIMUM COVERAGE MODE: Find EVERY vulnerability class — logic bugs, injection flaws, race conditions, AND credentials, secrets, API keys, misconfigurations. Leave nothing on the table."
+    ? "MAXIMUM COVERAGE: find every vulnerability class — injection, logic bugs, race conditions, auth flaws, AND secrets/credentials. Read every suspicious file."
     : scanMode === "bug"
-    ? "DEEP BUG MODE: Go beyond surface patterns. Find logic bugs, race conditions, auth bypasses, and novel attack paths."
+    ? "DEEP BUG HUNT: find real, exploitable logic bugs, injection flaws, auth bypasses. Read the actual code — don't guess, verify."
     : scanMode === "breach"
-    ? "BREACH MODE: Hunt specifically for credentials, secrets, API keys, and configurations that give immediate unauthorized access."
-    : "FULL MODE: Broad security analysis across all vulnerability classes.";
+    ? "BREACH HUNT: find credentials, secrets, API keys, hardcoded tokens. Quote the exact value and line."
+    : "SECURITY AUDIT: find real vulnerabilities across all classes.";
 
   const userMessage = `${modeHint}
 
-Audit the following source files for security vulnerabilities.
+You have access to read_file — USE IT. Read the actual source files and find real bugs in the code. Do not rely on pattern descriptions — audit the actual implementation.
 
-Project files (${fileEntries.length} total, showing highest-priority first):
-${fileSnapshot}
+Pre-loaded files (highest security priority):
+${preloaded}
 
-Existing rule-based findings (don't duplicate, use for context):
-${JSON.stringify(ctx.existingFindings.filter((f) => f.category === "code").slice(0, 10), null, 2)}
+Additional files available (request with read_file):
+${remaining || "(none)"}
 
-Use web_search to verify suspicious patterns or look up CVEs for specific libraries.`;
+Already found by static scanner (skip these, use for context only):
+${ctx.existingFindings.filter((f) => f.category === "code").slice(0, 8).map((f) => `- [${f.severity}] ${f.title}${f.file ? ` (${f.file})` : ""}`).join("\n") || "(none)"}
+
+Strategy: review the pre-loaded files first. Then read_file any file that looks like it handles auth, payments, file uploads, database queries, user input, or sessions. Find bugs the static scanner missed.`;
 
   const { content, tokensUsed } = await agentLoop(
     {
@@ -155,6 +182,24 @@ Use web_search to verify suspicious patterns or look up CVEs for specific librar
       maxTokens: 4096,
     },
     async (toolName, args) => {
+      if (toolName === "read_file") {
+        const reqPath = String(args["path"] ?? "").replace(/\\/g, "/");
+        // Exact match
+        if (ctx.files[reqPath]) {
+          sourcesCrawled.push(`file:${reqPath}`);
+          return `=== ${reqPath} ===\n${ctx.files[reqPath]}`;
+        }
+        // Suffix match (in case GPT omits leading dir)
+        const match = Object.entries(ctx.files).find(
+          ([p]) => p.replace(/\\/g, "/").endsWith(reqPath) || reqPath.endsWith(p.replace(/\\/g, "/"))
+        );
+        if (match) {
+          sourcesCrawled.push(`file:${match[0]}`);
+          return `=== ${match[0]} ===\n${match[1]}`;
+        }
+        return `File not found: ${reqPath}\nAvailable:\n${Object.keys(ctx.files).join("\n")}`;
+      }
+
       if (toolName === "web_search") {
         const query = String(args["query"] ?? "");
         sourcesCrawled.push(`web:${query}`);
@@ -165,7 +210,7 @@ Use web_search to verify suspicious patterns or look up CVEs for specific librar
   );
 
   const findings = parseFindings(content, "code");
-  logger.debug(`[code-agent] ${findings.length} findings parsed`);
+  logger.debug(`[code-agent] ${findings.length} findings, ${sourcesCrawled.length} files/searches`);
 
   return { agent: "code", findings, reasoning: content, sourcesCrawled, tokensUsed };
 }

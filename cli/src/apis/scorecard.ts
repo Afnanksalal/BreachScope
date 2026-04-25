@@ -50,9 +50,17 @@ export async function fetchScorecard(githubSlug: string): Promise<ScorecardResul
 
 /**
  * Convert a ScorecardResult into actionable findings.
+ * @param osvVulnCount  Number of CVEs OSV found for the *installed version*.
+ *                      When 0, the "Vulnerabilities" scorecard check is downgraded —
+ *                      because scorecard counts repo-level history, not version-specific CVEs.
  */
-export function scorecardToFindings(result: ScorecardResult, toolName: string): Finding[] {
+export function scorecardToFindings(
+  result: ScorecardResult,
+  toolName: string,
+  opts?: { osvVulnCount?: number }
+): Finding[] {
   const findings: Finding[] = [];
+  const osvVulnCount = opts?.osvVulnCount ?? -1; // -1 = unknown
 
   // Overall low score
   if (result.score < 4) {
@@ -125,18 +133,50 @@ export function scorecardToFindings(result: ScorecardResult, toolName: string): 
 
   for (const check of result.checks) {
     const rule = CRITICAL_CHECKS[check.name];
-    if (rule && check.score < rule.threshold && check.score >= 0) {
-      findings.push({
-        id: `scorecard-${check.name.toLowerCase().replace(/[^a-z]/g, "-")}-${toolName}`,
-        title: `${toolName}: Scorecard check "${check.name}" failed (${check.score}/10)`,
-        severity: rule.severity,
-        category: "supply-chain",
-        tool: toolName,
-        description: check.reason,
-        remediation: rule.remediation,
-        references: check.documentation?.url ? [check.documentation.url] : undefined,
-      });
+    if (!rule || check.score >= rule.threshold || check.score < 0) continue;
+
+    // "Vulnerabilities" scorecard check counts every CVE ever filed against the repo —
+    // it is NOT version-specific. When OSV already confirmed 0 CVEs for the installed
+    // version, the scorecard number is noise. Downgrade and explain instead of alarming.
+    if (check.name === "Vulnerabilities") {
+      if (osvVulnCount === 0) {
+        // OSV says clean for installed version — scorecard repo count is historical noise
+        findings.push({
+          id: `scorecard-vulnerabilities-${toolName}`,
+          title: `${toolName}: Repository has unresolved CVEs (none affect your installed version)`,
+          severity: "info",
+          category: "supply-chain",
+          tool: toolName,
+          description: `OpenSSF Scorecard reports unresolved CVEs at the repository level (${check.reason}). OSV.dev found no vulnerabilities for your installed version of ${toolName} — the scorecard count reflects the repo's full history, not your specific version.`,
+          remediation: "No action required for the installed version. Recheck on upgrades.",
+          references: check.documentation?.url ? [check.documentation.url] : undefined,
+        });
+      } else {
+        // OSV also found CVEs — both signals agree, this is real
+        findings.push({
+          id: `scorecard-vulnerabilities-${toolName}`,
+          title: `${toolName}: Scorecard check "Vulnerabilities" failed (${check.score}/10)`,
+          severity: rule.severity,
+          category: "supply-chain",
+          tool: toolName,
+          description: `${check.reason}. OSV.dev confirmed ${osvVulnCount > 0 ? osvVulnCount : "additional"} vulnerabilities in this package — upgrade or replace.`,
+          remediation: rule.remediation,
+          references: check.documentation?.url ? [check.documentation.url] : undefined,
+        });
+      }
+      continue;
     }
+
+    findings.push({
+      id: `scorecard-${check.name.toLowerCase().replace(/[^a-z]/g, "-")}-${toolName}`,
+      title: `${toolName}: Scorecard check "${check.name}" failed (${check.score}/10)`,
+      severity: rule.severity,
+      category: "supply-chain",
+      tool: toolName,
+      description: check.reason,
+      remediation: rule.remediation,
+      references: check.documentation?.url ? [check.documentation.url] : undefined,
+    });
   }
 
   return findings;

@@ -186,7 +186,7 @@ async function fetchSubDependencies(parent: DetectedTool): Promise<DetectedTool[
       const known = resolveKnownTool(depName);
       subDeps.push({
         name: depName,
-        version: depVersion.replace(/^[\^~>=<]/, ""),
+        version: depVersion.replace(/^[\^~>=<!]+/, "").split(/[\s,|]/)[0],
         kind: known?.kind ?? "unknown",
         github: known?.github,
         detectedFrom: ["sub-dependency"],

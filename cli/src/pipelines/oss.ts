@@ -215,7 +215,7 @@ export async function runOssPipeline(
     ]);
   }
 
-  if (scorecard) findings.push(...scorecardToFindings(scorecard, tool.name));
+  if (scorecard) findings.push(...scorecardToFindings(scorecard, tool.name, { osvVulnCount: osvVulns.length }));
   if (osvVulns.length > 0) findings.push(...osvToFindings(osvVulns, tool.name));
   if (depsDevData && github) findings.push(...depsDevToFindings(depsDevData, tool.name, github));
   if (npmMeta)  findings.push(...npmMetaToFindings(npmMeta, tool.name));
