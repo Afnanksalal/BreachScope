@@ -14,6 +14,8 @@ out/
 .next/
 .turbo/
 *.tsbuildinfo
+cli/bin/
+cli/bundle/
 
 # ─── Environment & secrets ────────────────────────────────────────────────────
 .env

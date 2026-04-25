@@ -20,11 +20,27 @@
   "author": "afnanksalal",
   "scripts": {
     "build": "tsc",
+    "build:bundle": "node bundle.mjs",
+    "build:binary": "npm run build:bundle && pkg bundle/index.cjs --config package.json --compress GZip --output bin/breachscope --no-bytecode --public",
+    "build:binary:win": "npm run build:bundle && pkg bundle/index.cjs --targets node20-win-x64 --compress GZip --output bin/breachscope --no-bytecode --public",
+    "postinstall": "patch-package",
     "dev": "ts-node src/index.ts",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
+  },
+  "pkg": {
+    "targets": [
+      "node20-win-x64",
+      "node20-linux-x64",
+      "node20-macos-arm64",
+      "node20-macos-x64"
+    ],
+    "outputPath": "bin",
+    "assets": [
+      "node_modules/tiktoken/**"
+    ]
   },
   "dependencies": {
     "@mendable/firecrawl-js": "^1.15.0",
@@ -58,7 +74,10 @@
     "@types/xml2js": "^0.4.14",
     "@typescript-eslint/eslint-plugin": "^8.0.1",
     "@typescript-eslint/parser": "^8.0.1",
+    "@yao-pkg/pkg": "^6.14.2",
+    "esbuild": "^0.28.0",
     "eslint": "^9.9.0",
+    "patch-package": "^8.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"

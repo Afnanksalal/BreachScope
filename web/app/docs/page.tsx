@@ -277,35 +277,151 @@ thresholds:
           {/* ── Integrations ────────────────────────────────── */}
           <Divider label="Integrations" />
 
-          <Section id="supabase" title="Supabase">
-            <p className="text-white/45 mb-4 leading-relaxed">BreachScope probes your live Supabase project for common misconfigurations.</p>
-            <ul className="text-white/40 text-sm space-y-2 mb-5">
-              <li className="flex gap-2"><span className="text-white/20 mt-0.5">›</span> RLS disabled on tables (anon key can read all rows)</li>
-              <li className="flex gap-2"><span className="text-white/20 mt-0.5">›</span> Public storage buckets with sensitive data</li>
-              <li className="flex gap-2"><span className="text-white/20 mt-0.5">›</span> Service role key used in client-side code</li>
-            </ul>
-            <CodeBlock lang="yaml" code={`toolchain:\n  supabase:\n    url: \${SUPABASE_URL}\n    anonKey: \${SUPABASE_ANON_KEY}`} />
+          <Section id="integrations-overview" title="How integrations work">
+            <p className="text-white/45 mb-5 leading-relaxed">
+              BreachScope has two distinct integration modes. They serve different purposes and require different setup.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-4">
+                <p className="text-sm font-semibold text-white/70 mb-1">Toolchain Scanners</p>
+                <p className="text-xs text-white/35 leading-relaxed mb-3">Static checks against your Supabase, Vercel, and GitHub config. No AI required. Set credentials in <code className="font-mono">breachscope.yaml</code> or env vars.</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {["Supabase", "Vercel", "GitHub"].map(s => <ServiceBadge key={s} name={s} />)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-breach-500/20 bg-breach-500/[0.03] px-4 py-4">
+                <p className="text-sm font-semibold text-white/70 mb-1">Live Service Probes <span className="text-xs font-normal text-white/30 ml-1">--ai</span></p>
+                <p className="text-xs text-white/35 leading-relaxed mb-3">AI agent makes real API calls to your live services using credentials you supply interactively. Finds over-privileged keys, misconfigs, and exposed data.</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {["Firebase","AWS","Stripe","Clerk","Auth0","Cloudflare","Resend","SendGrid","Twilio","OpenAI","Anthropic","Pinecone","Sentry","Datadog","Neon","Upstash","PlanetScale"].map(s => <ServiceBadge key={s} name={s} />)}
+                </div>
+              </div>
+            </div>
           </Section>
 
-          <Section id="vercel" title="Vercel">
-            <p className="text-white/45 mb-4 leading-relaxed">Checks your Vercel project configuration for security gaps.</p>
-            <ul className="text-white/40 text-sm space-y-2 mb-5">
-              <li className="flex gap-2"><span className="text-white/20 mt-0.5">›</span> Secrets exposed in preview deployments</li>
-              <li className="flex gap-2"><span className="text-white/20 mt-0.5">›</span> Preview deployments with no access protection</li>
-              <li className="flex gap-2"><span className="text-white/20 mt-0.5">›</span> Open team invite links</li>
-            </ul>
-            <CodeBlock lang="yaml" code={`toolchain:\n  vercel:\n    token: \${VERCEL_TOKEN}\n    projectId: "prj_xxx"`} />
+          <Section id="toolchain-scanners" label="Toolchain Scanners" title="Supabase, Vercel &amp; GitHub">
+            <p className="text-white/45 mb-5 leading-relaxed">
+              These run as part of every scan automatically when credentials are present. No <code className="font-mono text-white/65">--ai</code> flag needed.
+            </p>
+
+            <div className="space-y-6">
+              <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.05] bg-white/[0.02]">
+                  <span className="text-sm font-medium text-white/70">Supabase</span>
+                  <span className="text-[10px] text-white/25 font-mono ml-auto">Database / Auth</span>
+                </div>
+                <div className="px-4 py-4">
+                  <ul className="text-white/40 text-sm space-y-1.5 mb-4">
+                    <li className="flex gap-2"><span className="text-white/20">›</span> RLS disabled on tables (anon key can read all rows)</li>
+                    <li className="flex gap-2"><span className="text-white/20">›</span> Public storage buckets with sensitive data</li>
+                    <li className="flex gap-2"><span className="text-white/20">›</span> Service role key used in client-side code</li>
+                  </ul>
+                  <CodeBlock lang="yaml" code={`toolchain:\n  supabase:\n    url: \${SUPABASE_URL}\n    anonKey: \${SUPABASE_ANON_KEY}`} />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.05] bg-white/[0.02]">
+                  <span className="text-sm font-medium text-white/70">Vercel</span>
+                  <span className="text-[10px] text-white/25 font-mono ml-auto">Hosting</span>
+                </div>
+                <div className="px-4 py-4">
+                  <ul className="text-white/40 text-sm space-y-1.5 mb-4">
+                    <li className="flex gap-2"><span className="text-white/20">›</span> Secrets exposed in preview deployments</li>
+                    <li className="flex gap-2"><span className="text-white/20">›</span> Preview deployments with no access protection</li>
+                    <li className="flex gap-2"><span className="text-white/20">›</span> Open team invite links</li>
+                  </ul>
+                  <CodeBlock lang="yaml" code={`toolchain:\n  vercel:\n    token: \${VERCEL_TOKEN}\n    projectId: "prj_xxx"`} />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.05] bg-white/[0.02]">
+                  <span className="text-sm font-medium text-white/70">GitHub</span>
+                  <span className="text-[10px] text-white/25 font-mono ml-auto">Source Control / CI</span>
+                </div>
+                <div className="px-4 py-4">
+                  <ul className="text-white/40 text-sm space-y-1.5 mb-4">
+                    <li className="flex gap-2"><span className="text-white/20">›</span> Branch protection missing on main / master</li>
+                    <li className="flex gap-2"><span className="text-white/20">›</span> Required PR reviews not enforced</li>
+                    <li className="flex gap-2"><span className="text-white/20">›</span> Actions default write permissions</li>
+                    <li className="flex gap-2"><span className="text-white/20">›</span> Overprivileged personal access tokens</li>
+                  </ul>
+                  <CodeBlock lang="yaml" code={`toolchain:\n  github:\n    token: \${GITHUB_TOKEN}\n    repo: "owner/repo"`} />
+                </div>
+              </div>
+            </div>
           </Section>
 
-          <Section id="github" title="GitHub">
-            <p className="text-white/45 mb-4 leading-relaxed">Audits your GitHub repository configuration and token permissions.</p>
-            <ul className="text-white/40 text-sm space-y-2 mb-5">
-              <li className="flex gap-2"><span className="text-white/20 mt-0.5">›</span> Branch protection missing on main / master</li>
-              <li className="flex gap-2"><span className="text-white/20 mt-0.5">›</span> Required PR reviews not enforced</li>
-              <li className="flex gap-2"><span className="text-white/20 mt-0.5">›</span> Actions default write permissions</li>
-              <li className="flex gap-2"><span className="text-white/20 mt-0.5">›</span> Overprivileged personal access tokens</li>
-            </ul>
-            <CodeBlock lang="yaml" code={`toolchain:\n  github:\n    token: \${GITHUB_TOKEN}\n    repo: "owner/repo"`} />
+          <Section id="live-probes" label="Live Service Probes" title="AI-powered service probing">
+            <p className="text-white/45 mb-2 leading-relaxed">
+              With <code className="font-mono text-white/65">--ai</code>, BreachScope detects which services your codebase uses, prompts you for credentials interactively, then dispatches an AI agent to probe the live APIs for real misconfigurations — over-privileged keys, exposed data, insecure defaults.
+            </p>
+            <p className="text-white/35 text-sm mb-5">Detection uses package imports, env var prefixes, and config file presence. You only get prompted for services actually found in your project.</p>
+            <CodeBlock code="breachscope scan --ai" />
+            <Callout type="note">
+              Credentials are used in-memory only and destroyed after the probe. They are never stored or uploaded.
+            </Callout>
+
+            <div className="mt-6 grid grid-cols-1 gap-2">
+              {[
+                { category: "Database / Auth", services: [
+                  { name: "Supabase",    fields: "Project URL, anon key",              env: "SUPABASE_URL, SUPABASE_ANON_KEY" },
+                  { name: "Firebase",    fields: "Project ID, web API key, service account (optional)", env: "FIREBASE_PROJECT_ID, FIREBASE_API_KEY" },
+                  { name: "Neon",        fields: "API key, project ID (both optional)", env: "NEON_API_KEY, NEON_PROJECT_ID" },
+                  { name: "PlanetScale", fields: "Service token ID, service token, org", env: "PLANETSCALE_SERVICE_TOKEN_ID" },
+                ]},
+                { category: "Auth", services: [
+                  { name: "Clerk",  fields: "Secret key, publishable key", env: "CLERK_SECRET_KEY" },
+                  { name: "Auth0",  fields: "Domain, client ID, client secret, mgmt token (optional)", env: "AUTH0_DOMAIN, AUTH0_CLIENT_ID" },
+                ]},
+                { category: "Cache", services: [
+                  { name: "Upstash Redis", fields: "REST URL, REST token", env: "UPSTASH_REDIS_REST_URL" },
+                ]},
+                { category: "Cloud / CDN", services: [
+                  { name: "AWS",        fields: "Access key ID, secret access key, region", env: "AWS_ACCESS_KEY_ID" },
+                  { name: "Cloudflare", fields: "API token, zone ID, account ID (both optional)", env: "CLOUDFLARE_API_TOKEN" },
+                ]},
+                { category: "Payments", services: [
+                  { name: "Stripe", fields: "Secret key, webhook secret (optional)", env: "STRIPE_SECRET_KEY" },
+                ]},
+                { category: "Email", services: [
+                  { name: "Resend",   fields: "API key", env: "RESEND_API_KEY" },
+                  { name: "SendGrid", fields: "API key", env: "SENDGRID_API_KEY" },
+                ]},
+                { category: "SMS / Voice", services: [
+                  { name: "Twilio", fields: "Account SID, auth token", env: "TWILIO_ACCOUNT_SID" },
+                ]},
+                { category: "AI", services: [
+                  { name: "OpenAI",    fields: "API key, org ID (optional)", env: "OPENAI_API_KEY" },
+                  { name: "Anthropic", fields: "API key",                    env: "ANTHROPIC_API_KEY" },
+                ]},
+                { category: "Vector DB", services: [
+                  { name: "Pinecone", fields: "API key, environment", env: "PINECONE_API_KEY" },
+                ]},
+                { category: "Observability", services: [
+                  { name: "Sentry",   fields: "Auth token, org slug, DSN (optional)", env: "SENTRY_AUTH_TOKEN" },
+                  { name: "Datadog",  fields: "API key, app key (optional), site",    env: "DD_API_KEY" },
+                ]},
+              ].map(({ category, services }) => (
+                <div key={category} className="rounded-xl border border-white/[0.06] overflow-hidden">
+                  <div className="px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.04]">
+                    <span className="text-[10px] font-semibold text-white/25 uppercase tracking-widest">{category}</span>
+                  </div>
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {services.map((svc, i) => (
+                        <tr key={svc.name} className={`border-b border-white/[0.03] last:border-0 ${i % 2 === 1 ? "bg-white/[0.01]" : ""}`}>
+                          <td className="px-4 py-3 font-medium text-white/60 whitespace-nowrap w-28">{svc.name}</td>
+                          <td className="px-4 py-3 text-white/35">{svc.fields}</td>
+                          <td className="px-4 py-3 font-mono text-white/20 hidden sm:table-cell">{svc.env}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
           </Section>
 
           {/* ── CI/CD ───────────────────────────────────────── */}
@@ -426,6 +542,14 @@ function Divider({ label }: { label: string }) {
       <span className="text-[10px] font-semibold text-white/20 uppercase tracking-widest">{label}</span>
       <div className="flex-1 h-px bg-white/[0.05]" />
     </div>
+  );
+}
+
+function ServiceBadge({ name }: { name: string }) {
+  return (
+    <span className="text-[10px] font-mono text-white/35 bg-white/[0.04] border border-white/[0.06] rounded px-1.5 py-0.5">
+      {name}
+    </span>
   );
 }
 

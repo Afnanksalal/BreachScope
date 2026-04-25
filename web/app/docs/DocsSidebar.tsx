@@ -35,9 +35,9 @@ const SECTIONS = [
   {
     title: "Integrations",
     items: [
-      { label: "Supabase", anchor: "supabase" },
-      { label: "Vercel", anchor: "vercel" },
-      { label: "GitHub", anchor: "github" },
+      { label: "Overview", anchor: "integrations-overview" },
+      { label: "Supabase, Vercel, GitHub", anchor: "toolchain-scanners" },
+      { label: "Live service probes", anchor: "live-probes" },
     ],
   },
   {

@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: node20-win-x64
+            artifact: breachscope-win.exe
+          - os: ubuntu-latest
+            target: node20-linux-x64
+            artifact: breachscope-linux
+          - os: macos-latest
+            target: node20-macos-arm64
+            artifact: breachscope-macos-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: cli
+
+      - name: Bundle
+        run: node bundle.mjs
+        working-directory: cli
+
+      - name: Build binary
+        run: npx pkg bundle/index.cjs --targets ${{ matrix.target }} --compress GZip --output bin/breachscope --no-bytecode --public
+        working-directory: cli
+
+      - name: Rename artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        run: mv cli/bin/breachscope.exe cli/bin/${{ matrix.artifact }}
+        shell: bash
+
+      - name: Rename artifact (Unix)
+        if: matrix.os != 'windows-latest'
+        run: mv cli/bin/breachscope cli/bin/${{ matrix.artifact }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: cli/bin/${{ matrix.artifact }}
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
