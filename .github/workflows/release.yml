@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+  release:
+    types: [created]
 
 jobs:
   build:
@@ -72,3 +74,4 @@ jobs:
         with:
           files: artifacts/*
           generate_release_notes: true
+          fail_on_unmatched_files: false
