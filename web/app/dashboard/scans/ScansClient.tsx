@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import type { Scan } from "@/lib/schema";
 
 const MODE_BADGE: Record<string, string> = {
+  full:   "bg-purple-500/15 text-purple-300 border-purple-500/20",
   breach: "bg-red-500/15 text-red-300 border-red-500/20",
   bug:    "bg-yellow-500/15 text-yellow-300 border-yellow-500/20",
   all:    "bg-white/[0.08] text-white/50 border-white/[0.10]",
@@ -75,7 +76,7 @@ export function ScansClient({ scans }: { scans: Scan[] }) {
         </div>
 
         <div className="flex items-center gap-1 bg-white/[0.04] rounded-xl p-1">
-          {["all", "breach", "bug"].map((m) => (
+          {["all", "full", "breach", "bug"].map((m) => (
             <button
               key={m}
               onClick={() => setModeFilter(m)}

@@ -63,7 +63,9 @@ export async function runScan(opts: ScanOptions): Promise<void> {
 
   console.log(chalk.dim(BANNER));
   const scanMode = opts.scanMode ?? "all";
-  const scanModeLabel = scanMode === "breach"
+  const scanModeLabel = scanMode === "full"
+    ? chalk.red("B") + chalk.yellow("U") + chalk.magenta("G") + chalk.red("+") + chalk.red("BREACH") + chalk.gray(" (everything — max coverage)")
+    : scanMode === "breach"
     ? chalk.red("BREACH") + chalk.gray(" (CVE · supply chain · credential hunt)")
     : scanMode === "bug"
     ? chalk.yellow("BUG") + chalk.gray(" (static analysis · injection · code vulns)")
@@ -86,9 +88,10 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   // bug mode: deep code audit + deps for known-vuln versions; skip toolchain/subchain
   // all mode: everything
 
+  const isFull = scanMode === "full";
   const runDeps      = target === "all" || target === "dependency";
   const runCode      = target === "all" || target === "code";
-  const runToolchain = (target === "all" || target === "toolchain") && scanMode !== "bug";
+  const runToolchain = (target === "all" || target === "toolchain") && (isFull || scanMode !== "bug");
 
   if (runDeps) {
     const spinner = ora("Scanning dependencies...").start();
@@ -104,7 +107,8 @@ export async function runScan(opts: ScanOptions): Promise<void> {
 
   if (runCode) {
     const spinner = ora(
-      scanMode === "bug" ? "Deep code audit (bug-finding mode)..." :
+      scanMode === "full"   ? "Full code audit — bug patterns + breach patterns + credentials..." :
+      scanMode === "bug"    ? "Deep code audit (bug-finding mode)..." :
       scanMode === "breach" ? "Scanning for credentials & breach indicators..." :
       "Auditing source code..."
     ).start();
@@ -160,7 +164,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
 
   // ── Sub-toolchain scan (skipped in bug mode — not supply chain focused) ──────
   let subchainResult: SubchainScanResult | null = null;
-  const shouldRunSubchain = (target === "all" || target === "dependency") && scanMode !== "bug";
+  const shouldRunSubchain = (target === "all" || target === "dependency") && (isFull || scanMode !== "bug");
   if (shouldRunSubchain) {
     try {
       subchainResult = await runSubchainScan(cwd, mode, config.subchain);

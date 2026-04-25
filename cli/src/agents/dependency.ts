@@ -119,7 +119,8 @@ export async function runDependencyAgent(ctx: AgentContext): Promise<AgentResult
   const scanMode = ctx.scanMode ?? "all";
   const sourcesCrawled: string[] = [];
 
-  const system = scanMode === "breach" ? SYSTEM_BREACH
+  const system = scanMode === "full" ? SYSTEM_BREACH  // full mode: use aggressive breach hunting for deps
+    : scanMode === "breach" ? SYSTEM_BREACH
     : scanMode === "bug" ? SYSTEM_BUG
     : SYSTEM_ALL;
 
@@ -176,7 +177,9 @@ function buildUserMessage(ctx: AgentContext, scanMode: string): string {
     devDependencies: (pkgJson["devDependencies"] as Record<string, string>) ?? {},
   };
 
-  const modeInstruction = scanMode === "breach"
+  const modeInstruction = scanMode === "full"
+    ? `MAXIMUM COVERAGE MODE: Combine breach + bug analysis. Aggressively hunt packages with known exploits, hijacks, or exfiltration potential AND cross-reference exploitable CVEs in auth/parsing/HTTP packages. Cover at least 25 packages. Every finding must explain attack path and impact.`
+    : scanMode === "breach"
     ? `BREACH MODE: This is an active breach investigation. Aggressively hunt for packages with known exploits, recent hijacks, or that could exfiltrate data. Cover at least 20 packages. Every finding should explain immediate breach impact.`
     : scanMode === "bug"
     ? `BUG MODE: Focus on packages with exploitable CVEs that are reachable in this application. Cross-reference known vulnerable version ranges. Prioritize packages used in auth, parsing, and HTTP handling.`

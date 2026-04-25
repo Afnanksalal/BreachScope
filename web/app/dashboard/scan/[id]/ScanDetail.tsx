@@ -942,7 +942,7 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
               { label: "Tools",     value: `${scan.toolsScanned ?? 0} scanned` },
             ].map(({ label, value }) => {
               const scanModeColor = label === "Scan Mode"
-                ? value === "breach" ? "text-red-400" : value === "bug" ? "text-yellow-400" : "text-white/80"
+                ? value === "full" ? "text-purple-400" : value === "breach" ? "text-red-400" : value === "bug" ? "text-yellow-400" : "text-white/80"
                 : "text-white/80";
               return (
               <div key={label} className="p-4 rounded-2xl bg-white/[0.04]">

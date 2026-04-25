@@ -13,17 +13,22 @@ export async function runCodeAudit(cwd: string, scanMode?: string): Promise<Find
   const findings: Finding[] = [];
 
   // Select pattern set based on scan mode
-  const patterns = scanMode === "bug"
+  const patterns = scanMode === "full"
+    ? [...AUDIT_PATTERNS, ...BUG_PATTERNS, ...BREACH_PATTERNS]
+    : scanMode === "bug"
     ? [...AUDIT_PATTERNS, ...BUG_PATTERNS]
     : scanMode === "breach"
     ? [...AUDIT_PATTERNS, ...BREACH_PATTERNS]
     : AUDIT_PATTERNS;
 
-  const modeLabel = scanMode === "bug"
-    ? `(${AUDIT_PATTERNS.length + BUG_PATTERNS.length} patterns — bug-finding mode)`
+  const totalPatterns = patterns.length;
+  const modeLabel = scanMode === "full"
+    ? `(${totalPatterns} patterns — full coverage: base + bug + breach)`
+    : scanMode === "bug"
+    ? `(${totalPatterns} patterns — bug-finding mode)`
     : scanMode === "breach"
-    ? `(${AUDIT_PATTERNS.length + BREACH_PATTERNS.length} patterns — breach-hunting mode)`
-    : `(${AUDIT_PATTERNS.length} patterns)`;
+    ? `(${totalPatterns} patterns — breach-hunting mode)`
+    : `(${totalPatterns} patterns)`;
 
   const pattern = `**/*.{${SCAN_EXTENSIONS.join(",")}}`;
   const files = await fg(pattern, {

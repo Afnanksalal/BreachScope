@@ -103,7 +103,8 @@ export async function runCodeAgent(ctx: AgentContext): Promise<AgentResult> {
   const scanMode = ctx.scanMode ?? "all";
   const sourcesCrawled: string[] = [];
 
-  const system = scanMode === "bug" ? SYSTEM_BUG
+  const system = scanMode === "full" ? `${SYSTEM_BUG}\n\n---\n\nADDITIONALLY — this is a FULL scan. After finding code bugs, also hunt for:\n${SYSTEM_BREACH}`
+    : scanMode === "bug" ? SYSTEM_BUG
     : scanMode === "breach" ? SYSTEM_BREACH
     : SYSTEM_ALL;
 
@@ -125,7 +126,9 @@ export async function runCodeAgent(ctx: AgentContext): Promise<AgentResult> {
     fileSnapshot += chunk;
   }
 
-  const modeHint = scanMode === "bug"
+  const modeHint = scanMode === "full"
+    ? "MAXIMUM COVERAGE MODE: Find EVERY vulnerability class — logic bugs, injection flaws, race conditions, AND credentials, secrets, API keys, misconfigurations. Leave nothing on the table."
+    : scanMode === "bug"
     ? "DEEP BUG MODE: Go beyond surface patterns. Find logic bugs, race conditions, auth bypasses, and novel attack paths."
     : scanMode === "breach"
     ? "BREACH MODE: Hunt specifically for credentials, secrets, API keys, and configurations that give immediate unauthorized access."

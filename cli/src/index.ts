@@ -35,7 +35,8 @@ program
   .option("--bug", "focus on code audit, static analysis, and vulnerability testing")
   .option("-v, --verbose", "verbose debug output")
   .action(async (opts) => {
-    if (opts.breach) opts.scanMode = "breach";
+    if (opts.breach && opts.bug) opts.scanMode = "full";
+    else if (opts.breach) opts.scanMode = "breach";
     else if (opts.bug) opts.scanMode = "bug";
     else opts.scanMode = "all";
     await runScan(opts);

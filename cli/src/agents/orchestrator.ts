@@ -32,8 +32,9 @@ export async function runOrchestrator(ctx: AgentContext): Promise<AgentResult[]>
   const scanMode = ctx.scanMode ?? "all";
   logger.info(`Planning agent dispatch [${scanMode.toUpperCase()} mode]...`);
 
+  const effectiveMode = scanMode === "full" ? "full (breach + bug combined — maximum coverage)" : scanMode;
   const profile = {
-    scanMode,
+    scanMode: effectiveMode,
     dependencyCount: ctx.dependencies.length,
     sampleDeps: ctx.dependencies.slice(0, 30),
     hasUrl: !!ctx.url,
@@ -99,6 +100,13 @@ function buildFallbackPlan(
   profile: { hasUrl: boolean; hasSupabase: boolean; hasVercel: boolean; hasGitHub: boolean }
 ): OrchestratorPlan {
   const hasToolchain = profile.hasSupabase || profile.hasVercel || profile.hasGitHub;
+
+  if (scanMode === "full") {
+    const agents: AgentName[] = ["dependency", "code"];
+    if (hasToolchain) agents.push("toolchain");
+    if (profile.hasUrl) agents.push("blackbox");
+    return { agents, rationale: "Full mode: everything — supply chain CVE + credential hunt + deep code audit + toolchain misconfig." };
+  }
 
   if (scanMode === "breach") {
     const agents: AgentName[] = ["dependency", "code"];
