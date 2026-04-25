@@ -51,6 +51,8 @@ export async function runSubchainScan(
   const queue: DetectedTool[] = classified.filter((t) => !ignore.has(t.name));
   const visited = new Set<string>();
   const allResults: ToolPipelineResult[] = [];
+  // requiredBy tracks every parent that depends on a given package (for dedup reporting)
+  const requiredBy = new Map<string, Set<string>>();
 
   // Add all direct tools to graph
   for (const tool of queue) {
@@ -86,11 +88,23 @@ export async function runSubchainScan(
           if (currentDepth < maxDepth) {
             const subDeps = await fetchSubDependencies(tool);
             for (const sub of subDeps) {
-              if (!visited.has(sub.name) && !ignore.has(sub.name) && !shouldSkipPackage(sub.name)) {
+              if (ignore.has(sub.name) || shouldSkipPackage(sub.name)) continue;
+
+              // Always record the parent→child relationship in the graph
+              graph.addEdge(tool.name, sub.name);
+
+              // Track which parents require this package (for shared-dep reporting)
+              if (!requiredBy.has(sub.name)) requiredBy.set(sub.name, new Set());
+              requiredBy.get(sub.name)!.add(tool.name);
+
+              if (!visited.has(sub.name)) {
                 visited.add(sub.name);
                 graph.addNode(sub.name, sub.kind, 0, sub.depth);
-                graph.addEdge(tool.name, sub.name);
                 queue.push(sub);
+              } else {
+                // Already audited — log the shared relationship, skip re-scan
+                const parents = [...requiredBy.get(sub.name)!].join(", ");
+                logger.debug(`  [dedup] ${sub.name} already audited — shared by: ${parents}`);
               }
             }
           }
@@ -105,8 +119,17 @@ export async function runSubchainScan(
 
   const allFindings = allResults.flatMap((r) => r.findings);
 
+  // Build sharedPackages: only packages required by 2+ parents
+  const sharedPackages: Record<string, string[]> = {};
+  for (const [pkg, parents] of requiredBy) {
+    if (parents.size >= 2) sharedPackages[pkg] = [...parents];
+  }
+
+  const sharedCount = Object.keys(sharedPackages).length;
   logger.success(
-    `Sub-chain scan complete: ${allResults.length} tools scanned, ${allFindings.length} finding(s), depth reached: ${currentDepth}`
+    `Sub-chain scan complete: ${allResults.length} tools scanned, ${allFindings.length} finding(s), ` +
+    `depth reached: ${currentDepth}` +
+    (sharedCount > 0 ? `, ${sharedCount} shared dep(s) deduped` : "")
   );
 
   return {
@@ -116,6 +139,7 @@ export async function runSubchainScan(
     toolResults: allResults,
     allFindings,
     graph: graph.toJSON(),
+    sharedPackages,
   };
 }
 

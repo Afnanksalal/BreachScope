@@ -49,6 +49,7 @@ interface ScanPostBody {
   toolsScanned?: number;
   riskData?: string;    // JSON string of ToolRiskEntry[]
   probeData?: string;   // JSON string of ProbeActivity
+  aiReport?: string;    // JSON string of AISynthesis
 }
 
 function isScanPostBody(v: unknown): v is ScanPostBody {
@@ -97,6 +98,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       toolsScanned:     body.toolsScanned ?? 0,
       riskData:         body.riskData     ?? null,
       probeData:        body.probeData    ?? null,
+      aiReport:         body.aiReport     ?? null,
     })
     .returning({ id: scans.id });
 

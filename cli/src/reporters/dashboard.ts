@@ -107,6 +107,19 @@ export function renderDashboard(result: SubchainScanResult): void {
     console.log(chalk.green("\n  ✓ No findings detected across all scanned tools.\n"));
   }
 
+  // Shared / deduped dependencies
+  const sharedEntries = Object.entries(result.sharedPackages ?? {});
+  if (sharedEntries.length > 0) {
+    console.log("\n" + chalk.bold("  Shared Dependencies (deduped — scanned once)\n"));
+    console.log(chalk.gray("  " + "Package".padEnd(36) + "Required by"));
+    console.log(chalk.gray("  " + "─".repeat(65)));
+    for (const [pkg, parents] of sharedEntries.sort((a, b) => b[1].length - a[1].length)) {
+      const parentList = parents.slice(0, 4).join(", ") + (parents.length > 4 ? ` +${parents.length - 4} more` : "");
+      const name = pkg.length > 34 ? pkg.slice(0, 31) + "..." : pkg;
+      console.log(`  ${chalk.cyan("◈")} ${name.padEnd(34)}  ${chalk.gray(parentList)}`);
+    }
+  }
+
   // AI summaries
   const withSummary = sorted.filter((r) => r.aiSummary && !r.aiSummary.includes("unavailable"));
   if (withSummary.length) {

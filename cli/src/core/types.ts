@@ -138,6 +138,8 @@ export interface SubchainScanResult {
   toolResults: ToolPipelineResult[];
   allFindings: Finding[];
   graph: DependencyGraph;
+  /** packages shared by 2+ parents — deduped, not re-scanned. key=package, value=parent list */
+  sharedPackages: Record<string, string[]>;
 }
 
 export interface DependencyGraph {

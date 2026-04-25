@@ -105,7 +105,7 @@ export function osvToFindings(vulns: OsvVulnerability[], toolName: string): Find
       references: [
         `https://osv.dev/vulnerability/${v.id}`,
         cveAlias ? `https://nvd.nist.gov/vuln/detail/${cveAlias}` : null,
-        ...v.references.filter((r) => r.type === "FIX" || r.type === "WEB").map((r) => r.url),
+        ...(v.references ?? []).filter((r) => r.type === "FIX" || r.type === "WEB").map((r) => r.url),
       ].filter((r): r is string => r !== null),
     };
   });

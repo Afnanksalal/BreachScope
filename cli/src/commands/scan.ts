@@ -318,12 +318,17 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     ctx.existingFindings = [...findings];
 
     const agentResults = await runOrchestrator(ctx);
-    const mergedFindings = lastSynthesis?.deduplicatedFindings ?? [
-      ...findings,
-      ...agentResults.flatMap((r) => r.findings),
-    ];
 
-    renderAIReport(agentResults, lastSynthesis);
+    // AI agents may discover findings not caught by static scanners.
+    // Merge them in, but never let GPT's curation shrink the raw findings set.
+    const staticTitles = new Set(findings.map((f) => f.title));
+    const aiNewFindings = agentResults
+      .filter((r) => r.agent !== "report")
+      .flatMap((r) => r.findings)
+      .filter((af) => !staticTitles.has(af.title));
+    const mergedFindings = [...findings, ...aiNewFindings];
+
+    renderAIReport(agentResults, lastSynthesis, mergedFindings);
 
     const aiResult = buildResult(cwd, startedAt, mergedFindings, { mode, url });
 
@@ -331,7 +336,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
       renderJsonReport(aiResult, opts.file);
     }
 
-    await pushScan(aiResult, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, probeAttack });
+    await pushScan(aiResult, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, probeAttack, aiReport: lastSynthesis ? JSON.stringify(lastSynthesis) : undefined });
 
     exitOnThreshold(opts, mergedFindings, config.thresholds.failOn);
     return;
@@ -360,6 +365,7 @@ async function pushScan(
     subchainResult?: SubchainScanResult | null;
     probeServices?: Array<{ id: string; name: string; category: string; steps: string[]; findingsCount: number; tokensUsed: number }>;
     probeAttack?: { url: string; attacks: string[]; pagesVisited: string[]; findingsCount: number; tokensUsed: number };
+    aiReport?: string;
   }
 ): Promise<void> {
   const spinner = ora("Uploading results to dashboard…").start();
@@ -373,11 +379,13 @@ async function pushScan(
     riskScore:       r.riskScore,
     aiSummary:       r.aiSummary,
     osvCount:        r.osvVulnerabilities.length,
-    osvIds:          r.osvVulnerabilities.map((v) => v.id).slice(0, 5),
+    osvIds:          r.osvVulnerabilities.map((v) => v.id).slice(0, 10),
     scorecardScore:  r.scorecard?.score,
     weeklyDownloads: r.npmMeta?.weeklyDownloads,
     maintainerCount: r.npmMeta?.maintainers.length,
     findingsCount:   r.findings.length,
+    github:          r.tool.github ? `https://github.com/${r.tool.github}` : undefined,
+    version:         r.tool.version,
   })) ?? undefined;
 
   const probeData = (opts.probeServices?.length || opts.probeAttack)
@@ -396,6 +404,7 @@ async function pushScan(
       }, { count: 0, tools: new Set<string>() }).count,
       toolRiskData,
       probeData,
+      aiReport: opts.aiReport,
     }),
     // Sync mode settings back to dashboard if user passed explicit flags
     opts.explicitFlags ? syncRemoteConfig(opts.mode, opts.scanMode ?? "all") : Promise.resolve(),

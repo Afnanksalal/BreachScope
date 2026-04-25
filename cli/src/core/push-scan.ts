@@ -16,6 +16,8 @@ export interface ToolRiskEntry {
   weeklyDownloads?: number;
   maintainerCount?: number;
   findingsCount: number;
+  github?: string;   // https://github.com/org/repo
+  version?: string;  // installed version
 }
 
 export interface ProbeData {
@@ -32,6 +34,7 @@ export async function pushScanToDashboard(
     toolsScanned?: number;
     toolRiskData?: ToolRiskEntry[];
     probeData?: ProbeData;
+    aiReport?: string;
   }
 ): Promise<string | null> {
   const creds = loadCredentials();
@@ -50,6 +53,7 @@ export async function pushScanToDashboard(
     toolsScanned: opts.toolsScanned ?? 0,
     riskData:     opts.toolRiskData ? JSON.stringify(opts.toolRiskData) : undefined,
     probeData:    opts.probeData    ? JSON.stringify(opts.probeData)    : undefined,
+    aiReport:     opts.aiReport     ?? undefined,
     findings:     result.findings.map((f: Finding) => ({
       title:       f.title,
       severity:    f.severity,

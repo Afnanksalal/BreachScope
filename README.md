@@ -2,8 +2,8 @@
 
 # BreachScope
 
-**Supply chain & toolchain breach scanner.**  
-Detect vulnerabilities across your entire stack — before attackers do.
+**Full-stack security scanner — supply chain, code, active pentest, AI agents.**  
+Catches what linters and conventional scanners miss, across every language.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js ≥18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
@@ -15,9 +15,9 @@ Detect vulnerabilities across your entire stack — before attackers do.
 
 ## What is BreachScope?
 
-BreachScope is an open-source CLI that audits the full depth of your stack — not just your code, but every tool you depend on and every tool *those tools* depend on.
+BreachScope is an open-source CLI that audits the full depth of your stack — not just your code, but every package you depend on across **every language**, every tool *those tools* depend on, your live SaaS services, and your running application.
 
-It was built because incidents like the [Vercel breach](https://vercel.com/blog/vercel-breach-analysis), the [ua-parser-js hijack](https://github.com/advisories/GHSA-pjwm-rvh2-c424), and the [node-ipc sabotage](https://github.com/advisories/GHSA-97m3-w2cp-4xx6) aren't caught by linters or conventional dependency scanners. They require understanding the *entire supply chain* — the GitHub security posture of your libraries, the configuration of your hosted services, and the transitive dependencies you've never thought about.
+It was built because incidents like the [ua-parser-js hijack](https://github.com/advisories/GHSA-pjwm-rvh2-c424), [node-ipc sabotage](https://github.com/advisories/GHSA-97m3-w2cp-4xx6), and countless credential-leak breaches aren't caught by linters or conventional scanners. They require understanding the *entire supply chain* — the GitHub security posture of your libraries, the configuration of your hosted services, and the transitive dependencies you've never thought about.
 
 ---
 
@@ -25,72 +25,98 @@ It was built because incidents like the [Vercel breach](https://vercel.com/blog/
 
 | Mode | What it scans | Speed |
 |------|--------------|-------|
-| `basic` | Direct tools in your codebase | Fast |
+| `basic` | Direct tools detected in your codebase | Fast |
 | `major` | Direct tools + their direct dependencies | Medium |
 | `deep` | Full transitive dependency tree (up to 6 levels) | Thorough |
 
-## Scan Type
+## Scan Focus
 
-| Mode | Focus |
-|------|-------|
-| `all` | CVE + code audit + supply chain + blackbox |
-| `breach` | Supply chain, dependency hijacks, CVEs |
-| `bug` | Code audit, dangerous patterns, misconfigs |
+| Flag(s) | Mode | Focus | Patterns |
+|---------|------|-------|----------|
+| *(none)* | `all` | Balanced — CVE + code + supply chain | 13 base |
+| `--breach` | `breach` | CVEs, hijacked packages, leaked credentials, infra exposure | 36 patterns |
+| `--bug` | `bug` | Injection flaws, auth bypasses, deserialization, logic bugs | 43 patterns |
+| `--breach --bug` | `full` | Everything — maximum coverage | **66 patterns** |
+
+---
+
+## Quick Start
 
 ```bash
-breachscope scan --mode basic --scan-mode all      # default
-breachscope scan --mode major --scan-mode breach   # supply chain focus
-breachscope scan --mode deep  --scan-mode bug      # deep code audit
+npm install -g breachscope
+
+# Basic scan — auto-detects language, runs everything
+breachscope scan
+
+# Maximum coverage — deep, all modes, AI agents, active pentest
+breachscope scan --mode deep --breach --bug --ai --browser --url https://yourapp.com -v
 ```
+
+Both `breachscope` and `bs` (shorthand) are available after install.
+
+---
+
+## Languages Supported
+
+BreachScope auto-detects your stack and scans the correct manifests for each language:
+
+| Language | Files Scanned | OSV Ecosystem |
+|----------|--------------|---------------|
+| JavaScript / TypeScript | `package.json`, lockfiles | `npm` |
+| Python | `requirements.txt`, `requirements-dev.txt`, `requirements/*.txt`, `pyproject.toml` (PEP 621 + Poetry + uv/rye), `Pipfile`, `setup.py` | `PyPI` |
+| Go | `go.mod` | `Go` |
+| Rust | `Cargo.toml`, `Cargo.lock` | `crates.io` |
+| Ruby | `Gemfile`, `Gemfile.lock` | `RubyGems` |
+
+All ecosystems query [OSV.dev](https://osv.dev) with the correct ecosystem tag for accurate CVE data.
 
 ---
 
 ## How It Works
 
 ```
-Your Codebase
-     │
-     ▼
-[Multi-Signal Detector]
-package.json · import statements · .env files · config files
-     │
-     ▼
-[Tool Classifier]  ← GPT-4o (or static toolmap for 80+ known packages)
-     │
-     ├── OSS ──────────────────────────────────────────────────┐
-     │                                                          │
-     │   ┌─ OpenSSF Scorecard API ──────────────────────────┐  │
-     │   ├─ OSV.dev vulnerability database ─────────────────┤  │
-     │   ├─ deps.dev project metadata ─────────────────────┤  │
-     │   └─ npm registry (maintainers, download velocity) ──┘  │
-     │                                                          │
-     ├── SaaS ─────────────────────────────────────────────────┤
-     │                                                          │
-     │   ┌─ Firecrawl: security pages & changelogs ──────────┐ │
-     │   └─ GPT-4o: incident research & misconfiguration ────┘ │
-     │                                                          │
-     └── Hybrid ────────────────────────────────────────────── both pipelines
-                                                                │
-                                                                ▼
-                                                       [Risk Dashboard]
-                                                    Per-tool risk scores (0–100)
-                                                    Scorecard + OSV + npm signals
-                                                    AI summaries + attack chains
-                                                                │
-                                                                ▼
-                                                     [Web Dashboard]
-                                                  breachscoope.vercel.app — scan history,
-                                                  findings, API key management
+Your Codebase (any language)
+          │
+          ▼
+  [Multi-Signal Detector]
+  package.json · go.mod · Cargo.toml · requirements.txt
+  pyproject.toml · Gemfile · imports · .env · config files
+          │
+          ▼
+  [Tool Classifier]  ← static toolmap (150+ known packages) or GPT-4o
+          │
+     ┌────┴────┐
+    OSS       SaaS
+     │         │
+  Scorecard  Firecrawl
+  OSV.dev    GPT-4o research
+  deps.dev   Changelog crawling
+  Registry
+          │
+          ▼
+  [Static Scanners]
+  66 code patterns (base + bug + breach) · Toolchain probe · Blackbox · Smoke tests
+          │
+          ▼
+  [AI Multi-Agent Layer]  ← --ai
+  Orchestrator → Dependency → Code → Toolchain → Blackbox → Report
+  (mode-aware: breach/bug/full agents get different system prompts + focus)
+          │
+          ▼
+  [Active Pentest]  ← --browser
+  Playwright · SQLi · XSS · JWT attacks · CORS · Rate limit · Sensitive paths
+          │
+          ▼
+  [Web Dashboard]  breachscoope.vercel.app
+  Scan history · Findings · Probe activity tab · PDF export
 ```
-
-**In `major` / `deep` mode**, each discovered tool's own npm dependencies are fetched and recursively scanned, building a full dependency graph.
 
 ---
 
 ## Installation
 
 ```bash
-# npm
+# npm (global)
 npm install -g breachscope
 
 # pnpm
@@ -99,35 +125,11 @@ pnpm add -g breachscope
 # bun
 bun add -g breachscope
 
-# Or run without installing
+# No install
 npx breachscope scan
 ```
 
 Requires **Node.js 18+**.
-
----
-
-## Quick Start
-
-```bash
-# Initialize config
-breachscope init
-
-# Scan your project (basic mode — direct tools only)
-breachscope scan
-
-# Scan with a live URL for blackbox + smoke testing
-breachscope scan --url https://myapp.com
-
-# Go deeper — audit sub-dependencies too
-breachscope scan --mode major
-
-# Supply chain focus only
-breachscope scan --mode major --scan-mode breach
-
-# Full transitive tree, all scan types
-breachscope scan --mode deep --url https://myapp.com
-```
 
 ---
 
@@ -138,10 +140,12 @@ breachscope scan [options]     Full scan — all engines
 breachscope audit              Static code audit only
 breachscope probe <url>        Blackbox HTTP probe
 breachscope smoke <url>        Smoke tests against live URL
-breachscope deps               Dependency + lockfile scan
+breachscope deps               Dependency + lockfile scan (all languages)
 breachscope toolchain          Sub-toolchain risk dashboard
 breachscope login              Authenticate CLI with breachscoope.vercel.app
 breachscope init               Create breachscope.yaml config
+
+Shorthand: bs scan, bs login, bs deps, etc.
 ```
 
 ### `scan` options
@@ -149,47 +153,85 @@ breachscope init               Create breachscope.yaml config
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-m, --mode` | `basic` | Scan depth: `basic` \| `major` \| `deep` |
-| `-s, --scan-mode` | `all` | Scan type: `all` \| `breach` \| `bug` |
-| `-u, --url` | — | Target URL for blackbox + smoke |
+| `--breach` | — | Breach mode: CVE hunting, credential leaks, supply chain |
+| `--bug` | — | Bug mode: deep code audit, injection, deserialization, auth |
+| `--breach --bug` | — | Full mode: both combined — 66 patterns, all scanners |
+| `-t, --target` | `all` | Scope: `all` \| `dependency` \| `toolchain` \| `code` \| `blackbox` \| `smoke` |
+| `-u, --url` | — | Target URL for blackbox, smoke, and browser pentest |
 | `-o, --output` | `console` | Output: `console` \| `json` \| `sarif` |
 | `-f, --file` | — | Write output to file |
-| `--ci` | — | Exit 1 if findings exceed threshold |
-| `--ai` | — | Enable AI multi-agent analysis |
+| `--ci` | — | Exit 1 if findings exceed severity threshold |
+| `--ai` | — | Enable AI multi-agent analysis + live service probing |
+| `--browser` | — | Launch authenticated Playwright pentest (requires `--url`) |
 | `-v, --verbose` | — | Debug output |
 
 ---
 
-## Web Dashboard
+## Scan Modes
 
-BreachScope includes a hosted dashboard at **breachscoope.vercel.app** for viewing scan history, browsing findings, and managing CLI authentication.
+### `--breach` — Credential & Supply Chain Mode
 
-### Connect the CLI
+Focused on finding what an attacker could exploit right now.
+
+- Runs: dependency scan (all languages), supply chain graph, toolchain misconfig probe, code audit with **36 breach patterns**
+- Breach patterns target: GitHub PATs, Stripe/OpenAI/Anthropic/Slack/Supabase JWTs, AWS keys, DB connection strings with creds, Firebase service accounts, DigitalOcean/Cloudflare/Vercel tokens, npm tokens, debug endpoints, admin routes without auth
+- AI agents: aggressive CVE/hijack hunting across 20+ packages, credential-focused code review, supply chain incident research
+
+### `--bug` — Code Vulnerability Mode
+
+Focused on exploitable bugs in the code itself.
+
+- Runs: deep code audit with **43 patterns**, dependency scan for known-vulnerable versions
+- Skips: toolchain scan, sub-toolchain graph (not relevant to code bugs)
+- Bug patterns target: Python `pickle.loads`, `yaml.load` without SafeLoader, `subprocess` with `shell=True`, `os.system` with f-strings; Go SQL via `fmt.Sprintf`, `unsafe.Pointer`; Rust unsafe blocks; SSRF, open redirect, mass assignment (`...req.body`), NoSQL injection, `dangerouslySetInnerHTML`, JWT none algorithm, XXE, LDAP injection, zip-slip, timing attacks, ReDoS, template injection
+- AI agents: deep logic bug hunting — race conditions, second-order vulns, IDOR, auth bypass, insecure deserialization
+
+### `--breach --bug` — Full Mode
+
+No scanner is skipped. All 66 patterns run. Both AI agent personalities activate.
 
 ```bash
-breachscope login
-# Opens a browser — sign in once, all future scans push results to your dashboard
+breachscope scan --mode deep --breach --bug --ai --browser --url https://yourapp.com -v
 ```
 
-### Dashboard Features
+---
 
-- **Scan History** — every scan result stored with full findings breakdown
-- **Findings View** — per-finding severity, category, remediation, file/line reference
-- **API Keys** — generate and revoke CLI authentication tokens
-- **Settings** — store encrypted OpenAI and Firecrawl keys (AES-256-GCM), set scan defaults
-- **Overview** — 30-day stats: critical/high counts, findings by category, trend chart
+## Active Penetration Testing (`--browser`)
 
-### Self-hosting
-
-The dashboard lives in `web/` and runs on Next.js 15 + Neon (PostgreSQL) + Drizzle ORM.
+Launches an authenticated Playwright browser that actively attacks your running application:
 
 ```bash
-cd web
-cp .env.example .env        # fill in DATABASE_URL, NEXTAUTH_SECRET, OAuth credentials
-npm install
-npm run db:push             # push schema to your database
-npm run db:seed             # seed a dev user (set SEED_EMAIL env var)
-npm run dev
+breachscope scan --browser --url https://yourapp.com --ai
+# Prompts for: login URL, username, password
 ```
+
+**Attacks executed:**
+- SQL injection — URL params and forms (union, blind, time-based, error-based)
+- XSS — payload injection with DOM reflection + `alert()` detection
+- JWT attacks — `alg:none`, admin claim injection, ID tampering, kid parameter SQLi
+- IDOR — ID enumeration on REST endpoints
+- CORS — evil.com origin reflection testing
+- Rate limiting — concurrent request flooding to detect missing limits
+- Sensitive path enumeration — 30+ paths (`.env`, `/.git`, `/admin`, `/graphql`, `/metrics`, etc.)
+- Cookie security flag inspection
+- Security header analysis
+
+Results appear in the **Probe Activity** tab of the dashboard.
+
+---
+
+## Live Service Probing (`--ai`)
+
+With `--ai`, BreachScope discovers SaaS services in your codebase and probes them interactively:
+
+```bash
+breachscope scan --ai
+# Discovers: Supabase, GitHub, Stripe, Vercel, OpenAI, etc.
+# Prompts for credentials per service
+# Probes live APIs for misconfigurations and permission issues
+```
+
+Every API call is logged step-by-step in the dashboard's Probe Activity tab, with HTTP method badges, search queries, and crawl steps.
 
 ---
 
@@ -197,83 +239,115 @@ npm run dev
 
 ### Sub-Toolchain Engine
 
-Detects every tool your codebase uses, classifies it as OSS, SaaS, or hybrid, then runs specialized pipelines:
+Detects every tool your codebase uses, classifies it as OSS/SaaS/hybrid, runs specialized pipelines.
 
 **OSS Pipeline**
-- [OpenSSF Scorecard](https://securityscorecards.dev) — 18 security checks: branch protection, pinned CI deps, code review, maintained status, binary artifacts, token permissions, and more
-- [OSV.dev](https://osv.dev) — comprehensive vulnerability database (CVEs, GitHub Advisories, OSV records)
+- [OpenSSF Scorecard](https://securityscorecards.dev) — 18 security checks: branch protection, pinned CI deps, code review, maintained status, token permissions, and more
+- [OSV.dev](https://osv.dev) — CVEs across all ecosystems in a single batch query
 - [deps.dev](https://deps.dev) — project health metrics, security score
-- npm registry — maintainer count, weekly downloads, publish recency
+- Registry metadata — maintainer count, weekly downloads, publish recency
 
 **SaaS Pipeline**
 - Firecrawl-powered security page + changelog crawling
 - GPT-4o research for known incidents, breach patterns, SDK CVEs
 
-### Static Scanners
+### Static Code Patterns (66 total in full mode)
 
-| Scanner | What it finds |
-|---------|--------------|
-| **Dependency** | Hijacked packages, insecure registries, missing integrity hashes, wildcard versions |
-| **Code Audit** | Hardcoded secrets, AWS keys, `eval()`, SQL injection, path traversal, weak crypto, CORS wildcards, prototype pollution, SSL verification disabled |
-| **Toolchain** | Supabase RLS misconfig, service role key exposure, Vercel preview secrets, GitHub branch protection gaps, overprivileged tokens |
-| **Blackbox** | Security headers (HSTS, CSP, X-Frame-Options), CORS origin reflection, exposed `.env`/`.git` paths, HTTP TRACE |
-| **Smoke Tests** | Error stack trace leakage, unauthenticated admin routes, missing payload limits, reachability |
+| Set | Count | Examples |
+|-----|-------|---------|
+| Base | 13 | Hardcoded secrets, eval(), SQL concat, weak crypto, CORS wildcard, path traversal |
+| Bug | +30 | Python pickle/yaml/subprocess, Go fmt.Sprintf SQLi, SSRF, JWT none, XXE, mass assignment, ReDoS |
+| Breach | +23 | GitHub PAT, Stripe/OpenAI/Anthropic keys, DB connection strings, Firebase private key, admin routes |
+
+---
+
+## Web Dashboard
+
+Every scan is automatically pushed to **breachscoope.vercel.app**.
+
+```bash
+breachscope login  # authenticate once — all future scans auto-upload
+```
+
+### Features
+
+- **Scan History** — search, filter by scan mode (all/breach/bug/full) and depth (basic/major/deep)
+- **Overview Tab** — severity bars, scan mode label (colored: red=breach, yellow=bug, purple=full), duration, tools scanned
+- **Findings Tab** — collapsible cards: severity badge, category, file:line, **matched code snippet**, remediation, references
+- **Probe Activity Tab** — service probe step logs (HTTP/search/crawl badges) + attack probe grid
+- **Report Tab** — export as JSON, Markdown, or **real PDF** (jsPDF — structured, not a print screenshot)
+- **API Keys** — generate/revoke CLI tokens (SHA-256 hashed)
+- **Settings** — AES-256-GCM encrypted API keys, scan defaults
+
+### PDF Report
+
+The generated PDF includes:
+- Dark header bar with project name and generation date
+- Color-coded severity summary boxes
+- Full findings table with severity color coding
+- Dependency risk table (top 40 by risk score with color-coded scores)
+- Probe activity log
+- Page numbers on every page
+
+### Self-hosting
+
+```bash
+cd web
+cp .env.example .env        # DATABASE_URL, NEXTAUTH_SECRET, OAuth credentials
+npm install
+npm run db:push             # push schema to your Neon/Postgres DB
+npm run db:seed             # seed dev user
+npm run dev
+```
 
 ---
 
 ## Configuration
 
 ```bash
-breachscope init  # generates breachscope.yaml
+breachscope init
 ```
 
 ```yaml
 version: "1"
 project: "my-app"
-
 targets:
   - all
 
-# Sub-toolchain scan settings
 subchain:
-  maxDepth: 4        # override for deep mode
-  concurrency: 5     # parallel tool scans
-  ignore:            # skip specific packages
+  maxDepth: 4
+  concurrency: 5
+  ignore:
     - lodash
     - tslib
 
 toolchain:
   supabase:
-    url: ""            # or SUPABASE_URL env var
-    anonKey: ""        # or SUPABASE_ANON_KEY env var
+    url: ""              # or SUPABASE_URL
+    anonKey: ""          # or SUPABASE_ANON_KEY
   vercel:
-    token: ""          # or VERCEL_TOKEN env var
+    token: ""            # or VERCEL_TOKEN
     projectId: ""
   github:
-    token: ""          # or GITHUB_TOKEN env var
+    token: ""            # or GITHUB_TOKEN
     repo: "owner/repo"
 
-# AI multi-agent mode
 ai:
-  openaiApiKey: ""     # or OPENAI_API_KEY env var
-  firecrawlApiKey: ""  # or FIRECRAWL_API_KEY env var
+  openaiApiKey: ""       # or OPENAI_API_KEY
+  firecrawlApiKey: ""    # or FIRECRAWL_API_KEY
   model: gpt-4o
 
 output:
-  format: console      # console | json | sarif
+  format: console        # console | json | sarif
   verbose: false
 
 thresholds:
-  failOn: high         # critical | high | medium | low
+  failOn: high           # critical | high | medium | low
 ```
-
-All secrets can be supplied as environment variables — the config file never needs to contain credentials.
 
 ---
 
 ## AI Mode
-
-Add `--ai` to activate the multi-agent pipeline (GPT-4o + Firecrawl):
 
 ```bash
 export OPENAI_API_KEY=sk-...
@@ -282,24 +356,20 @@ export FIRECRAWL_API_KEY=fc-...
 breachscope scan --ai --mode major --url https://yourapp.com
 ```
 
-**Agents:**
+| Agent | Role | Mode Awareness |
+|-------|------|---------------|
+| **Orchestrator** | Plans agent dispatch based on project profile + scan mode | Biases selection by mode |
+| **Dependency** | CVE/advisory research with live web tools | Breach: 20+ packages; Bug: reachable CVEs |
+| **Code** | Deep source analysis | Breach: credential hunt; Bug: logic bugs; Full: both |
+| **Toolchain** | Live changelog/security page crawling | Breach + full only |
+| **Blackbox** | Adaptive HTTP probing | When URL provided |
+| **Report** | Deduplication, attack chain synthesis, executive summary | Always |
 
-| Agent | Role |
-|-------|------|
-| **Orchestrator** | Plans dispatch based on project profile |
-| **Dependency** | Researches packages against live CVE/advisory databases |
-| **Code** | Deep source reasoning — second-order vulns, race conditions, ReDoS |
-| **Toolchain** | Fetches live changelogs, finds cross-tool attack chains |
-| **Blackbox** | Adaptive HTTP probing with targeted follow-up requests |
-| **Report** | Deduplication, attack chain synthesis, executive summary |
-
-A full `--ai` scan typically uses 20,000–60,000 tokens (~$0.05–$0.15 at GPT-4o pricing).
+Token usage: ~20,000–60,000 tokens per scan (~$0.05–$0.15 at GPT-4o pricing).
 
 ---
 
 ## CI/CD Integration
-
-### GitHub Actions
 
 ```yaml
 name: BreachScope
@@ -318,16 +388,21 @@ jobs:
         with:
           node-version: '20'
       - run: npm install -g breachscope
-      - name: Run breach scan
-        run: breachscope scan --mode major --scan-mode all --ci
+
+      - name: Breach scan (supply chain + credentials)
+        run: breachscope scan --mode major --breach --ci
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
 
-Exits with code `1` if any finding meets or exceeds the `thresholds.failOn` severity (default: `high`).
+      - name: Bug scan (AI-powered code audit)
+        run: breachscope scan --mode deep --bug --ai --ci
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+```
 
 ---
 
@@ -337,37 +412,34 @@ Exits with code `1` if any finding meets or exceeds the `thresholds.failOn` seve
 breachscope/
 ├── cli/                         # CLI package (npm: breachscope)
 │   └── src/
-│       ├── core/                # Types, config, logger, AI client, Firecrawl, tool map
-│       ├── detectors/           # Multi-signal tool detection
-│       ├── classifiers/         # GPT-4o tool classifier
-│       ├── apis/                # Scorecard, OSV.dev, deps.dev, npm registry
-│       ├── pipelines/           # OSS pipeline, SaaS pipeline, router
-│       ├── engine/              # Recursive sub-toolchain scan engine
-│       ├── scanners/            # Static scanners (dep, code, toolchain, blackbox, smoke)
-│       ├── agents/              # AI multi-agent system
+│       ├── core/                # Types, config, logger, AI client, tool map, push-scan
+│       ├── detectors/           # Multi-signal, multi-language tool detection
+│       ├── classifiers/         # GPT-4o OSS/SaaS/hybrid classifier
+│       ├── apis/                # Scorecard, OSV.dev, deps.dev, npm, PyPI APIs
+│       ├── pipelines/           # OSS pipeline (multi-ecosystem), SaaS pipeline, router
+│       ├── engine/              # Recursive sub-toolchain engine + dependency graph
+│       ├── scanners/
+│       │   ├── dependency/      # index.ts + python.ts, go.ts, rust.ts, ruby.ts
+│       │   ├── code/            # patterns.ts (66 rules: base + bug + breach), index.ts
+│       │   ├── toolchain/       # Supabase, Vercel, GitHub scanners
+│       │   ├── blackbox/        # HTTP security header + path probe
+│       │   └── smoke/           # Live app behavior tests
+│       ├── agents/              # Orchestrator, dependency, code, toolchain, blackbox, report
+│       │   └── attack-probe.ts  # Playwright active pentest (SQLi, XSS, JWT, CORS, rate limit)
 │       └── reporters/           # Console, JSON, risk dashboard, AI console
 ├── web/                         # Next.js 15 dashboard (breachscoope.vercel.app)
 │   ├── app/
-│   │   ├── dashboard/           # Overview, scans, scan detail, API keys, settings
-│   │   ├── api/                 # REST endpoints (scans, findings, keys, settings, auth)
-│   │   ├── login/               # Email/password + GitHub/Google OAuth
-│   │   └── docs/                # Documentation page
-│   ├── components/
-│   │   ├── dashboard/           # Sidebar, TopBar, StatsCard, ScanRow, charts
-│   │   └── ...                  # Landing page components
+│   │   ├── dashboard/           # Overview, scans list, scan detail (4 tabs), keys, settings
+│   │   └── api/                 # REST: scans POST/GET, findings, keys, settings, remote-config
 │   ├── lib/
-│   │   ├── auth.ts              # NextAuth v5 — JWT strategy, Credentials + OAuth
-│   │   ├── db.ts                # Drizzle ORM + Neon PostgreSQL
-│   │   ├── schema.ts            # Full DB schema (users, scans, findings, api_keys, settings)
-│   │   └── crypto.ts            # AES-256-GCM encryption for user API keys
-│   └── scripts/
-│       ├── seed.ts              # Dev database seeder
-│       └── migrate.ts           # Production migration runner
-├── docs/                        # Markdown documentation
+│   │   ├── schema.ts            # DB: users, scans, findings (with detail col), api_keys, settings
+│   │   └── crypto.ts            # AES-256-GCM for stored API keys
+│   └── scripts/                 # seed.ts, migrate.ts
+├── docs/
 │   ├── getting-started.md
 │   ├── ai-agents.md
 │   ├── commands/scan.md
-│   └── integrations/
+│   └── integrations/            # supabase.md, vercel.md
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 └── SECURITY.md
@@ -377,14 +449,13 @@ breachscope/
 
 ## Contributing
 
-We welcome contributions — new detection rules, tool integrations, bug fixes, and documentation.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, guidelines, and the PR process.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, coding guidelines, and the PR process.
-
-**Good first issues** are tagged in GitHub. The most impactful contributions right now:
-1. Adding tools to `cli/src/core/toolmap.ts`
-2. Adding detection rules to `cli/src/scanners/code/patterns.ts`
-3. Reporting false positives with reproduction cases
+**Most impactful contributions:**
+1. New patterns in `cli/src/scanners/code/patterns.ts` (test on 3+ real codebases first)
+2. New tools in `cli/src/core/toolmap.ts`
+3. New language scanners in `cli/src/scanners/dependency/`
+4. False positive reports with reproduction cases
 
 ---
 
@@ -402,5 +473,5 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 <div align="center">
-<sub>Built for the developers who know their biggest risk isn't their own code.</sub>
+<sub>Built for developers who know their biggest risk isn't their own code.</sub>
 </div>

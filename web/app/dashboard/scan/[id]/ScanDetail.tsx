@@ -12,6 +12,22 @@ interface ToolRiskEntry {
   osvCount: number; osvIds?: string[];
   scorecardScore?: number; weeklyDownloads?: number; maintainerCount?: number;
   findingsCount: number;
+  github?: string;
+  version?: string;
+}
+
+interface AttackChain {
+  title: string;
+  severity: string;
+  steps: string[];
+  impact: string;
+}
+
+interface AISynthesis {
+  executiveSummary: string;
+  criticalPath?: string;
+  topPriority?: string;
+  attackChains?: AttackChain[];
 }
 
 interface ServiceProbeActivity {
@@ -162,21 +178,78 @@ function FindingCard({ finding }: { finding: Finding }) {
   );
 }
 
+// ─── AI synthesis section ─────────────────────────────────────────────────────
+
+function AISynthesisSection({ synthesis }: { synthesis: AISynthesis }) {
+  return (
+    <div className="space-y-3">
+      <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+        <p className="text-white/35 text-[10px] font-semibold uppercase tracking-wider mb-2">AI Executive Summary</p>
+        <p className="text-white/70 text-sm leading-relaxed">{synthesis.executiveSummary}</p>
+      </div>
+
+      {synthesis.topPriority && (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-red-500/[0.07] border border-red-500/20">
+          <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-300 border border-red-500/30 mt-0.5">
+            Top Priority
+          </span>
+          <p className="text-red-200/75 text-sm leading-relaxed">{synthesis.topPriority}</p>
+        </div>
+      )}
+
+      {(synthesis.attackChains?.length ?? 0) > 0 && (
+        <div>
+          <p className="text-white/35 text-[10px] font-semibold uppercase tracking-wider mb-2">Attack Chains Identified</p>
+          <div className="space-y-2">
+            {synthesis.attackChains!.map((chain, i) => (
+              <div key={i} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={clsx(
+                    "shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase border",
+                    chain.severity === "critical"
+                      ? "bg-red-500/15 border-red-500/30 text-red-300"
+                      : "bg-orange-500/15 border-orange-500/30 text-orange-300"
+                  )}>{chain.severity}</span>
+                  <p className="text-white/70 text-sm font-medium">{chain.title}</p>
+                </div>
+                {chain.impact && <p className="text-white/35 text-xs mb-2 leading-relaxed">{chain.impact}</p>}
+                <ol className="space-y-1">
+                  {chain.steps.map((step, j) => (
+                    <li key={j} className="flex items-start gap-2 text-white/40 text-xs">
+                      <span className="shrink-0 text-white/20 font-mono w-4">{j + 1}.</span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Tool risk table ──────────────────────────────────────────────────────────
 
-function ToolRiskTable({ tools }: { tools: ToolRiskEntry[] }) {
+function ToolRiskTable({ tools, findings }: { tools: ToolRiskEntry[]; findings: Finding[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const sorted = [...tools].sort((a, b) => b.riskScore - a.riskScore);
   return (
     <div className="space-y-1">
-      {sorted.map((t) => (
+      {sorted.map((t) => {
+        const toolFindings = findings.filter((f) => f.tool === t.name);
+        return (
         <div key={t.name} className="rounded-xl border border-white/[0.06] overflow-hidden">
           <button
             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left min-w-0"
             onClick={() => setExpanded(expanded === t.name ? null : t.name)}
           >
             {t.depth > 0 && <span className="text-white/20 text-xs shrink-0 font-mono">{"└─".repeat(t.depth)}</span>}
-            <span className="flex-1 text-sm text-white/75 font-mono truncate">{t.name}</span>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm text-white/75 font-mono truncate block">{t.name}</span>
+              {t.version && <span className="text-white/25 text-[10px] font-mono">v{t.version}</span>}
+            </div>
             <KindBadge kind={t.kind} />
             {t.osvCount > 0 && <span className="text-red-400 text-xs shrink-0">{t.osvCount} CVE{t.osvCount !== 1 ? "s" : ""}</span>}
             {t.findingsCount > 0 && <span className="text-orange-400/70 text-xs shrink-0 hidden sm:inline">{t.findingsCount} finding{t.findingsCount !== 1 ? "s" : ""}</span>}
@@ -188,9 +261,21 @@ function ToolRiskTable({ tools }: { tools: ToolRiskEntry[] }) {
           </button>
           {expanded === t.name && (
             <div className="px-4 pb-4 border-t border-white/[0.04] space-y-3 pt-3">
+              {/* Header links */}
+              {t.github && (
+                <a href={t.github} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-white/35 text-xs hover:text-white/60 transition-colors font-mono">
+                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                  </svg>
+                  {t.github.replace("https://github.com/", "")}
+                </a>
+              )}
+
               {t.aiSummary && !t.aiSummary.includes("unavailable") && (
                 <p className="text-white/45 text-sm leading-relaxed">{t.aiSummary}</p>
               )}
+
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {t.scorecardScore !== undefined && (
                   <div className="p-2.5 rounded-lg bg-white/[0.04]">
@@ -221,21 +306,58 @@ function ToolRiskTable({ tools }: { tools: ToolRiskEntry[] }) {
                   </p>
                 </div>
               </div>
+
+              {/* CVE IDs with OSV links */}
               {t.osvIds && t.osvIds.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {t.osvIds.map((id) => (
-                    <a key={id} href={`https://osv.dev/vulnerability/${id}`} target="_blank" rel="noopener noreferrer"
-                      className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-300 text-xs hover:bg-red-500/20 transition-colors font-mono">
-                      {id}
-                    </a>
-                  ))}
+                <div>
+                  <p className="text-white/25 text-[10px] uppercase tracking-wider mb-1.5">
+                    CVEs {t.version ? <span className="normal-case">affecting v{t.version}</span> : ""}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {t.osvIds.map((id) => (
+                      <a key={id} href={`https://osv.dev/vulnerability/${id}`} target="_blank" rel="noopener noreferrer"
+                        className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-300 text-xs hover:bg-red-500/20 transition-colors font-mono">
+                        {id}
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
+
+              {/* Tool-specific findings */}
+              {toolFindings.length > 0 && (
+                <div>
+                  <p className="text-white/25 text-[10px] uppercase tracking-wider mb-1.5">Findings ({toolFindings.length})</p>
+                  <div className="space-y-1.5">
+                    {toolFindings.map((f) => {
+                      const sev = getSev(f.severity);
+                      return (
+                        <div key={f.id} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                          <span className={clsx("shrink-0 px-1.5 py-0.5 rounded text-[10px] border font-medium mt-0.5", sev.badge)}>
+                            {sev.label}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-white/65 text-xs font-medium leading-snug">{f.title}</p>
+                            {f.description && (
+                              <p className="text-white/30 text-xs mt-0.5 leading-relaxed line-clamp-2">{f.description}</p>
+                            )}
+                            {f.remediation && (
+                              <p className="text-green-400/60 text-xs mt-1">Fix: {f.remediation.slice(0, 100)}{f.remediation.length > 100 ? "…" : ""}</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {t.parent && <p className="text-white/20 text-xs">Introduced via <span className="font-mono text-white/35">{t.parent}</span></p>}
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -861,6 +983,9 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
   let probeActivity: ProbeActivity | null = null;
   try { if (scan.probeData) probeActivity = JSON.parse(scan.probeData) as ProbeActivity; } catch {}
 
+  let aiSynthesis: AISynthesis | null = null;
+  try { if (scan.aiReport) aiSynthesis = JSON.parse(scan.aiReport) as AISynthesis; } catch {}
+
   const hasProbes = (probeActivity?.services?.length ?? 0) > 0 || !!probeActivity?.attack;
 
   // Filtered findings
@@ -934,6 +1059,8 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
       {/* ── Overview tab ── */}
       {tab === "overview" && (
         <div className="space-y-6">
+          {aiSynthesis && <AISynthesisSection synthesis={aiSynthesis} />}
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: "Scan Mode", value: scan.scanMode },
@@ -996,7 +1123,7 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
                   ))}
                 </div>
               </div>
-              <ToolRiskTable tools={toolRiskData} />
+              <ToolRiskTable tools={toolRiskData} findings={findings} />
             </section>
           )}
         </div>

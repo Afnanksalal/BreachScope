@@ -80,6 +80,8 @@ export async function runOrchestrator(ctx: AgentContext): Promise<AgentResult[]>
 
     logger.section(`Agent: ${agentName}`);
     try {
+      // Each specialist agent sees only other AI agent findings (keep prompts small).
+      // Static findings live in ctx.existingFindings and are passed separately by each agent.
       const result = await runner({ ...ctx, existingFindings: results.flatMap((r) => r.findings) });
       results.push(result);
       logger.success(`${agentName} — ${result.findings.length} finding(s), ${result.tokensUsed} tokens`);
@@ -88,8 +90,21 @@ export async function runOrchestrator(ctx: AgentContext): Promise<AgentResult[]>
     }
   }
 
+  // Report agent gets the full picture: static findings (capped to critical+high for token budget)
+  // plus everything the AI specialist agents found.
+  const aiFindings = results.flatMap((r) => r.findings);
+  const staticHighPriority = ctx.existingFindings.filter(
+    (f) => f.severity === "critical" || f.severity === "high"
+  ).slice(0, 50);
+  const staticRest = ctx.existingFindings.filter(
+    (f) => f.severity !== "critical" && f.severity !== "high"
+  ).slice(0, 20);
+
   logger.section("Agent: report");
-  const report = await runReportAgent({ ...ctx, existingFindings: results.flatMap((r) => r.findings) });
+  const report = await runReportAgent({
+    ...ctx,
+    existingFindings: [...staticHighPriority, ...staticRest, ...aiFindings],
+  });
   results.push(report);
 
   return results;

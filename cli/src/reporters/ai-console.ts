@@ -2,7 +2,7 @@ import chalk from "chalk";
 import type { AgentResult } from "../core/types.js";
 import type { ReportSynthesis } from "../agents/report.js";
 
-export function renderAIReport(results: AgentResult[], synthesis: ReportSynthesis | null): void {
+export function renderAIReport(results: AgentResult[], synthesis: ReportSynthesis | null, allFindings?: import("../core/types.js").Finding[]): void {
   console.log("\n" + chalk.bold.white("━".repeat(65)));
   console.log(chalk.bold.white("  BREACHSCOPE AI REPORT"));
   console.log(chalk.bold.white("━".repeat(65)));
@@ -34,15 +34,20 @@ export function renderAIReport(results: AgentResult[], synthesis: ReportSynthesi
     }
   }
 
-  // Findings by agent
-  const allFindings = synthesis?.deduplicatedFindings ?? results.flatMap((r) => r.findings);
+  // CLI display uses the AI-curated deduplication list (concise executive view).
+  // The full findings set is tracked separately and pushed to the dashboard.
+  const displayFindings = synthesis?.deduplicatedFindings ?? results.flatMap((r) => r.findings);
+  const totalCount = allFindings?.length ?? displayFindings.length;
 
-  if (allFindings.length === 0) {
+  if (displayFindings.length === 0 && totalCount === 0) {
     console.log(chalk.green("\n  ✓ No findings detected.\n"));
     return;
   }
 
-  console.log(`\n${chalk.bold("Findings")}  ${chalk.gray(`(${allFindings.length} total after deduplication)`)}`);
+  const totalNote = totalCount > displayFindings.length
+    ? chalk.gray(` (+${totalCount - displayFindings.length} from static/subchain scanners — all saved to dashboard)`)
+    : "";
+  console.log(`\n${chalk.bold("Findings")}  ${chalk.gray(`(${displayFindings.length} AI-curated`)}${totalNote}${chalk.gray(")")}`);
 
   const severityOrder = ["critical", "high", "medium", "low", "info"];
   const colors: Record<string, (s: string) => string> = {
@@ -54,7 +59,7 @@ export function renderAIReport(results: AgentResult[], synthesis: ReportSynthesi
   };
 
   for (const sev of severityOrder) {
-    const group = allFindings.filter((f) => f.severity === sev);
+    const group = displayFindings.filter((f) => f.severity === sev);
     if (!group.length) continue;
 
     const badge = (colors[sev] ?? chalk.white)(` ${sev.toUpperCase()} `);
