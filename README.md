@@ -45,8 +45,11 @@ It was built because incidents like the [ua-parser-js hijack](https://github.com
 ```bash
 npm install -g breachscope
 
-# Basic scan — auto-detects language, runs everything
+# Scan a local project — auto-detects language, runs everything
 breachscope scan
+
+# Probe a live URL only — skips static scanners automatically (no project detected)
+breachscope scan --url https://yourapp.com
 
 # Maximum coverage — deep, all modes, AI agents, active pentest
 breachscope scan --mode deep --breach --bug --ai --browser --url https://yourapp.com -v
@@ -157,7 +160,7 @@ Shorthand: bs scan, bs login, bs deps, etc.
 | `--bug` | — | Bug mode: deep code audit, injection, deserialization, auth |
 | `--breach --bug` | — | Full mode: both combined — 66 patterns, all scanners |
 | `-t, --target` | `all` | Scope: `all` \| `dependency` \| `toolchain` \| `code` \| `blackbox` \| `smoke` |
-| `-u, --url` | — | Target URL for blackbox, smoke, and browser pentest |
+| `-u, --url` | — | Target URL for blackbox, smoke, and browser pentest. Static scanners auto-skip when no local project is detected. |
 | `-o, --output` | `console` | Output: `console` \| `json` \| `sarif` |
 | `-f, --file` | — | Write output to file |
 | `--ci` | — | Exit 1 if findings exceed severity threshold |
@@ -201,8 +204,12 @@ breachscope scan --mode deep --breach --bug --ai --browser --url https://yourapp
 Launches an authenticated Playwright browser that actively attacks your running application:
 
 ```bash
+# From any directory — no project needed, goes straight to the attack
 breachscope scan --browser --url https://yourapp.com --ai
 # Prompts for: login URL, username, password
+
+# From your project root — also scans local code + dependencies
+cd my-project && breachscope scan --browser --url https://yourapp.com --ai
 ```
 
 **Attacks executed:**

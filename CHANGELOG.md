@@ -6,6 +6,13 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Smart project detection** — when running `breachscope scan --url <url>` from a directory with no project manifest (`package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, `Gemfile`, `pyproject.toml`), the dependency, code, toolchain, and sub-toolchain scanners are automatically skipped. URL-targeted scans go straight to blackbox + smoke. Scanners still run in full when a codebase is present alongside a URL.
+
+---
+
 ## [0.1.0] — 2026-04-25
 
 ### Added

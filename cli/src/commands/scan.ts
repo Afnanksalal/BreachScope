@@ -1,5 +1,7 @@
 import ora from "ora";
 import chalk from "chalk";
+import fs from "fs";
+import path from "path";
 import { loadConfig } from "../core/config.js";
 import { logger } from "../core/logger.js";
 import { fetchRemoteConfig, syncRemoteConfig } from "../core/remote-config.js";
@@ -87,11 +89,17 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   // breach mode: deps + toolchain + supply chain; skip code quality patterns
   // bug mode: deep code audit + deps for known-vuln versions; skip toolchain/subchain
   // all mode: everything
+  //
+  // When target="all" and no local project is detected (URL-only run), skip static
+  // scanners automatically. Explicit --target flags always run regardless.
+
+  const PROJECT_MANIFESTS = ["package.json", "requirements.txt", "go.mod", "Cargo.toml", "Gemfile", "pyproject.toml"];
+  const isProjectDir = PROJECT_MANIFESTS.some((m) => fs.existsSync(path.join(cwd, m)));
 
   const isFull = scanMode === "full";
-  const runDeps      = target === "all" || target === "dependency";
-  const runCode      = target === "all" || target === "code";
-  const runToolchain = (target === "all" || target === "toolchain") && (isFull || scanMode !== "bug");
+  const runDeps      = target === "dependency" || (target === "all" && isProjectDir);
+  const runCode      = target === "code"       || (target === "all" && isProjectDir);
+  const runToolchain = (target === "toolchain" || (target === "all" && isProjectDir)) && (isFull || scanMode !== "bug");
 
   if (runDeps) {
     const spinner = ora("Scanning dependencies...").start();
@@ -164,7 +172,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
 
   // ── Sub-toolchain scan (skipped in bug mode — not supply chain focused) ──────
   let subchainResult: SubchainScanResult | null = null;
-  const shouldRunSubchain = (target === "all" || target === "dependency") && (isFull || scanMode !== "bug");
+  const shouldRunSubchain = (target === "dependency" || (target === "all" && isProjectDir)) && (isFull || scanMode !== "bug");
   if (shouldRunSubchain) {
     try {
       subchainResult = await runSubchainScan(cwd, mode, config.subchain);
