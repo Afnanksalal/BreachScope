@@ -1,0 +1,246 @@
+# BreachScope — Full Documentation
+
+> Open-source CLI and dashboard for detecting supply chain attacks, toolchain misconfigurations, and code vulnerabilities. Scan your entire stack from a single command.
+
+Homepage: https://breachscoope.vercel.app
+Docs: https://breachscoope.vercel.app/docs
+GitHub: https://github.com/breachscope/breachscope
+
+---
+
+## Installation
+
+```bash
+# npm (global)
+npm install -g breachscope
+
+# Verify
+breachscope --version
+```
+
+---
+
+## Quick Start
+
+```bash
+cd your-project
+breachscope scan
+```
+
+This runs dependency scanning, static code audit, and toolchain checks on the current directory. Results print to the terminal. If logged into the dashboard, results are pushed automatically.
+
+---
+
+## Commands
+
+### breachscope scan [options]
+
+Full security scan. Runs all enabled scanners sequentially.
+
+Options:
+  --target <type>     dependency | code | toolchain | blackbox | smoke | all (default: all)
+  --mode <depth>      basic | major | deep (default: basic)
+  --url <url>         Target URL for blackbox and smoke scanners
+  --ai                Enable AI multi-agent analysis with live API probing
+  --output <format>   console | json (default: console)
+  --file <path>       Write JSON report to file
+  --ci                Exit code 1 if findings exceed threshold
+  --config <path>     Path to breachscope.yaml
+  --verbose           Debug output
+
+### breachscope login
+
+Authenticate the CLI with your BreachScope dashboard using a device authorization flow. Opens a browser window, waits for you to log in, then stores a credential token at ~/.config/breachscope/credentials.json. After login, the CLI automatically syncs settings from the dashboard and pushes scan results after each run.
+
+### breachscope logout
+
+Remove stored credentials from this machine.
+
+### breachscope whoami
+
+Show current authentication status, token prefix, and dashboard URL.
+
+### breachscope audit [options]
+
+Static code audit only. Equivalent to `breachscope scan --target code`.
+
+### breachscope deps [options]
+
+Dependency and supply chain scan only. Equivalent to `breachscope scan --target dependency`.
+
+### breachscope probe <url> [options]
+
+Blackbox security probe against a live URL. Checks security headers, CORS configuration, exposed internal paths, HTTP method abuse, and more.
+
+### breachscope smoke <url> [options]
+
+Smoke tests against a live URL. Checks error message leakage, unauthenticated admin route access, payload abuse, and internal state exposure.
+
+### breachscope init [options]
+
+Create a breachscope.yaml config file in the current directory.
+
+---
+
+## Scan Targets
+
+### dependency
+Audits package.json, lockfiles, and the full dependency graph.
+- CVE lookup via OSV (osv.dev) and npm advisory database
+- OpenSSF Scorecard integration for maintainer trust scoring
+- Known-compromised package detection (node-ipc, event-stream, etc.)
+- Wildcard version pinning detection (^, ~, *)
+- Missing package-lock.json or yarn.lock integrity hashes
+- Recursive sub-dependency traversal (configurable depth with --mode)
+
+### code
+Static analysis of all source files.
+- Hardcoded secrets and API keys (regex + entropy analysis)
+- eval() and Function() constructor usage
+- SQL injection patterns
+- Path traversal vulnerabilities
+- Prototype pollution (Object.assign with user input, __proto__ mutation)
+- Weak cryptography (MD5, SHA1, DES usage)
+- Insecure deserialization
+- XSS patterns in server-rendered templates
+
+### toolchain
+Probes live third-party service APIs for misconfigurations. Without --ai, uses static rule-based checks. With --ai, uses an AI agent that makes real HTTP requests to the APIs.
+
+Services checked:
+- Supabase: RLS enforcement, anon key JWT role, exposed tables, auth settings (autoconfirm, signup restrictions, MFA), storage bucket visibility, edge function exposure
+- Vercel: preview environment secrets, plain-text env vars, deployment log secret scanning, unverified custom domains, CORS headers
+- GitHub: branch protection (main/master), status checks required, Actions permissions, secret scanning, push protection, Dependabot, CODEOWNERS, workflow tag pinning, environment protection rules
+- All services in the catalog: Supabase, Firebase, Clerk, Auth0, Vercel, GitHub, AWS, Cloudflare, Stripe, SendGrid, Resend, Twilio, Neon, PlanetScale, Upstash, OpenAI, Anthropic, Pinecone, Sentry, Datadog
+
+### blackbox
+Adversarial HTTP probing against a live URL (requires --url).
+- Security headers: Strict-Transport-Security, Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+- CORS misconfiguration (wildcard origins, credentialed cross-origin)
+- Exposed internal paths: /.env, /.git/config, /.git/HEAD, /wp-admin, /phpinfo.php, /server-status, /api/admin, /api/debug
+- HTTP method abuse (PUT, DELETE, TRACE on sensitive endpoints)
+- Information disclosure in error responses
+
+### smoke
+Functional security smoke tests (requires --url).
+- Unauthenticated access to admin routes
+- Error message leakage (stack traces, internal paths, DB errors in responses)
+- Payload size abuse (large body handling)
+- Internal state exposure in API responses
+
+---
+
+## AI Mode (--ai flag)
+
+When --ai is set, BreachScope runs an additional multi-agent analysis layer on top of the static scanners.
+
+Agents:
+1. Dependency Agent — cross-references findings with live CVE databases and recent breach reports
+2. Code Agent — deeper semantic analysis, cross-file taint tracking
+3. Toolchain Agent — makes live HTTP requests to your actual service APIs using credentials from config or interactive prompt
+4. Synthesis Agent — deduplicates findings across all agents, produces a unified risk assessment
+
+Interactive live probing: if --ai is set and stdin is a TTY, BreachScope detects all third-party services in your project (from package.json and .env files), then asks for credentials service by service (secrets are masked). The AI agent makes real API calls to each service, adapts based on responses, and destroys credentials from memory immediately after probing.
+
+Requirements for --ai:
+- OPENAI_API_KEY environment variable, OR stored in the dashboard settings (fetched automatically if logged in)
+- FIRECRAWL_API_KEY for web intelligence (optional but recommended)
+
+---
+
+## Configuration (breachscope.yaml)
+
+```yaml
+output:
+  format: console  # console | json
+
+thresholds:
+  failOn: high     # critical | high | medium | low
+
+toolchain:
+  supabase:
+    url: https://xxx.supabase.co
+    anonKey: eyJ...
+  vercel:
+    token: xxx
+    projectId: prj_xxx
+  github:
+    token: ghp_xxx
+    repo: owner/repo
+
+subchain:
+  enabled: true
+  depth: 2
+```
+
+---
+
+## Dashboard Integration
+
+The web dashboard at breachscoope.vercel.app provides:
+- Full scan history with findings browser
+- Per-finding detail view with remediation steps
+- API key management (stored encrypted with AES-256-GCM)
+- Settings sync: mode/scanMode defaults sync bidirectionally between CLI and dashboard
+- CLI authentication via device flow (browser-based, no password sharing)
+
+### Connecting the CLI
+
+```bash
+breachscope login
+# Opens browser → log in → CLI stores token automatically
+```
+
+After login:
+- Scan results are pushed to the dashboard after every scan
+- Dashboard settings (default mode, scan mode) are applied automatically
+- OpenAI and Firecrawl API keys stored in the dashboard are fetched at scan time
+
+### Dashboard API (for integrations)
+
+POST /api/scans — Submit a scan result (requires Bearer token from CLI login)
+GET /api/scans — List scans for the authenticated user
+GET /api/cli/config — Fetch settings and encrypted API keys (requires Bearer token)
+PATCH /api/cli/config — Update default mode/scanMode settings (requires Bearer token)
+
+---
+
+## Severity Levels
+
+- critical: Immediate risk, likely exploitable, data exposure or full compromise possible
+- high: Significant risk, requires prompt remediation
+- medium: Moderate risk, should be addressed in the near term
+- low: Minor issue, best practice violation or low-impact finding
+- info: Informational, no direct security impact
+
+---
+
+## CI/CD Integration
+
+```yaml
+# GitHub Actions example
+- name: BreachScope security scan
+  run: |
+    npm install -g breachscope
+    breachscope scan --ci --mode basic
+  env:
+    BREACHSCOPE_TOKEN: ${{ secrets.BREACHSCOPE_TOKEN }}
+```
+
+The --ci flag causes BreachScope to exit with code 1 if any findings meet or exceed the configured threshold (default: high). Use in pre-merge checks to block vulnerable dependencies from reaching production.
+
+---
+
+## Technology Stack
+
+CLI: TypeScript, Node.js 18+, Commander.js, Axios, OpenAI SDK, Firecrawl
+Web dashboard: Next.js 16, Drizzle ORM, Neon (PostgreSQL), NextAuth v5, Tailwind CSS
+Database: PostgreSQL via Neon serverless HTTP driver
+Encryption: AES-256-GCM for stored API keys
+Auth: JWT sessions, Credentials + optional GitHub/Google OAuth
+
+---
+
+## License
+
+MIT — free to use, modify, and distribute.

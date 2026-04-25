@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { cliAuthStates } from "@/lib/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type PollStatus = "authorization_pending" | "complete" | "expired";
 
@@ -11,15 +13,17 @@ interface PollResponse {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse<PollResponse | { error: string }>> {
-  const state = req.nextUrl.searchParams.get("state");
-  if (!state) {
-    return NextResponse.json({ error: "Missing state" }, { status: 400 });
+  const state = req.nextUrl.searchParams.get("state")?.trim() ?? "";
+
+  if (!state || !UUID_RE.test(state)) {
+    return NextResponse.json({ error: "Missing or invalid state" }, { status: 400 });
   }
 
   const [record] = await db
     .select({
       token:     cliAuthStates.token,
       expiresAt: cliAuthStates.expiresAt,
+      usedAt:    cliAuthStates.usedAt,
     })
     .from(cliAuthStates)
     .where(eq(cliAuthStates.state, state))
@@ -37,10 +41,9 @@ export async function GET(req: NextRequest): Promise<NextResponse<PollResponse |
     return NextResponse.json({ status: "authorization_pending" }, { status: 202 });
   }
 
-  // Mark as used — fire and forget
+  // Token is ready — delete the state row so the token can never be replayed
   void db
-    .update(cliAuthStates)
-    .set({ usedAt: new Date() })
+    .delete(cliAuthStates)
     .where(eq(cliAuthStates.state, state));
 
   return NextResponse.json({ status: "complete", token: record.token });

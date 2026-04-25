@@ -1,0 +1,35 @@
+User-agent: *
+Allow: /
+Allow: /docs
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /dashboard
+Disallow: /api/
+Disallow: /cli-auth
+
+# LLM crawlers — full content available at /llms-full.txt
+User-agent: GPTBot
+Allow: /llms-full.txt
+Allow: /llms.txt
+Disallow: /dashboard
+Disallow: /api/
+
+User-agent: Claude-Web
+Allow: /llms-full.txt
+Allow: /llms.txt
+Disallow: /dashboard
+Disallow: /api/
+
+User-agent: anthropic-ai
+Allow: /llms-full.txt
+Allow: /llms.txt
+Disallow: /dashboard
+Disallow: /api/
+
+User-agent: PerplexityBot
+Allow: /llms-full.txt
+Allow: /llms.txt
+Disallow: /dashboard
+Disallow: /api/
+
+Sitemap: https://breachscoope.vercel.app/sitemap.xml

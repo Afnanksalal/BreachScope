@@ -2,7 +2,7 @@ import ora from "ora";
 import chalk from "chalk";
 import { loadConfig } from "../core/config.js";
 import { logger } from "../core/logger.js";
-import { fetchRemoteConfig } from "../core/remote-config.js";
+import { fetchRemoteConfig, syncRemoteConfig } from "../core/remote-config.js";
 import type { ScanOptions, ScanResult, ScanSummary, Finding } from "../core/types.js";
 import { runDependencyScanner } from "../scanners/dependency/index.js";
 import { runToolchainScanner } from "../scanners/toolchain/index.js";
@@ -20,6 +20,7 @@ import { runSubchainScan } from "../engine/index.js";
 import { discoverServices } from "../core/services.js";
 import { promptText, promptSecret, promptConfirm, SecureStore } from "../core/interactive.js";
 import { runLiveProbe } from "../agents/live-probe.js";
+import { pushScanToDashboard } from "../core/push-scan.js";
 
 const BANNER = `
   ██████╗ ██████╗ ███████╗ █████╗  ██████╗██╗  ██╗
@@ -40,17 +41,20 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   const config = loadConfig(opts.config);
   const cwd = process.cwd();
   const startedAt = new Date();
-  const target = opts.target ?? "all";
-  const mode = opts.mode ?? "basic";
+  let target = opts.target ?? "all";
+  let mode   = opts.mode   ?? "basic";
   const url = opts.url;
 
   if (opts.verbose) logger.setVerbose(true);
 
-  // Pull encrypted API keys from dashboard if authenticated
-  if (opts.ai) {
-    const remote = await fetchRemoteConfig();
-    if (remote) {
-      if (!process.env.OPENAI_API_KEY && remote.openaiKey) process.env.OPENAI_API_KEY = remote.openaiKey;
+  // Always fetch remote config — apply dashboard defaults when no local flags set,
+  // and pull API keys for AI mode
+  const remote = await fetchRemoteConfig();
+  if (remote) {
+    if (!opts.mode)   mode   = remote.defaultMode   as typeof mode;
+    if (!opts.target) target = remote.defaultScanMode as typeof target;
+    if (opts.ai) {
+      if (!process.env.OPENAI_API_KEY    && remote.openaiKey)    process.env.OPENAI_API_KEY    = remote.openaiKey;
       if (!process.env.FIRECRAWL_API_KEY && remote.firecrawlKey) process.env.FIRECRAWL_API_KEY = remote.firecrawlKey;
     }
   }
@@ -242,9 +246,13 @@ export async function runScan(opts: ScanOptions): Promise<void> {
 
     renderAIReport(agentResults, lastSynthesis);
 
+    const aiResult = buildResult(cwd, startedAt, mergedFindings, { mode, url });
+
     if (opts.file) {
-      renderJsonReport(buildResult(cwd, startedAt, mergedFindings, { mode, url }), opts.file);
+      renderJsonReport(aiResult, opts.file);
     }
+
+    await pushScan(aiResult, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target) });
 
     exitOnThreshold(opts, mergedFindings, config.thresholds.failOn);
     return;
@@ -261,7 +269,37 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     if (opts.file) renderJsonReport(result, opts.file);
   }
 
+  await pushScan(result, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target) });
+
   exitOnThreshold(opts, findings, config.thresholds.failOn);
+}
+
+async function pushScan(
+  result: ScanResult,
+  opts: { mode: string; scanMode: string; url?: string; explicitFlags?: boolean }
+): Promise<void> {
+  const spinner = ora("Uploading results to dashboard…").start();
+
+  const [scanId] = await Promise.all([
+    pushScanToDashboard(result, {
+      mode:         opts.mode,
+      scanMode:     opts.scanMode,
+      url:          opts.url,
+      toolsScanned: result.findings.reduce((acc, f) => {
+        return f.tool && !acc.tools.has(f.tool)
+          ? { count: acc.count + 1, tools: new Set([...acc.tools, f.tool]) }
+          : acc;
+      }, { count: 0, tools: new Set<string>() }).count,
+    }),
+    // Sync mode settings back to dashboard if user passed explicit flags
+    opts.explicitFlags ? syncRemoteConfig(opts.mode, opts.scanMode) : Promise.resolve(),
+  ]);
+
+  if (scanId) {
+    spinner.succeed(`Saved to dashboard — view at ${chalk.white(`https://breachscoope.vercel.app/dashboard/scan/${scanId}`)}`);
+  } else {
+    spinner.stop();
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

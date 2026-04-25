@@ -4,8 +4,14 @@ import { Footer } from "@/components/Footer";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Docs — BreachScope",
-  description: "BreachScope CLI documentation — commands, configuration, integrations.",
+  title: "Documentation",
+  description: "BreachScope CLI documentation — installation, commands, configuration, AI scanning, and integrations.",
+  alternates: { canonical: "https://breachscoope.vercel.app/docs" },
+  openGraph: {
+    title: "BreachScope Documentation",
+    description: "Full reference for the BreachScope CLI — scan commands, AI mode, toolchain probing, and dashboard integration.",
+    url: "https://breachscoope.vercel.app/docs",
+  },
 };
 
 const SECTIONS = [

@@ -1,0 +1,12 @@
+{
+  "name": "BreachScope",
+  "short_name": "BreachScope",
+  "description": "Supply Chain & Toolchain Security Scanner",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030305",
+  "theme_color": "#030305",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

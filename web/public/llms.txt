@@ -1,0 +1,52 @@
+# BreachScope
+
+> Open-source CLI and dashboard for detecting supply chain attacks, toolchain misconfigurations, and code vulnerabilities across your entire stack — before they become incidents.
+
+BreachScope is a security scanner for developers and DevSecOps teams. It scans dependencies, audits source code, probes live third-party service APIs (Supabase, Vercel, GitHub, Stripe, etc.), and runs blackbox HTTP probes against your running app — all from a single CLI command.
+
+## Key Links
+
+- [Homepage](https://breachscoope.vercel.app)
+- [Documentation](https://breachscoope.vercel.app/docs)
+- [Full documentation for LLMs](https://breachscoope.vercel.app/llms-full.txt)
+
+## Installation
+
+```bash
+npm install -g breachscope
+```
+
+## Core Commands
+
+- `breachscope scan` — Full scan: dependencies, code, toolchain, blackbox
+- `breachscope scan --ai` — AI-powered multi-agent scan with live API probing
+- `breachscope scan --target dependency` — Dependency/supply-chain only
+- `breachscope scan --target code` — Static code audit only
+- `breachscope scan --target toolchain` — Toolchain misconfiguration only
+- `breachscope scan --target blackbox --url https://yourapp.com` — Blackbox HTTP probe
+- `breachscope scan --mode deep` — Deep recursive scan (basic | major | deep)
+- `breachscope login` — Authenticate CLI with the dashboard (device flow)
+- `breachscope audit` — Static code audit only
+- `breachscope deps` — Dependency scan only
+- `breachscope probe <url>` — Blackbox probe a URL
+- `breachscope smoke <url>` — Smoke test a URL
+
+## What It Detects
+
+- Vulnerable dependencies (CVEs via OSV, npm advisories, OpenSSF Scorecard)
+- Supply chain attacks (compromised packages, wildcard versions, missing integrity hashes)
+- Hardcoded secrets in source code
+- Supabase RLS misconfigurations and exposed anon keys
+- Vercel preview environment secret leakage
+- GitHub unprotected branches and overprivileged tokens
+- CORS misconfigurations and missing security headers
+- Exposed internal paths (/.env, /.git, /admin)
+- Weak cryptography, SQL injection patterns, prototype pollution
+
+## Supported Services (Live Probing)
+
+Supabase, Firebase, Clerk, Auth0, Vercel, GitHub, AWS, Cloudflare, Stripe, SendGrid, Resend, Twilio, Neon, PlanetScale, Upstash, OpenAI, Anthropic, Pinecone, Sentry, Datadog
+
+## Dashboard
+
+The web dashboard at breachscoope.vercel.app provides scan history, per-finding detail views, API key management, and settings sync to the CLI. Authentication uses NextAuth v5 with credentials, GitHub OAuth, and Google OAuth.

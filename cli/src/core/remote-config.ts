@@ -54,3 +54,21 @@ export async function fetchRemoteConfig(): Promise<RemoteConfig | null> {
 export function clearRemoteConfigCache(): void {
   cached = null;
 }
+
+export async function syncRemoteConfig(mode: string, scanMode: string): Promise<void> {
+  const creds = loadCredentials();
+  if (!creds) return;
+
+  try {
+    await fetch(`${creds.dashboardUrl}/api/cli/config`, {
+      method:  "PATCH",
+      headers: {
+        "Content-Type":  "application/json",
+        "Authorization": `Bearer ${creds.token}`,
+      },
+      body: JSON.stringify({ defaultMode: mode, defaultScanMode: scanMode }),
+    });
+  } catch {
+    // fire-and-forget — never block a scan over this
+  }
+}
