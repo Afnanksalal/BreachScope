@@ -40,6 +40,8 @@ export async function buildAgentContext(
     cwd,
     ignore: IGNORE_DIRS.map((d) => `**/${d}/**`),
     absolute: true,
+    followSymbolicLinks: false,
+    suppressErrors: true,
   });
 
   logger.debug(`Found ${allFiles.length} source files`);

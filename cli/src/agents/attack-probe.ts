@@ -1016,7 +1016,7 @@ Begin.`;
         messages: [{ role: "user", content: userMessage }],
         tools: TOOLS,
         temperature: 0.05,
-        maxTokens: 32768,
+        maxTokens: 16000,
       },
       async (toolName, args) => {
         logger.debug(`  [attack] ${toolName}(${JSON.stringify(args).slice(0, 120)})`);
