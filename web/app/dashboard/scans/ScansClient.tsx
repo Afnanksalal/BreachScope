@@ -7,8 +7,8 @@ import type { Scan } from "@/lib/schema";
 
 const MODE_BADGE: Record<string, string> = {
   breach: "bg-red-500/15 text-red-300 border-red-500/20",
-  bug:    "bg-white/8 text-white/60 border-white/12",
-  all:    "bg-white/8 text-white/50 border-white/10",
+  bug:    "bg-yellow-500/15 text-yellow-300 border-yellow-500/20",
+  all:    "bg-white/[0.08] text-white/50 border-white/[0.10]",
 };
 
 const DEPTH_BADGE: Record<string, string> = {

@@ -7,31 +7,33 @@ import { runToolchainAgent } from "./toolchain.js";
 import { runBlackboxAgent } from "./blackbox.js";
 import { runReportAgent } from "./report.js";
 
-const SYSTEM = `You are the BreachScope Orchestrator — a senior security architect overseeing a multi-agent breach detection pipeline.
+const SYSTEM_BASE = `You are the BreachScope Orchestrator — a senior security architect overseeing a multi-agent breach detection pipeline.
 
 Your job:
-1. Receive a project profile (dependencies, tech stack, URL, toolchain config).
-2. Decide which specialist agents to run based on what will be most impactful.
+1. Receive a project profile (dependencies, tech stack, URL, toolchain config, and scan mode).
+2. Decide which specialist agents to run based on what will be most impactful for the given mode.
 3. Return a JSON plan: { "agents": [...], "rationale": "..." }
 
 Available agents:
-- "dependency"  — supply chain analysis of npm packages, lockfiles, registries
-- "code"        — deep static analysis of source files for secrets, vuln patterns, insecure APIs
-- "toolchain"   — live API probing of Supabase, Vercel, GitHub for misconfigs
-- "blackbox"    — HTTP probing of a live URL (security headers, CORS, exposed paths)
+- "dependency"  — supply chain analysis: CVEs, malicious packages, typosquatting, recently-published, few-maintainer risks
+- "code"        — deep static analysis: secrets, injection flaws, auth bypasses, insecure APIs, dangerous patterns
+- "toolchain"   — live API probing of Supabase, Vercel, GitHub for misconfigurations and leaked permissions
+- "blackbox"    — HTTP probing of a live URL: security headers, CORS, exposed paths, error leakage
 
-Rules:
-- Always include "dependency" and "code" unless explicitly told to skip.
-- Include "toolchain" only if at least one toolchain credential is present.
-- Include "blackbox" only if a target URL is provided.
-- Return ONLY valid JSON. No markdown, no explanation outside the JSON.`;
+Scan mode rules:
+- "breach": ALWAYS include "dependency" and "code" (credential/secret focus). Include "toolchain" if any credential is present. Include "blackbox" if URL provided. Focus on CVEs, supply chain incidents, and leaked credentials.
+- "bug": ALWAYS include "code" (deep vulnerability analysis). Include "dependency" only to cross-reference known-vulnerable versions. Skip "toolchain" unless explicitly present. Focus on injection, auth flaws, logic bugs.
+- "all": Include "dependency" and "code" always. Include "toolchain" if credentials present. Include "blackbox" if URL provided.
+
+Return ONLY valid JSON. No markdown, no explanation outside the JSON.`;
 
 export async function runOrchestrator(ctx: AgentContext): Promise<AgentResult[]> {
   logger.section("AI Orchestrator");
-  logger.info("Planning agent dispatch...");
+  const scanMode = ctx.scanMode ?? "all";
+  logger.info(`Planning agent dispatch [${scanMode.toUpperCase()} mode]...`);
 
-  // Build a compact project profile for the planner
   const profile = {
+    scanMode,
     dependencyCount: ctx.dependencies.length,
     sampleDeps: ctx.dependencies.slice(0, 30),
     hasUrl: !!ctx.url,
@@ -43,7 +45,7 @@ export async function runOrchestrator(ctx: AgentContext): Promise<AgentResult[]>
   };
 
   const { content, tokensUsed } = await complete({
-    system: SYSTEM,
+    system: SYSTEM_BASE,
     messages: [{ role: "user", content: JSON.stringify(profile, null, 2) }],
     temperature: 0.1,
     maxTokens: 512,
@@ -53,17 +55,13 @@ export async function runOrchestrator(ctx: AgentContext): Promise<AgentResult[]>
   try {
     plan = JSON.parse(content) as OrchestratorPlan;
   } catch {
-    // Fallback: run everything applicable
-    const agents: AgentName[] = ["dependency", "code"];
-    if (profile.hasSupabase || profile.hasVercel || profile.hasGitHub) agents.push("toolchain");
-    if (profile.hasUrl) agents.push("blackbox");
-    plan = { agents, rationale: "Fallback plan — JSON parse failed." };
+    // Deterministic fallback based on mode — don't trust AI parse failure
+    plan = buildFallbackPlan(scanMode, profile);
   }
 
   logger.info(`Plan: [${plan.agents.join(", ")}]`);
   logger.debug(`Rationale: ${plan.rationale}`);
 
-  // Dispatch agents
   const AGENT_RUNNERS: Record<AgentName, (ctx: AgentContext) => Promise<AgentResult>> = {
     dependency: runDependencyAgent,
     code: runCodeAgent,
@@ -89,10 +87,34 @@ export async function runOrchestrator(ctx: AgentContext): Promise<AgentResult[]>
     }
   }
 
-  // Always synthesize a report
   logger.section("Agent: report");
   const report = await runReportAgent({ ...ctx, existingFindings: results.flatMap((r) => r.findings) });
   results.push(report);
 
   return results;
+}
+
+function buildFallbackPlan(
+  scanMode: string,
+  profile: { hasUrl: boolean; hasSupabase: boolean; hasVercel: boolean; hasGitHub: boolean }
+): OrchestratorPlan {
+  const hasToolchain = profile.hasSupabase || profile.hasVercel || profile.hasGitHub;
+
+  if (scanMode === "breach") {
+    const agents: AgentName[] = ["dependency", "code"];
+    if (hasToolchain) agents.push("toolchain");
+    if (profile.hasUrl) agents.push("blackbox");
+    return { agents, rationale: "Breach mode: supply chain CVE + credential hunt + toolchain misconfig." };
+  }
+
+  if (scanMode === "bug") {
+    const agents: AgentName[] = ["code", "dependency"];
+    if (profile.hasUrl) agents.push("blackbox");
+    return { agents, rationale: "Bug mode: deep code audit + vulnerable version cross-reference." };
+  }
+
+  const agents: AgentName[] = ["dependency", "code"];
+  if (hasToolchain) agents.push("toolchain");
+  if (profile.hasUrl) agents.push("blackbox");
+  return { agents, rationale: "All mode: full spectrum scan." };
 }

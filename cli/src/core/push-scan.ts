@@ -55,6 +55,7 @@ export async function pushScanToDashboard(
       severity:    f.severity,
       category:    f.category,
       description: f.description,
+      detail:      f.detail      ?? undefined,
       remediation: f.remediation ?? undefined,
       tool:        f.tool        ?? undefined,
       file:        f.file        ?? undefined,

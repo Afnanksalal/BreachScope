@@ -134,6 +134,12 @@ function FindingCard({ finding }: { finding: Finding }) {
       {open && (
         <div className="px-5 pb-5 space-y-3 border-t border-white/[0.04] pt-4">
           <p className="text-white/55 text-sm leading-relaxed">{finding.description}</p>
+          {finding.detail && (
+            <div className="p-3 rounded-lg bg-black/30 border border-white/[0.06] overflow-x-auto">
+              <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider mb-1.5">Matched Code</p>
+              <pre className="text-red-300/80 text-xs font-mono whitespace-pre-wrap break-all leading-relaxed">{finding.detail}</pre>
+            </div>
+          )}
           {finding.remediation && (
             <div className="p-3 rounded-lg bg-white/[0.04] border border-white/[0.06]">
               <p className="text-white/30 text-[10px] font-semibold uppercase tracking-wider mb-1.5">Fix</p>
@@ -484,11 +490,251 @@ function downloadFile(content: string, filename: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
+async function generatePdf(
+  scan: Scan,
+  findings: Finding[],
+  toolRiskData: ToolRiskEntry[],
+  probeActivity: ProbeActivity | null,
+  slug: string,
+  date: string
+) {
+  const { jsPDF } = await import("jspdf");
+  const { default: autoTable } = await import("jspdf-autotable");
+
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  // jspdf-autotable adds lastAutoTable at runtime but TypeScript doesn't know
+  const docAny = doc as unknown as { lastAutoTable?: { finalY: number } };
+  const W = doc.internal.pageSize.getWidth();
+  const MARGIN = 16;
+  let y = MARGIN;
+
+  const addPage = () => { doc.addPage(); y = MARGIN; };
+  const checkY = (need: number) => { if (y + need > 275) addPage(); };
+
+  // ── Cover / header ─────────────────────────────────────────────────────────
+  doc.setFillColor(10, 10, 14);
+  doc.rect(0, 0, W, 50, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(22);
+  doc.setFont("helvetica", "bold");
+  doc.text("BreachScope", MARGIN, 22);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(180, 180, 180);
+  doc.text("Security Audit Report", MARGIN, 31);
+  doc.setFontSize(9);
+  doc.setTextColor(120, 120, 120);
+  doc.text(`Generated ${date}`, W - MARGIN, 31, { align: "right" });
+  y = 58;
+
+  // ── Metadata block ─────────────────────────────────────────────────────────
+  doc.setFontSize(9);
+  doc.setTextColor(60, 60, 60);
+  const meta = [
+    ["Project", scan.project ?? "Unknown"],
+    ["Scan Mode", `${(scan.scanMode ?? "all").toUpperCase()} / Depth: ${(scan.mode ?? "basic").toUpperCase()}`],
+    ["Duration", elapsed(scan.startedAt, scan.completedAt)],
+    ...(scan.url ? [["Target URL", scan.url]] : []),
+  ];
+  for (const [k, v] of meta) {
+    doc.setFont("helvetica", "bold"); doc.text(`${k}:`, MARGIN, y);
+    doc.setFont("helvetica", "normal"); doc.text(String(v), MARGIN + 28, y);
+    y += 5.5;
+  }
+  y += 4;
+
+  // ── Summary counts ─────────────────────────────────────────────────────────
+  doc.setDrawColor(230, 230, 230);
+  doc.line(MARGIN, y, W - MARGIN, y);
+  y += 6;
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(30, 30, 30);
+  doc.text("Executive Summary", MARGIN, y);
+  y += 7;
+
+  const sevCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const f of findings) {
+    const s = f.severity.toLowerCase() as keyof typeof sevCounts;
+    if (s in sevCounts) sevCounts[s]++;
+  }
+
+  const summaryColors: [string, number, [number,number,number]][] = [
+    ["Critical", sevCounts.critical, [239,68,68]],
+    ["High",     sevCounts.high,     [249,115,22]],
+    ["Medium",   sevCounts.medium,   [234,179,8]],
+    ["Low",      sevCounts.low,      [6,182,212]],
+  ];
+  const boxW = (W - MARGIN * 2 - 9) / 4;
+  let bx = MARGIN;
+  for (const [label, count, [r,g,b]] of summaryColors) {
+    doc.setFillColor(r,g,b);
+    doc.roundedRect(bx, y, boxW, 18, 2, 2, "F");
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(16); doc.setFont("helvetica", "bold");
+    doc.text(String(count), bx + boxW / 2, y + 10, { align: "center" });
+    doc.setFontSize(7); doc.setFont("helvetica", "normal");
+    doc.text(label, bx + boxW / 2, y + 15.5, { align: "center" });
+    bx += boxW + 3;
+  }
+  y += 26;
+
+  // ── Findings table ─────────────────────────────────────────────────────────
+  if (findings.length > 0) {
+    doc.setDrawColor(230,230,230);
+    doc.line(MARGIN, y, W - MARGIN, y);
+    y += 6;
+    doc.setFontSize(12); doc.setFont("helvetica","bold"); doc.setTextColor(30,30,30);
+    doc.text(`Findings (${findings.length})`, MARGIN, y);
+    y += 4;
+
+    const sevOrder: Record<string,number> = { critical:0, high:1, medium:2, low:3, info:4 };
+    const sorted = [...findings].sort((a,b) => (sevOrder[a.severity]??5) - (sevOrder[b.severity]??5));
+
+    const SEV_COLORS: Record<string,[number,number,number]> = {
+      critical: [239,68,68], high: [249,115,22], medium: [234,179,8], low: [6,182,212], info: [148,163,184],
+    };
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: MARGIN, right: MARGIN },
+      head: [["Severity","Category","Title","File","Remediation"]],
+      body: sorted.map((f) => [
+        f.severity.toUpperCase(),
+        f.category,
+        f.title,
+        f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : "—",
+        f.remediation ? f.remediation.slice(0, 120) + (f.remediation.length > 120 ? "…" : "") : "—",
+      ]),
+      styles: { fontSize: 7.5, cellPadding: 3, overflow: "linebreak", minCellHeight: 8 },
+      headStyles: { fillColor: [30,30,30], textColor: [255,255,255], fontStyle: "bold", fontSize: 8 },
+      columnStyles: {
+        0: { cellWidth: 18, fontStyle: "bold" },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 48 },
+        3: { cellWidth: 30 },
+        4: { cellWidth: "auto" },
+      },
+      didParseCell: (data) => {
+        if (data.column.index === 0 && data.section === "body") {
+          const sev = String(data.cell.raw).toLowerCase();
+          const [r,g,b] = SEV_COLORS[sev] ?? [148,163,184];
+          data.cell.styles.textColor = [r,g,b];
+        }
+      },
+      didDrawPage: () => { y = (docAny.lastAutoTable?.finalY ?? y) + 8; },
+    });
+    y = (docAny.lastAutoTable?.finalY ?? y) + 8;
+  }
+
+  // ── Dependency risk table ──────────────────────────────────────────────────
+  if (toolRiskData.length > 0) {
+    checkY(20);
+    doc.setDrawColor(230,230,230);
+    doc.line(MARGIN, y, W - MARGIN, y);
+    y += 6;
+    doc.setFontSize(12); doc.setFont("helvetica","bold"); doc.setTextColor(30,30,30);
+    doc.text(`Dependency Risk (${toolRiskData.length} packages)`, MARGIN, y);
+    y += 4;
+
+    const topRisk = [...toolRiskData].sort((a,b) => b.riskScore - a.riskScore).slice(0,40);
+    autoTable(doc, {
+      startY: y,
+      margin: { left: MARGIN, right: MARGIN },
+      head: [["Package","Kind","Risk","CVEs","OpenSSF","Maintainers","Weekly DLs"]],
+      body: topRisk.map((t) => [
+        t.name, t.kind,
+        `${t.riskScore}/100`,
+        String(t.osvCount),
+        t.scorecardScore !== undefined ? t.scorecardScore.toFixed(1) : "—",
+        t.maintainerCount !== undefined ? String(t.maintainerCount) : "—",
+        fmtNum(t.weeklyDownloads),
+      ]),
+      styles: { fontSize: 7, cellPadding: 2.5, overflow: "linebreak" },
+      headStyles: { fillColor: [30,30,30], textColor: [255,255,255], fontStyle: "bold", fontSize: 7.5 },
+      columnStyles: {
+        0: { cellWidth: 42, fontStyle: "bold" },
+        1: { cellWidth: 16 },
+        2: { cellWidth: 18 },
+        3: { cellWidth: 14 },
+        4: { cellWidth: 18 },
+        5: { cellWidth: 22 },
+        6: { cellWidth: "auto" },
+      },
+      didParseCell: (data) => {
+        if (data.column.index === 2 && data.section === "body") {
+          const score = parseInt(String(data.cell.raw));
+          if (score >= 75) data.cell.styles.textColor = [239,68,68];
+          else if (score >= 50) data.cell.styles.textColor = [249,115,22];
+          else if (score >= 25) data.cell.styles.textColor = [234,179,8];
+          else data.cell.styles.textColor = [34,197,94];
+        }
+      },
+      didDrawPage: () => { y = (docAny.lastAutoTable?.finalY ?? y) + 8; },
+    });
+    y = (docAny.lastAutoTable?.finalY ?? y) + 8;
+  }
+
+  // ── Probe activity ─────────────────────────────────────────────────────────
+  if (probeActivity?.services?.length || probeActivity?.attack) {
+    checkY(20);
+    doc.setDrawColor(230,230,230);
+    doc.line(MARGIN, y, W - MARGIN, y);
+    y += 6;
+    doc.setFontSize(12); doc.setFont("helvetica","bold"); doc.setTextColor(30,30,30);
+    doc.text("Probe Activity", MARGIN, y);
+    y += 6;
+
+    if (probeActivity.services?.length) {
+      for (const svc of probeActivity.services) {
+        checkY(10);
+        doc.setFontSize(9); doc.setFont("helvetica","bold"); doc.setTextColor(60,60,60);
+        doc.text(`${svc.name} (${svc.category}) — ${svc.findingsCount} finding(s), ${svc.tokensUsed.toLocaleString()} tokens`, MARGIN, y);
+        y += 5;
+        doc.setFontSize(7.5); doc.setFont("helvetica","normal"); doc.setTextColor(100,100,100);
+        for (const step of svc.steps.slice(0, 15)) {
+          checkY(5);
+          doc.text(`  • ${step}`, MARGIN + 2, y);
+          y += 4;
+        }
+        y += 2;
+      }
+    }
+
+    if (probeActivity.attack) {
+      const a = probeActivity.attack;
+      checkY(12);
+      doc.setFontSize(9); doc.setFont("helvetica","bold"); doc.setTextColor(60,60,60);
+      doc.text(`Active Penetration Test — ${a.url}`, MARGIN, y);
+      y += 5;
+      doc.setFontSize(7.5); doc.setFont("helvetica","normal"); doc.setTextColor(100,100,100);
+      doc.text(`${a.findingsCount} finding(s) · ${a.attacks.length} attacks · ${a.pagesVisited.length} pages visited`, MARGIN + 2, y);
+      y += 4;
+      for (const attack of a.attacks) {
+        checkY(5);
+        doc.text(`  • ${attack}`, MARGIN + 2, y); y += 4;
+      }
+    }
+  }
+
+  // ── Footer on every page ───────────────────────────────────────────────────
+  const pageCount = doc.internal.pages.length - 1;
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(160,160,160);
+    doc.text(`BreachScope Security Report · ${date}`, MARGIN, 292);
+    doc.text(`Page ${i} of ${pageCount}`, W - MARGIN, 292, { align: "right" });
+  }
+
+  doc.save(`${slug}-${date}.pdf`);
+}
+
 function ReportTab({
   scan, findings, toolRiskData, probeActivity,
 }: { scan: Scan; findings: Finding[]; toolRiskData: ToolRiskEntry[]; probeActivity: ProbeActivity | null }) {
   const slug = (scan.project ?? "scan").replace(/\s+/g, "-").toLowerCase();
   const date = new Date(scan.createdAt).toISOString().slice(0, 10);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const downloadJson = useCallback(() => {
     const payload = {
@@ -498,22 +744,35 @@ function ReportTab({
       toolRiskData,
       probeActivity,
     };
-    downloadFile(JSON.stringify(payload, null, 2), `${slug}-${date}.json`, "application/json");
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${slug}-${date}.json`; a.click();
+    URL.revokeObjectURL(url);
   }, [scan, findings, toolRiskData, probeActivity, slug, date]);
 
   const downloadMarkdown = useCallback(() => {
     const md = generateMarkdown(scan, findings, toolRiskData, probeActivity);
-    downloadFile(md, `${slug}-${date}.md`, "text/markdown");
+    const blob = new Blob([md], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${slug}-${date}.md`; a.click();
+    URL.revokeObjectURL(url);
   }, [scan, findings, toolRiskData, probeActivity, slug, date]);
 
-  const printPdf = useCallback(() => {
-    window.print();
-  }, []);
+  const downloadPdf = useCallback(async () => {
+    setPdfLoading(true);
+    try {
+      await generatePdf(scan, findings, toolRiskData, probeActivity, slug, date);
+    } finally {
+      setPdfLoading(false);
+    }
+  }, [scan, findings, toolRiskData, probeActivity, slug, date]);
 
   const sections = [
-    { icon: "{ }", label: "JSON", desc: "Machine-readable export. Includes all findings, risk data, and probe activity. Ideal for CI/CD pipelines and programmatic processing.", action: downloadJson, color: "text-cyan-400", border: "border-cyan-500/20 hover:border-cyan-500/40", bg: "bg-cyan-500/5 hover:bg-cyan-500/10" },
-    { icon: "#", label: "Markdown", desc: "Human-readable report with findings grouped by severity, dependency risk table, and probe activity log. Great for GitHub issues or Notion.", action: downloadMarkdown, color: "text-purple-400", border: "border-purple-500/20 hover:border-purple-500/40", bg: "bg-purple-500/5 hover:bg-purple-500/10" },
-    { icon: "⎙", label: "PDF / Print", desc: "Opens the browser print dialog. Select 'Save as PDF' to generate a formatted PDF report. Works best in Chrome.", action: printPdf, color: "text-orange-400", border: "border-orange-500/20 hover:border-orange-500/40", bg: "bg-orange-500/5 hover:bg-orange-500/10" },
+    { icon: "{ }", label: "JSON", desc: "Machine-readable export. Includes all findings, risk data, and probe activity. Ideal for CI/CD pipelines and programmatic processing.", action: downloadJson, color: "text-cyan-400", border: "border-cyan-500/20 hover:border-cyan-500/40", bg: "bg-cyan-500/5 hover:bg-cyan-500/10", loading: false },
+    { icon: "#", label: "Markdown", desc: "Human-readable report with findings grouped by severity, dependency risk table, and probe activity log. Great for GitHub issues or Notion.", action: downloadMarkdown, color: "text-purple-400", border: "border-purple-500/20 hover:border-purple-500/40", bg: "bg-purple-500/5 hover:bg-purple-500/10", loading: false },
+    { icon: "⎙", label: "PDF", desc: "Generates a structured PDF with summary cards, findings table, dependency risk analysis, and probe activity log. No browser dialog needed.", action: downloadPdf, color: "text-orange-400", border: "border-orange-500/20 hover:border-orange-500/40", bg: "bg-orange-500/5 hover:bg-orange-500/10", loading: pdfLoading },
   ];
 
   return (
@@ -524,12 +783,13 @@ function ReportTab({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {sections.map(({ icon, label, desc, action, color, border, bg }) => (
+        {sections.map(({ icon, label, desc, action, color, border, bg, loading }) => (
           <button
             key={label}
-            onClick={action}
+            onClick={() => void action()}
+            disabled={loading}
             className={clsx(
-              "group text-left p-5 rounded-2xl border transition-all duration-200",
+              "group text-left p-5 rounded-2xl border transition-all duration-200 disabled:opacity-60 disabled:cursor-wait",
               border, bg
             )}
           >
@@ -537,10 +797,16 @@ function ReportTab({
             <p className={clsx("text-sm font-semibold mb-2", color)}>{label}</p>
             <p className="text-white/30 text-xs leading-relaxed">{desc}</p>
             <div className={clsx("mt-4 text-xs font-medium flex items-center gap-1.5 transition-opacity opacity-60 group-hover:opacity-100", color)}>
-              Download {label}
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
+              {loading ? "Generating…" : `Download ${label}`}
+              {loading ? (
+                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              ) : (
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              )}
             </div>
           </button>
         ))}
@@ -674,12 +940,17 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
               { label: "Depth",     value: scan.mode },
               { label: "Duration",  value: elapsed(scan.startedAt, scan.completedAt) },
               { label: "Tools",     value: `${scan.toolsScanned ?? 0} scanned` },
-            ].map(({ label, value }) => (
+            ].map(({ label, value }) => {
+              const scanModeColor = label === "Scan Mode"
+                ? value === "breach" ? "text-red-400" : value === "bug" ? "text-yellow-400" : "text-white/80"
+                : "text-white/80";
+              return (
               <div key={label} className="p-4 rounded-2xl bg-white/[0.04]">
                 <p className="text-white/30 text-xs mb-2">{label}</p>
-                <p className="text-white/80 text-sm font-mono">{value}</p>
+                <p className={clsx("text-sm font-mono uppercase", scanModeColor)}>{value}</p>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="rounded-2xl bg-white/[0.04] p-5">

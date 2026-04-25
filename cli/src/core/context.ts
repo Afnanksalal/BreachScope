@@ -12,7 +12,8 @@ const MAX_TOTAL_CHARS = 120_000; // keep total context manageable
 export async function buildAgentContext(
   cwd: string,
   config: BreachScopeConfig,
-  url?: string
+  url?: string,
+  scanMode?: string
 ): Promise<AgentContext> {
   logger.info("Building project context for AI agents...");
 
@@ -83,5 +84,6 @@ export async function buildAgentContext(
     toolchain: config.toolchain,
     existingFindings: [],
     crawlCache: {},
+    scanMode,
   };
 }

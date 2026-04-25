@@ -13,6 +13,7 @@ import { detectTools } from "../detectors/index.js";
 import { classifyTools } from "../classifiers/tool.js";
 import { routeToPipeline } from "../pipelines/router.js";
 import { fetchNpmMeta } from "../apis/npm-registry.js";
+import { fetchPypiMeta } from "../apis/pypi.js";
 import { resolveKnownTool } from "../core/toolmap.js";
 import { DepGraph, shouldSkipPackage } from "./graph.js";
 
@@ -75,7 +76,8 @@ export async function runSubchainScan(
             : tool.kind === "saas"
             ? chalk.magenta("[SaaS]")
             : chalk.yellow("[Hybrid]");
-          logger.info(`  ${badge} ${tool.name}${tool.depth > 0 ? chalk.gray(` (via ${tool.parent ?? "?"})`) : ""}`);
+          const ecoLabel = tool.ecosystem && tool.ecosystem !== "npm" ? chalk.gray(`[${tool.ecosystem}] `) : "";
+          logger.info(`  ${badge} ${ecoLabel}${tool.name}${tool.depth > 0 ? chalk.gray(` (via ${tool.parent ?? "?"})`) : ""}`);
 
           const result = await routeToPipeline(tool, mode);
           graph.addNode(tool.name, tool.kind, result.riskScore, tool.depth);
@@ -118,22 +120,45 @@ export async function runSubchainScan(
 }
 
 /**
- * Fetch the direct dependencies of a tool from the npm registry,
+ * Fetch the direct dependencies of a tool from the appropriate registry,
  * classify them, and return as DetectedTool at depth+1.
+ * Supports npm and PyPI; Go/Rust sub-deps are skipped (too noisy).
  */
 async function fetchSubDependencies(parent: DetectedTool): Promise<DetectedTool[]> {
-  // Only recurse into OSS/hybrid packages (SaaS services don't have sub-deps to audit)
   if (parent.kind === "saas") return [];
 
+  const ecosystem = parent.ecosystem ?? "npm";
+
   try {
+    if (ecosystem === "PyPI") {
+      const meta = await fetchPypiMeta(parent.name);
+      if (!meta || Object.keys(meta.dependencies).length === 0) return [];
+
+      return Object.entries(meta.dependencies)
+        .filter(([name]) => !shouldSkipPackage(name))
+        .slice(0, 20) // cap Python deps — requirements can be huge
+        .map(([name, version]) => ({
+          name,
+          version: version === "*" ? undefined : version.replace(/^[\^~>=<]+/, ""),
+          kind: "unknown" as const,
+          detectedFrom: ["sub-dependency"] as const,
+          depth: parent.depth + 1,
+          parent: parent.name,
+          ecosystem: "PyPI",
+        }));
+    }
+
+    if (ecosystem === "Go" || ecosystem === "crates.io" || ecosystem === "RubyGems") {
+      return []; // Sub-dependency recursion for these is handled by lockfile scanners
+    }
+
+    // Default: npm
     const meta = await fetchNpmMeta(parent.name);
     if (!meta || !meta.dependencies) return [];
 
     const subDeps: DetectedTool[] = [];
-
     for (const [depName, depVersion] of Object.entries(meta.dependencies)) {
       if (shouldSkipPackage(depName)) continue;
-
       const known = resolveKnownTool(depName);
       subDeps.push({
         name: depName,
@@ -143,9 +168,9 @@ async function fetchSubDependencies(parent: DetectedTool): Promise<DetectedTool[
         detectedFrom: ["sub-dependency"],
         depth: parent.depth + 1,
         parent: parent.name,
+        ecosystem: "npm",
       });
     }
-
     return subDeps;
   } catch {
     return [];

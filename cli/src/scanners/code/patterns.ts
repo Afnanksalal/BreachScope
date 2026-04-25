@@ -1,6 +1,6 @@
 import type { Finding } from "../../core/types.js";
 
-interface AuditPattern {
+export interface AuditPattern {
   id: string;
   title: string;
   severity: Finding["severity"];
@@ -9,8 +9,9 @@ interface AuditPattern {
   pattern: RegExp;
 }
 
+// ─── Base patterns (run in ALL modes) ────────────────────────────────────────
+
 export const AUDIT_PATTERNS: AuditPattern[] = [
-  // Secrets in code
   {
     id: "hardcoded-secret",
     title: "Hardcoded secret or API key",
@@ -35,8 +36,6 @@ export const AUDIT_PATTERNS: AuditPattern[] = [
     description: "A PEM-encoded private key is embedded in source code.",
     remediation: "Remove the key, rotate all associated certificates, and use a secrets manager.",
   },
-
-  // Dangerous functions
   {
     id: "eval-usage",
     title: "Use of eval()",
@@ -53,8 +52,6 @@ export const AUDIT_PATTERNS: AuditPattern[] = [
     description: "Shell commands are being constructed with variable input, risking command injection.",
     remediation: "Use parameterized command execution (exec with args array). Never concatenate user input into shell strings.",
   },
-
-  // SQL injection signals
   {
     id: "sql-concat",
     title: "SQL query string concatenation",
@@ -63,8 +60,6 @@ export const AUDIT_PATTERNS: AuditPattern[] = [
     description: "SQL query appears to be built by string concatenation with request data, enabling SQL injection.",
     remediation: "Use parameterized queries or an ORM. Never concatenate user input into SQL strings.",
   },
-
-  // Insecure crypto
   {
     id: "md5-usage",
     title: "MD5 used for security purpose",
@@ -81,8 +76,6 @@ export const AUDIT_PATTERNS: AuditPattern[] = [
     description: "Math.random() is not cryptographically secure and must not be used for tokens or secrets.",
     remediation: "Use crypto.getRandomValues() or crypto.randomBytes().",
   },
-
-  // Overly permissive CORS
   {
     id: "cors-wildcard",
     title: "CORS wildcard with credentials",
@@ -91,8 +84,6 @@ export const AUDIT_PATTERNS: AuditPattern[] = [
     description: "Wildcard CORS allows any origin to make requests. Combined with credentials, this enables CSRF.",
     remediation: "Restrict Access-Control-Allow-Origin to trusted origins. Never use * with credentials: true.",
   },
-
-  // Prototype pollution
   {
     id: "prototype-pollution",
     title: "Potential prototype pollution",
@@ -101,8 +92,6 @@ export const AUDIT_PATTERNS: AuditPattern[] = [
     description: "Direct writes to __proto__ or Object.prototype can enable prototype pollution attacks.",
     remediation: "Use Object.create(null) for accumulator objects. Validate keys before setting.",
   },
-
-  // Path traversal
   {
     id: "path-traversal",
     title: "Potential path traversal",
@@ -111,8 +100,6 @@ export const AUDIT_PATTERNS: AuditPattern[] = [
     description: "File system operations may use unvalidated user-supplied paths, enabling path traversal.",
     remediation: "Resolve and normalize paths, then assert they reside within an allowed base directory.",
   },
-
-  // Verbose error exposure
   {
     id: "error-stack-exposed",
     title: "Error stack trace sent to client",
@@ -121,8 +108,6 @@ export const AUDIT_PATTERNS: AuditPattern[] = [
     description: "Stack traces sent to HTTP clients expose internal file paths and framework versions.",
     remediation: "Log stack traces server-side only. Return generic error messages to clients.",
   },
-
-  // Disabled security checks
   {
     id: "ssl-verify-disabled",
     title: "SSL certificate verification disabled",
@@ -130,5 +115,414 @@ export const AUDIT_PATTERNS: AuditPattern[] = [
     pattern: /rejectUnauthorized\s*:\s*false|verify\s*=\s*False|CURLOPT_SSL_VERIFYPEER.*false/i,
     description: "Disabling SSL certificate verification exposes the application to MITM attacks.",
     remediation: "Never disable SSL verification in production. Fix the certificate chain instead.",
+  },
+];
+
+// ─── Bug mode patterns (deep code vulnerability analysis) ─────────────────────
+
+export const BUG_PATTERNS: AuditPattern[] = [
+  // Python-specific
+  {
+    id: "python-pickle-loads",
+    title: "Unsafe pickle deserialization (Python)",
+    severity: "critical",
+    pattern: /pickle\.loads?\s*\(|cPickle\.loads?\s*\(/,
+    description: "pickle.loads() deserializes arbitrary Python objects — passing untrusted data enables remote code execution.",
+    remediation: "Never deserialize pickle data from untrusted sources. Use JSON or a schema-validated format instead.",
+  },
+  {
+    id: "python-yaml-unsafe",
+    title: "Unsafe YAML load (Python)",
+    severity: "high",
+    pattern: /yaml\.load\s*\([^,)]+(?!\s*,\s*Loader\s*=\s*yaml\.(?:Safe|Base)Loader)/,
+    description: "yaml.load() without SafeLoader can execute arbitrary Python code embedded in YAML.",
+    remediation: "Use yaml.safe_load() or yaml.load(data, Loader=yaml.SafeLoader) instead.",
+  },
+  {
+    id: "python-subprocess-shell",
+    title: "subprocess with shell=True (Python)",
+    severity: "high",
+    pattern: /subprocess\.(call|run|Popen|check_output)\s*\([^)]*shell\s*=\s*True/,
+    description: "shell=True passes the command to the shell interpreter, enabling command injection if any input is user-controlled.",
+    remediation: "Pass commands as a list and set shell=False (the default).",
+  },
+  {
+    id: "python-os-system",
+    title: "os.system / os.popen with variable (Python)",
+    severity: "high",
+    pattern: /os\.(system|popen)\s*\([^)"']*[+f]|os\.(system|popen)\s*\(f["']/,
+    description: "os.system/popen with variable or f-string input enables command injection.",
+    remediation: "Use subprocess with a list of arguments instead of os.system.",
+  },
+  {
+    id: "python-sql-format",
+    title: "SQL injection via string formatting (Python)",
+    severity: "high",
+    pattern: /cursor\.execute\s*\(\s*(?:f["']|["'].*%\s*[({]|["'].*\.format\s*\()/,
+    description: "SQL query built with string formatting or f-strings is vulnerable to SQL injection.",
+    remediation: "Use parameterized queries: cursor.execute('SELECT ... WHERE id = %s', (user_id,))",
+  },
+  {
+    id: "python-eval",
+    title: "eval() in Python code",
+    severity: "critical",
+    pattern: /\beval\s*\([^)]*(?:input|request|args|kwargs|data|body)/i,
+    description: "Python eval() with user-controlled input enables arbitrary code execution.",
+    remediation: "Replace eval() with ast.literal_eval() for safe expression parsing, or redesign the logic.",
+  },
+  {
+    id: "python-marshal",
+    title: "marshal deserialization (Python)",
+    severity: "high",
+    pattern: /marshal\.loads?\s*\(/,
+    description: "marshal.loads() is not safe for untrusted data and can execute arbitrary code.",
+    remediation: "Use JSON or Protocol Buffers for data serialization over network boundaries.",
+  },
+
+  // Go-specific
+  {
+    id: "go-sql-sprintf",
+    title: "SQL injection via fmt.Sprintf (Go)",
+    severity: "high",
+    pattern: /fmt\.Sprintf\s*\(\s*["'][^"']*(?:SELECT|INSERT|UPDATE|DELETE|WHERE)/i,
+    description: "Building SQL queries with fmt.Sprintf and user input enables SQL injection.",
+    remediation: "Use database/sql's parameterized queries: db.Query(\"SELECT ... WHERE id = ?\", id)",
+  },
+  {
+    id: "go-unsafe-pointer",
+    title: "unsafe.Pointer usage (Go)",
+    severity: "medium",
+    pattern: /unsafe\.Pointer|uintptr\s*\(\s*unsafe/,
+    description: "unsafe.Pointer bypasses Go's type safety and memory safety guarantees.",
+    remediation: "Avoid unsafe unless absolutely necessary. Document the invariant that makes it safe.",
+  },
+  {
+    id: "go-hardcoded-cred",
+    title: "Hardcoded credential in Go code",
+    severity: "critical",
+    pattern: /(?:password|apiKey|apiSecret|token|secret)\s*:?=\s*"[A-Za-z0-9+/=_\-]{12,}"/,
+    description: "A credential appears hardcoded in Go source code.",
+    remediation: "Load credentials from environment variables or a secrets manager.",
+  },
+
+  // Rust-specific
+  {
+    id: "rust-unsafe-block",
+    title: "unsafe block with raw pointer ops (Rust)",
+    severity: "medium",
+    pattern: /unsafe\s*\{[^}]*(?:\*mut|\*const|ptr::|std::ptr)/,
+    description: "Unsafe Rust blocks with raw pointer manipulation can introduce memory corruption if invariants are violated.",
+    remediation: "Minimize unsafe usage, add safety comments, and prefer safe abstractions.",
+  },
+  {
+    id: "rust-unwrap-panic",
+    title: "Excessive .unwrap() in error-handling path (Rust)",
+    severity: "low",
+    pattern: /\.unwrap\(\).*\.unwrap\(\).*\.unwrap\(\)/,
+    description: "Chained .unwrap() calls will panic on any None/Err, crashing the process without useful context.",
+    remediation: "Use ? operator or proper error propagation with thiserror/anyhow.",
+  },
+
+  // JS/TS extended vulnerability patterns
+  {
+    id: "open-redirect",
+    title: "Potential open redirect",
+    severity: "medium",
+    pattern: /res\.redirect\s*\([^)]*(?:req\.|params\.|query\.|body\.)/,
+    description: "Redirecting to a user-supplied URL enables phishing and open redirect attacks.",
+    remediation: "Validate redirect targets against an allowlist of trusted domains.",
+  },
+  {
+    id: "ssrf-user-url",
+    title: "Server-side request forgery (SSRF) risk",
+    severity: "high",
+    pattern: /(?:fetch|axios\.get|axios\.post|http\.get|https\.get)\s*\([^)]*(?:req\.|params\.|query\.|body\.)/,
+    description: "Making HTTP requests to URLs derived from user input can enable SSRF, allowing access to internal services.",
+    remediation: "Validate and allowlist URLs before making server-side requests. Block private IP ranges.",
+  },
+  {
+    id: "mass-assignment",
+    title: "Mass assignment vulnerability",
+    severity: "high",
+    pattern: /Object\.assign\s*\([^,)]+,\s*req\.body\)|\.\.\.req\.body/,
+    description: "Spreading req.body directly into a model or object allows attackers to set unintended fields (e.g., isAdmin).",
+    remediation: "Explicitly pick allowed fields from req.body before using. Use a schema validation library.",
+  },
+  {
+    id: "nosql-injection",
+    title: "NoSQL injection via req.body operator",
+    severity: "high",
+    pattern: /\.find(?:One)?\s*\(\s*req\.(?:body|params|query)/,
+    description: "Passing raw req.body to MongoDB queries allows injection of operators like $where or $gt.",
+    remediation: "Sanitize and validate all query parameters. Use a schema validator before passing to the ORM.",
+  },
+  {
+    id: "dangerous-html",
+    title: "dangerouslySetInnerHTML usage (React)",
+    severity: "high",
+    pattern: /dangerouslySetInnerHTML\s*=\s*\{\s*\{/,
+    description: "dangerouslySetInnerHTML bypasses React's XSS protection. If user content is set this way, XSS is possible.",
+    remediation: "Sanitize HTML with DOMPurify before passing to dangerouslySetInnerHTML, or restructure to avoid raw HTML.",
+  },
+  {
+    id: "jwt-none-alg",
+    title: "JWT 'none' algorithm accepted",
+    severity: "critical",
+    pattern: /algorithms?\s*[=:]\s*\[?['"]none['"]/i,
+    description: "Accepting 'none' as a valid JWT algorithm allows attackers to forge tokens without a signature.",
+    remediation: "Always specify an explicit allowlist of algorithms (e.g., ['HS256', 'RS256']). Never include 'none'.",
+  },
+  {
+    id: "insecure-cookie",
+    title: "Cookie set without HttpOnly or Secure flags",
+    severity: "medium",
+    pattern: /(?:res\.cookie|Set-Cookie)[^;]*(?!(?:[^;]*httpOnly|[^;]*secure))/i,
+    description: "Cookies without HttpOnly are accessible to JavaScript (XSS theft). Without Secure, they travel over HTTP.",
+    remediation: "Set { httpOnly: true, secure: true, sameSite: 'Strict' } on all session/auth cookies.",
+  },
+  {
+    id: "redos-pattern",
+    title: "ReDoS-vulnerable regex pattern",
+    severity: "medium",
+    pattern: /new RegExp\([^)]*(?:\.\*){2,}|\/(?:[^/]*\+){2,}[^/]*\//,
+    description: "Regex with nested quantifiers like (a+)+ can cause catastrophic backtracking on crafted input, causing DoS.",
+    remediation: "Use a regex linter (safe-regex) to detect and simplify backtracking patterns.",
+  },
+  {
+    id: "template-injection",
+    title: "Server-side template injection risk",
+    severity: "high",
+    pattern: /res\.render\s*\([^)]*req\.|ejs\.render\s*\([^)]*req\.|handlebars\.compile\s*\([^)]*req\./,
+    description: "Rendering templates with user-controlled names or data can enable server-side template injection.",
+    remediation: "Never use user input as a template name. Sanitize any user data passed into template context.",
+  },
+  {
+    id: "zip-slip",
+    title: "Potential zip-slip path traversal",
+    severity: "high",
+    pattern: /(?:entry|file)\.(?:name|fileName|filename)\s*[^=]*path\.join|extractAllTo|unzipSync/i,
+    description: "Extracting archive entries without validating their path can enable writing files outside the target directory.",
+    remediation: "Resolve each entry path and assert it stays within the target directory before extraction.",
+  },
+  {
+    id: "timing-attack",
+    title: "Timing attack vulnerable string comparison",
+    severity: "medium",
+    pattern: /(?:password|token|secret|hash|sig)\s*===?\s*|===?\s*(?:password|token|secret|hash|sig)/i,
+    description: "Direct string comparison of secrets using === leaks timing information allowing offline brute-force.",
+    remediation: "Use crypto.timingSafeEqual() for constant-time comparison of secrets and HMAC signatures.",
+  },
+  {
+    id: "weak-jwt-secret",
+    title: "Short or hardcoded JWT secret",
+    severity: "high",
+    pattern: /(?:jwt\.sign|jsonwebtoken\.sign)\s*\([^,]+,\s*["'][A-Za-z0-9]{1,32}["']/,
+    description: "A short or hardcoded JWT secret is vulnerable to brute-force attacks.",
+    remediation: "Use a cryptographically random secret of at least 256 bits stored in environment variables.",
+  },
+  {
+    id: "xxe-xml-parse",
+    title: "XML parsing without entity expansion disabled",
+    severity: "high",
+    pattern: /(?:parseXML|DOMParser|xml2js\.parseString|libxmljs\.parseXml)\s*\([^)]*req\./i,
+    description: "XML parsing of user input without disabling external entities enables XXE attacks.",
+    remediation: "Disable external entity processing: set resolveEntities: false and noent: false in parser options.",
+  },
+  {
+    id: "ldap-injection",
+    title: "LDAP injection risk",
+    severity: "high",
+    pattern: /ldap(?:js)?\.search\s*\([^)]*(?:req\.|params\.|query\.|body\.)/i,
+    description: "LDAP queries built from user input are vulnerable to LDAP injection.",
+    remediation: "Escape all user input with an LDAP escaping library before including in filter strings.",
+  },
+  {
+    id: "hardcoded-jwt-key",
+    title: "Hardcoded cryptographic key for JWT/HMAC",
+    severity: "critical",
+    pattern: /(?:HS256|HS384|HS512|RS256|RS512)\s*[,;]?\s*(?:secret|key)\s*[:=]\s*["'][^"']{8,}/i,
+    description: "Cryptographic keys hardcoded alongside algorithm names are high-value targets for attackers.",
+    remediation: "Store keys in environment variables or a hardware security module (HSM).",
+  },
+];
+
+// ─── Breach mode patterns (credential hunting + infra exposure) ───────────────
+
+export const BREACH_PATTERNS: AuditPattern[] = [
+  {
+    id: "github-pat",
+    title: "GitHub Personal Access Token exposed",
+    severity: "critical",
+    pattern: /gh[pousr]_[A-Za-z0-9]{36,}/,
+    description: "A GitHub Personal Access Token (classic or fine-grained) is hardcoded in source code.",
+    remediation: "Revoke the token immediately at github.com/settings/tokens and use GitHub Actions secrets instead.",
+  },
+  {
+    id: "stripe-secret",
+    title: "Stripe secret key exposed",
+    severity: "critical",
+    pattern: /sk_live_[A-Za-z0-9]{24,}/,
+    description: "A live Stripe secret key is hardcoded, allowing full API access to billing and customer data.",
+    remediation: "Revoke the key in the Stripe dashboard immediately and load it via environment variable.",
+  },
+  {
+    id: "stripe-webhook",
+    title: "Stripe webhook signing secret exposed",
+    severity: "high",
+    pattern: /whsec_[A-Za-z0-9]{32,}/,
+    description: "A Stripe webhook signing secret allows forging webhook events.",
+    remediation: "Rotate the secret in the Stripe dashboard and store it in environment variables.",
+  },
+  {
+    id: "openai-key",
+    title: "OpenAI API key exposed",
+    severity: "critical",
+    pattern: /sk-(?:proj-|)[A-Za-z0-9]{32,}/,
+    description: "An OpenAI API key is hardcoded, allowing unauthorized model access and billing charges.",
+    remediation: "Revoke the key at platform.openai.com and load it via OPENAI_API_KEY environment variable.",
+  },
+  {
+    id: "anthropic-key",
+    title: "Anthropic API key exposed",
+    severity: "critical",
+    pattern: /sk-ant-[A-Za-z0-9\-_]{32,}/,
+    description: "An Anthropic API key is hardcoded, allowing unauthorized model access.",
+    remediation: "Revoke at console.anthropic.com and use the ANTHROPIC_API_KEY environment variable.",
+  },
+  {
+    id: "google-api-key",
+    title: "Google API key exposed",
+    severity: "high",
+    pattern: /AIza[0-9A-Za-z_\-]{35}/,
+    description: "A Google Cloud / Maps API key is hardcoded, potentially enabling unauthorized API usage and quota abuse.",
+    remediation: "Restrict the key to specific APIs and IP addresses, then rotate and store in environment variables.",
+  },
+  {
+    id: "slack-token",
+    title: "Slack bot/OAuth token exposed",
+    severity: "critical",
+    pattern: /xox[bprs]-[0-9A-Za-z\-]{24,}/,
+    description: "A Slack API token is hardcoded, allowing access to workspaces, messages, and user data.",
+    remediation: "Revoke the token at api.slack.com and store it as an environment secret.",
+  },
+  {
+    id: "sendgrid-key",
+    title: "SendGrid API key exposed",
+    severity: "high",
+    pattern: /SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}/,
+    description: "A SendGrid API key is hardcoded, enabling unauthorized email sending.",
+    remediation: "Revoke at app.sendgrid.com and store via SENDGRID_API_KEY environment variable.",
+  },
+  {
+    id: "twilio-token",
+    title: "Twilio auth token exposed",
+    severity: "critical",
+    pattern: /(?:TWILIO_AUTH_TOKEN|authToken)\s*[=:]\s*["'][A-Za-z0-9]{32}["']/,
+    description: "A Twilio auth token is hardcoded, allowing full account access including calls and SMS.",
+    remediation: "Rotate in the Twilio console and store as an environment secret.",
+  },
+  {
+    id: "supabase-service-key",
+    title: "Supabase service role key exposed",
+    severity: "critical",
+    pattern: /eyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+/,
+    description: "A JWT that looks like a Supabase service role key is hardcoded — this bypasses Row Level Security.",
+    remediation: "Never commit service role keys. Use the anon key on clients and the service key only on trusted servers via env vars.",
+  },
+  {
+    id: "npm-token",
+    title: "npm publish token exposed",
+    severity: "high",
+    pattern: /npm_[A-Za-z0-9]{36}/,
+    description: "An npm automation or publish token is hardcoded, allowing package publishing under your account.",
+    remediation: "Revoke at npmjs.com/settings and store as a CI secret.",
+  },
+  {
+    id: "firebase-config",
+    title: "Firebase private key or service account exposed",
+    severity: "critical",
+    pattern: /\"private_key\"\s*:\s*\"-----BEGIN RSA PRIVATE KEY/,
+    description: "A Firebase/GCP service account private key is hardcoded.",
+    remediation: "Remove immediately, rotate in GCP console, and use Workload Identity or environment-injected keys.",
+  },
+  {
+    id: "db-connection-string",
+    title: "Database connection string with credentials",
+    severity: "critical",
+    pattern: /(?:postgres|mysql|mongodb|redis):\/\/[^:]+:[^@]{6,}@/i,
+    description: "A database connection string containing a username and password is hardcoded.",
+    remediation: "Store database URLs in environment variables (DATABASE_URL) and add them to .gitignore.",
+  },
+  {
+    id: "debug-endpoint",
+    title: "Debug or profiling endpoint in production code",
+    severity: "medium",
+    pattern: /(?:app|router)\.(?:get|post|use)\s*\(\s*['"]\/(?:debug|__debug__|_debug|profiler|pprof|phpinfo|server-status)['"]/i,
+    description: "A debug or profiling endpoint is registered, which may expose internals or enable DoS in production.",
+    remediation: "Gate debug endpoints behind authentication and environment checks (NODE_ENV !== 'production').",
+  },
+  {
+    id: "admin-no-auth",
+    title: "Admin route without apparent auth middleware",
+    severity: "high",
+    pattern: /(?:app|router)\.(?:get|post|put|delete|use)\s*\(\s*['"]\/admin/i,
+    description: "An /admin route is registered — verify it is protected by authentication and role-based authorization middleware.",
+    remediation: "Apply auth middleware before all /admin routes. Add automated tests that assert 401 for unauthenticated requests.",
+  },
+  {
+    id: "do-token",
+    title: "DigitalOcean personal access token exposed",
+    severity: "critical",
+    pattern: /dop_v1_[A-Za-z0-9]{64}/,
+    description: "A DigitalOcean personal access token is hardcoded.",
+    remediation: "Revoke at cloud.digitalocean.com and store in environment variables.",
+  },
+  {
+    id: "cloudflare-token",
+    title: "Cloudflare API token exposed",
+    severity: "high",
+    pattern: /(?:CLOUDFLARE_API_TOKEN|cf_token)\s*[=:]\s*["'][A-Za-z0-9_\-]{40}["']/i,
+    description: "A Cloudflare API token is hardcoded, allowing DNS/WAF/zone manipulation.",
+    remediation: "Rotate at dash.cloudflare.com and store via environment variable.",
+  },
+  {
+    id: "heroku-api-key",
+    title: "Heroku API key exposed",
+    severity: "high",
+    pattern: /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
+    description: "A UUID-format value matching Heroku API key pattern is hardcoded in code.",
+    remediation: "Revoke at dashboard.heroku.com and store in environment variables.",
+  },
+  {
+    id: "env-file-reference",
+    title: ".env file read at a hardcoded production path",
+    severity: "medium",
+    pattern: /dotenv\.config\s*\(\s*\{\s*path\s*:\s*['"]\/(?:etc|var|home|root|srv)/,
+    description: "dotenv.config points to a hardcoded system path — a sign the .env file may be committed or accessible.",
+    remediation: "Use dotenv's default behavior (reads .env in cwd). Ensure .env is in .gitignore.",
+  },
+  {
+    id: "sentry-dsn-private",
+    title: "Sentry DSN with private key exposed",
+    severity: "medium",
+    pattern: /https?:\/\/[a-f0-9]{32}:[a-f0-9]{32}@(?:o[0-9]+\.ingest\.)?sentry\.io/,
+    description: "A Sentry DSN with a private key (deprecated format) is hardcoded and allows event ingestion without auth.",
+    remediation: "Rotate the DSN in Sentry project settings. Use the public DSN format (no private key) for client-side code.",
+  },
+  {
+    id: "ssh-private-key-b64",
+    title: "Base64-encoded SSH or RSA private key",
+    severity: "critical",
+    pattern: /(?:LS0tLS1CRUdJTiBSU0|LS0tLS1CRUdJTiBPUEVOU1NI)/,
+    description: "A base64-encoded private key (SSH or RSA PEM) is hardcoded in source code.",
+    remediation: "Remove the key, rotate immediately, and use a secrets manager or CI secrets injection.",
+  },
+  {
+    id: "vercel-token",
+    title: "Vercel deployment token exposed",
+    severity: "high",
+    pattern: /(?:VERCEL_TOKEN|vercel_token)\s*[=:]\s*["'][A-Za-z0-9]{24,}["']/i,
+    description: "A Vercel deployment token is hardcoded, allowing project deployments under your account.",
+    remediation: "Revoke at vercel.com/account/tokens and inject via CI environment secrets.",
   },
 ];

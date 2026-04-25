@@ -41,9 +41,9 @@ export interface Finding {
 // ─── Detected tool model ──────────────────────────────────────────────────────
 
 export interface DetectedTool {
-  /** npm package name or service identifier */
+  /** Package name */
   name: string;
-  /** Version range from package.json, if available */
+  /** Version range from manifest, if available */
   version?: string;
   /** OSS, SaaS, hybrid (has both npm SDK + hosted service), or unknown */
   kind: ToolKind;
@@ -57,6 +57,8 @@ export interface DetectedTool {
   depth: number;
   /** Parent tool that introduced this as a sub-dep */
   parent?: string;
+  /** Package ecosystem: npm | PyPI | Go | crates.io | RubyGems (default: npm) */
+  ecosystem?: string;
 }
 
 // ─── External API results ─────────────────────────────────────────────────────
@@ -212,6 +214,8 @@ export interface ThresholdConfig {
 export interface ScanOptions {
   target?: ScanTarget;
   mode?: ScanMode;
+  /** "breach" | "bug" | "all" — set by --breach / --bug flags */
+  scanMode?: string;
   output?: OutputConfig["format"];
   file?: string;
   verbose?: boolean;
@@ -241,6 +245,8 @@ export interface AgentContext {
   toolchain: ToolchainConfig;
   existingFindings: Finding[];
   crawlCache: Record<string, string>;
+  /** "breach" | "bug" | "all" — controls agent focus and system prompt */
+  scanMode?: string;
 }
 
 export interface AgentResult {

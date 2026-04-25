@@ -62,7 +62,14 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   }
 
   console.log(chalk.dim(BANNER));
-  console.log(chalk.gray(`  Mode: ${chalk.white(mode.toUpperCase())}  │  Target: ${chalk.white(target.toUpperCase())}${url ? `  │  URL: ${chalk.white(url)}` : ""}`));
+  const scanMode = opts.scanMode ?? "all";
+  const scanModeLabel = scanMode === "breach"
+    ? chalk.red("BREACH") + chalk.gray(" (CVE · supply chain · credential hunt)")
+    : scanMode === "bug"
+    ? chalk.yellow("BUG") + chalk.gray(" (static analysis · injection · code vulns)")
+    : chalk.white("ALL");
+
+  console.log(chalk.gray(`  Mode: ${chalk.white(mode.toUpperCase())}  │  Target: ${chalk.white(target.toUpperCase())}  │  Scan: ${scanModeLabel}${url ? `  │  URL: ${chalk.white(url)}` : ""}`));
   logger.blank();
 
   const findings: Finding[] = [];
@@ -75,7 +82,15 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   let probeAttack: { url: string; attacks: string[]; pagesVisited: string[]; findingsCount: number; tokensUsed: number } | undefined;
 
   // ── Static scanners ───────────────────────────────────────────────────────
-  if (target === "all" || target === "dependency") {
+  // breach mode: deps + toolchain + supply chain; skip code quality patterns
+  // bug mode: deep code audit + deps for known-vuln versions; skip toolchain/subchain
+  // all mode: everything
+
+  const runDeps      = target === "all" || target === "dependency";
+  const runCode      = target === "all" || target === "code";
+  const runToolchain = (target === "all" || target === "toolchain") && scanMode !== "bug";
+
+  if (runDeps) {
     const spinner = ora("Scanning dependencies...").start();
     try {
       const result = await runDependencyScanner(cwd);
@@ -87,10 +102,14 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     }
   }
 
-  if (target === "all" || target === "code") {
-    const spinner = ora("Auditing source code...").start();
+  if (runCode) {
+    const spinner = ora(
+      scanMode === "bug" ? "Deep code audit (bug-finding mode)..." :
+      scanMode === "breach" ? "Scanning for credentials & breach indicators..." :
+      "Auditing source code..."
+    ).start();
     try {
-      const result = await runCodeAudit(cwd);
+      const result = await runCodeAudit(cwd, scanMode);
       findings.push(...result);
       spinner.succeed(`Code audit — ${result.length} issue(s)`);
     } catch (e) {
@@ -99,7 +118,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     }
   }
 
-  if (target === "all" || target === "toolchain") {
+  if (runToolchain) {
     const spinner = ora("Probing toolchain...").start();
     try {
       const result = await runToolchainScanner(config.toolchain);
@@ -139,9 +158,9 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     logger.warn("Blackbox/smoke scanning requires a --url flag");
   }
 
-  // ── Sub-toolchain scan (always runs unless explicitly targeting single type) ──
+  // ── Sub-toolchain scan (skipped in bug mode — not supply chain focused) ──────
   let subchainResult: SubchainScanResult | null = null;
-  const shouldRunSubchain = target === "all" || target === "dependency";
+  const shouldRunSubchain = (target === "all" || target === "dependency") && scanMode !== "bug";
   if (shouldRunSubchain) {
     try {
       subchainResult = await runSubchainScan(cwd, mode, config.subchain);
@@ -291,7 +310,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   // ── AI multi-agent layer ───────────────────────────────────────────────────
   if (opts.ai) {
     logger.section("AI Multi-Agent Analysis");
-    const ctx = await buildAgentContext(cwd, config, url ?? undefined);
+    const ctx = await buildAgentContext(cwd, config, url ?? undefined, scanMode);
     ctx.existingFindings = [...findings];
 
     const agentResults = await runOrchestrator(ctx);
@@ -308,7 +327,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
       renderJsonReport(aiResult, opts.file);
     }
 
-    await pushScan(aiResult, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, probeAttack });
+    await pushScan(aiResult, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, probeAttack });
 
     exitOnThreshold(opts, mergedFindings, config.thresholds.failOn);
     return;
@@ -325,7 +344,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     if (opts.file) renderJsonReport(result, opts.file);
   }
 
-  await pushScan(result, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, probeAttack });
+  await pushScan(result, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, probeAttack });
 
   exitOnThreshold(opts, findings, config.thresholds.failOn);
 }
@@ -375,7 +394,7 @@ async function pushScan(
       probeData,
     }),
     // Sync mode settings back to dashboard if user passed explicit flags
-    opts.explicitFlags ? syncRemoteConfig(opts.mode, opts.scanMode) : Promise.resolve(),
+    opts.explicitFlags ? syncRemoteConfig(opts.mode, opts.scanMode ?? "all") : Promise.resolve(),
   ]);
 
   if (scanId) {

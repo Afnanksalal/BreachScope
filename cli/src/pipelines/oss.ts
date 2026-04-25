@@ -6,6 +6,7 @@ import { fetchScorecard, scorecardToFindings } from "../apis/scorecard.js";
 import { queryOSV, osvToFindings } from "../apis/osv.js";
 import { fetchDepsDevProject, depsDevToFindings } from "../apis/deps-dev.js";
 import { fetchNpmMeta, npmMetaToFindings } from "../apis/npm-registry.js";
+import { fetchPypiMeta, pypiMetaToFindings } from "../apis/pypi.js";
 import { complete } from "../core/ai.js";
 
 const OSS_ANALYSIS_SYSTEM = `You are a senior supply-chain security analyst reviewing an open-source package.
@@ -175,15 +176,34 @@ export async function runOssPipeline(
 
   const findings: Finding[] = [];
 
-  // OSV and npm queries work with just the package name — always run them
-  const [osvVulns, npmMeta] = await Promise.all([
-    limit(() => queryOSV(tool.name, tool.version)),
-    limit(() => fetchNpmMeta(tool.name)),
-  ]);
+  const ecosystem = tool.ecosystem ?? "npm";
 
-  // Resolve GitHub slug: toolmap > npm repository field
-  const github: string | undefined =
-    tool.github ?? extractGithubSlug(npmMeta?.repository);
+  // OSV works for all ecosystems — use the correct one
+  const osvVulns = await limit(() => queryOSV(tool.name, tool.version, ecosystem));
+
+  // Registry metadata — use the right registry per ecosystem
+  let npmMeta: import("../core/types.js").NpmPackageMeta | undefined;
+  let pypiMeta: import("../apis/pypi.js").PypiMeta | undefined;
+  let registryGithub: string | undefined;
+
+  if (ecosystem === "PyPI") {
+    pypiMeta = await limit(() => fetchPypiMeta(tool.name)).then((m) => m ?? undefined);
+    registryGithub = pypiMeta?.repository
+      ? extractGithubSlug(pypiMeta.repository)
+      : undefined;
+  } else if (ecosystem === "npm") {
+    const meta = await limit(() => fetchNpmMeta(tool.name));
+    npmMeta = meta ?? undefined;
+    registryGithub = extractGithubSlug(npmMeta?.repository);
+  } else if (ecosystem === "Go") {
+    // Infer GitHub from module path (github.com/org/repo)
+    const m = tool.name.match(/^github\.com\/([^/]+\/[^/]+)/);
+    if (m?.[1]) registryGithub = m[1];
+  }
+  // crates.io, RubyGems: rely on toolmap github field only
+
+  // Resolve GitHub slug: toolmap > registry > inferred
+  const github: string | undefined = tool.github ?? registryGithub;
 
   let scorecard = null;
   let depsDevData = null;
@@ -198,7 +218,8 @@ export async function runOssPipeline(
   if (scorecard) findings.push(...scorecardToFindings(scorecard, tool.name));
   if (osvVulns.length > 0) findings.push(...osvToFindings(osvVulns, tool.name));
   if (depsDevData && github) findings.push(...depsDevToFindings(depsDevData, tool.name, github));
-  if (npmMeta) findings.push(...npmMetaToFindings(npmMeta, tool.name));
+  if (npmMeta)  findings.push(...npmMetaToFindings(npmMeta, tool.name));
+  if (pypiMeta) findings.push(...pypiMetaToFindings(pypiMeta, tool.name));
 
   // Source code audit — only for major/deep modes and when GitHub is known
   if (mode !== "basic" && github) {
@@ -209,20 +230,21 @@ export async function runOssPipeline(
 
   const riskScore = await synthesizeRisk({
     tool:              tool.name,
+    ecosystem,
     github,
     scorecardScore:    scorecard?.score,
     scorecardChecks:   scorecard?.checks.filter((c) => c.score < 5),
     osvCount:          osvVulns.length,
     osvIds:            osvVulns.map((v) => v.id),
-    maintainerCount:   npmMeta?.maintainers.length,
-    weeklyDownloads:   npmMeta?.weeklyDownloads,
+    maintainerCount:   npmMeta?.maintainers.length ?? (pypiMeta?.maintainers.length),
+    weeklyDownloads:   npmMeta?.weeklyDownloads ?? pypiMeta?.weeklyDownloads,
     depsDevScore:      depsDevData?.scorecardV2?.score?.overall ?? depsDevData?.scorecard?.score,
     sourceFindings:    mode !== "basic" ? findings.filter(f => f.id.startsWith("source-")).length : 0,
     mode,
   });
 
   return {
-    tool: { ...tool, github: github ?? tool.github },
+    tool:               { ...tool, github: github ?? tool.github },
     scorecard:          scorecard ?? undefined,
     osvVulnerabilities: osvVulns,
     depsDevData:        depsDevData ?? undefined,

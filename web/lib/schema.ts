@@ -102,6 +102,7 @@ export const findings = pgTable("findings", {
   severity:    text("severity").notNull(),
   category:    text("category").notNull(),
   description: text("description").notNull(),
+  detail:      text("detail"),        // matched code line or raw evidence snippet
   remediation: text("remediation"),
   tool:        text("tool"),
   file:        text("file"),

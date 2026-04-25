@@ -29,6 +29,7 @@ interface IncomingFinding {
   severity: string;
   category: string;
   description: string;
+  detail?: string;
   remediation?: string;
   tool?: string;
   file?: string;
@@ -111,6 +112,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         severity:    f.severity,
         category:    f.category,
         description: f.description,
+        detail:      f.detail      ?? null,
         remediation: f.remediation ?? null,
         tool:        f.tool        ?? null,
         file:        f.file        ?? null,
