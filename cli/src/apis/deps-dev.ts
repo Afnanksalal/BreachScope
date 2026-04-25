@@ -2,7 +2,7 @@ import axios from "axios";
 import { logger } from "../core/logger.js";
 import type { DepsDevProject, Finding } from "../core/types.js";
 
-const DEPS_DEV = "https://api.deps.dev/v3alpha";
+const DEPS_DEV = "https://api.deps.dev/v3";
 
 /**
  * Fetch project security metadata from deps.dev by GitHub slug.

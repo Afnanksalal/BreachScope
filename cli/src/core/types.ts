@@ -78,10 +78,22 @@ export interface ScorecardCheck {
 export interface OsvVulnerability {
   id: string;
   summary: string;
-  severity?: string;
-  affected: Array<{ package: { name: string; ecosystem: string }; ranges?: unknown[] }>;
+  aliases?: string[];                                    // e.g. ["CVE-2024-1234", "GHSA-xxxx"]
+  /** OSV returns severity as an array of CVSS score objects, not a plain string */
+  severity?: Array<{ type: string; score: string }> | string;
+  database_specific?: { severity?: string };
+  ecosystem_specific?: { severity?: string };
+  affected: Array<{
+    package: { name: string; ecosystem: string };
+    ranges?: Array<{
+      type: string;
+      events: Array<{ introduced?: string; fixed?: string; last_affected?: string }>;
+    }>;
+    versions?: string[];
+  }>;
   references: Array<{ type: string; url: string }>;
   modified: string;
+  published?: string;
 }
 
 export interface DepsDevProject {

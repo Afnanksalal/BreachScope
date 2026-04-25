@@ -26,11 +26,11 @@ For Supabase — probe everything:
 - Functions: /functions/v1/ — are edge functions publicly callable?
 
 For Vercel — probe everything:
-- /v9/projects/{id}/env — secrets in preview, plain-text secrets
-- /v9/projects/{id} — preview protection, framework, build settings
+- /v10/projects/{id}/env — secrets in preview, plain-text secrets
+- /v10/projects/{id} — preview protection, framework, build settings
 - /v6/deployments?projectId={id}&limit=3 — check recent preview deployments
 - Latest deployment logs — scan for leaked secrets
-- /v9/projects/{id}/domains — unverified domains, no custom domain
+- /v10/projects/{id}/domains — unverified domains, no custom domain
 - /v2/teams — open invite links
 
 For GitHub — probe everything:

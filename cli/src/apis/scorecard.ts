@@ -2,7 +2,8 @@ import axios from "axios";
 import { logger } from "../core/logger.js";
 import type { ScorecardResult, ScorecardCheck, Finding } from "../core/types.js";
 
-const BASE = "https://api.securityscorecards.dev";
+// Migrating to api.scorecard.dev — securityscorecards.dev will redirect for 12 months
+const BASE = "https://api.scorecard.dev";
 
 /**
  * Fetch OpenSSF Scorecard for a GitHub repo.

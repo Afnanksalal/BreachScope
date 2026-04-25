@@ -1,39 +1,67 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
 
 const NAV = [
-  { label: "Overview",  href: "/dashboard",           icon: GridIcon },
-  { label: "Scans",     href: "/dashboard/scans",      icon: ScanIcon },
-  { label: "API Keys",  href: "/dashboard/keys",        icon: KeyIcon },
-  { label: "Settings",  href: "/dashboard/settings",   icon: SettingsIcon },
-  { label: "Docs",      href: "/docs",                  icon: BookIcon },
+  { label: "Overview",  href: "/dashboard",          icon: GridIcon },
+  { label: "Scans",     href: "/dashboard/scans",     icon: ScanIcon },
+  { label: "API Keys",  href: "/dashboard/keys",      icon: KeyIcon },
+  { label: "Settings",  href: "/dashboard/settings",  icon: SettingsIcon },
+  { label: "Docs",      href: "/docs",                icon: BookIcon },
 ];
 
 export function Sidebar() {
   const path = usePathname();
+  const [open, setOpen] = useState(false);
 
-  return (
-    <aside className="fixed left-0 top-0 bottom-0 w-56 border-r border-white/[0.06] bg-black/95 backdrop-blur-xl flex flex-col z-40">
+  // Close on escape
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  // Lock body scroll when mobile drawer open
+  useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
+
+  // Close drawer on route change
+  useEffect(() => { setOpen(false); }, [path]);
+
+  const sidebarContent = (
+    <>
       {/* Logo */}
-      <div className="px-5 h-16 flex items-center border-b border-white/[0.06]">
-        <Link href="/dashboard" className="group">
+      <div className="px-5 h-16 flex items-center justify-between border-b border-white/[0.06] shrink-0">
+        <Link href="/dashboard" className="group" onClick={() => setOpen(false)}>
           <span className="font-serif italic text-[1.05rem] text-white group-hover:text-white/60 transition-colors">
             BreachScope
           </span>
         </Link>
+        {/* Close button — mobile only */}
+        <button
+          className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg text-white/40 hover:text-white hover:bg-white/[0.06] transition-all"
+          onClick={() => setOpen(false)}
+          aria-label="Close menu"
+        >
+          <XIcon />
+        </button>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {NAV.map(({ label, href, icon: Icon }) => {
           const active = path === href || (href !== "/dashboard" && path.startsWith(href));
           return (
             <Link
               key={href}
               href={href}
+              onClick={() => setOpen(false)}
               className={clsx(
                 "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150",
                 active
@@ -41,7 +69,7 @@ export function Sidebar() {
                   : "text-white/40 hover:text-white/75 hover:bg-white/[0.05] border border-transparent"
               )}
             >
-              <Icon className={clsx("w-4 h-4", active ? "text-white" : "text-white/40")} />
+              <Icon className={clsx("w-4 h-4 shrink-0", active ? "text-white" : "text-white/40")} />
               {label}
             </Link>
           );
@@ -49,13 +77,50 @@ export function Sidebar() {
       </nav>
 
       {/* Bottom */}
-      <div className="px-4 py-4 border-t border-white/[0.06]">
+      <div className="px-4 py-4 border-t border-white/[0.06] shrink-0">
         <div className="p-3 rounded-xl bg-white/[0.04]">
           <p className="text-white/50 text-xs font-medium mb-1">CLI Login</p>
           <code className="text-white/35 text-xs">breachscope login</code>
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile hamburger trigger — sits in top-left, only on mobile */}
+      <button
+        className="md:hidden fixed top-0 left-0 z-50 w-16 h-16 flex items-center justify-center text-white/50 hover:text-white transition-colors"
+        onClick={() => setOpen(true)}
+        aria-label="Open menu"
+      >
+        <MenuIcon />
+      </button>
+
+      {/* Overlay backdrop — mobile only */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+          onClick={() => setOpen(false)}
+        />
+      )}
+
+      {/* Desktop sidebar — always visible */}
+      <aside className="hidden md:flex fixed left-0 top-0 bottom-0 w-56 border-r border-white/[0.06] bg-black/95 backdrop-blur-xl flex-col z-40">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile drawer — slides in from left */}
+      <aside
+        className={clsx(
+          "md:hidden fixed left-0 top-0 bottom-0 w-72 border-r border-white/[0.06] bg-black/98 backdrop-blur-xl flex flex-col z-50",
+          "transition-transform duration-200 ease-out",
+          open ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        {sidebarContent}
+      </aside>
+    </>
   );
 }
 
@@ -99,6 +164,22 @@ function BookIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+    </svg>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
     </svg>
   );
 }

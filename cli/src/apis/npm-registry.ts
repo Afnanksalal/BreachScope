@@ -9,9 +9,10 @@ const NPM_DOWNLOADS = "https://api.npmjs.org/downloads/point/last-week";
  * Fetch package metadata and maintainer info from the npm registry.
  */
 export async function fetchNpmMeta(packageName: string): Promise<NpmPackageMeta | null> {
+  // Scoped packages: @scope/pkg → @scope%2Fpkg (encode slash only, not @)
   const encoded = packageName.startsWith("@")
-    ? packageName.replace("/", "%2F")
-    : packageName;
+    ? packageName.replace(/\//, "%2F")
+    : encodeURIComponent(packageName);
 
   try {
     const [pkgRes, downloadsRes] = await Promise.allSettled([

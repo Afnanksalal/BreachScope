@@ -12,7 +12,7 @@ export async function scanVercel(token: string, projectId?: string): Promise<Fin
   // ── 1. Env vars with secrets exposed in preview deployments ─────────────────
   if (projectId) {
     try {
-      const res = await axios.get(`${VERCEL_API}/v9/projects/${projectId}/env`, {
+      const res = await axios.get(`${VERCEL_API}/v10/projects/${projectId}/env`, {
         headers,
         validateStatus: () => true,
         timeout: 8000,
@@ -59,7 +59,7 @@ export async function scanVercel(token: string, projectId?: string): Promise<Fin
   // ── 2. Preview deployments have no access protection ────────────────────────
   if (projectId) {
     try {
-      const res = await axios.get(`${VERCEL_API}/v9/projects/${projectId}`, {
+      const res = await axios.get(`${VERCEL_API}/v10/projects/${projectId}`, {
         headers,
         validateStatus: () => true,
         timeout: 8000,
@@ -170,7 +170,7 @@ export async function scanVercel(token: string, projectId?: string): Promise<Fin
   // ── 5. Check if project has no custom domain (staging accessible on vercel.app) ─
   if (projectId) {
     try {
-      const res = await axios.get(`${VERCEL_API}/v9/projects/${projectId}/domains`, {
+      const res = await axios.get(`${VERCEL_API}/v10/projects/${projectId}/domains`, {
         headers,
         validateStatus: () => true,
         timeout: 8000,
@@ -216,7 +216,7 @@ export async function scanVercel(token: string, projectId?: string): Promise<Fin
   // ── 6. Check for dangerously permissive CORS on API routes (via Vercel headers config) ─
   if (projectId) {
     try {
-      const res = await axios.get(`${VERCEL_API}/v9/projects/${projectId}`, {
+      const res = await axios.get(`${VERCEL_API}/v10/projects/${projectId}`, {
         headers,
         validateStatus: () => true,
         timeout: 8000,

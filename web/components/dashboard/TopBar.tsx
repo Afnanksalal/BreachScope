@@ -13,7 +13,7 @@ interface TopBarProps {
 
 export function TopBar({ session, title, subtitle, back }: TopBarProps) {
   return (
-    <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 shrink-0">
+    <header className="h-16 border-b border-white/5 flex items-center justify-between pl-16 pr-6 md:px-8 shrink-0">
       <div className="flex items-center gap-3">
         {back && (
           <Link
