@@ -321,6 +321,10 @@ export async function runScan(opts: ScanOptions): Promise<void> {
 
   // ── AI multi-agent layer ───────────────────────────────────────────────────
   if (opts.ai) {
+    if (!process.env.OPENAI_API_KEY) {
+      logger.warn("AI analysis skipped — OPENAI_API_KEY not set. Add it to dashboard Settings or export it locally.");
+      logger.warn("Run `breachscope whoami` to check login status, or set: export OPENAI_API_KEY=sk-...");
+    } else {
     logger.section("AI Multi-Agent Analysis");
     const ctx = await buildAgentContext(cwd, config, url ?? undefined, scanMode);
     ctx.existingFindings = [...findings];
@@ -348,6 +352,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
 
     exitOnThreshold(opts, mergedFindings, config.thresholds.failOn);
     return;
+    } // end else (OPENAI_API_KEY present)
   }
 
   // ── Standard output ────────────────────────────────────────────────────────
