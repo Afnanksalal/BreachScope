@@ -89,6 +89,7 @@ export const scans = pgTable("scans", {
   findingsMedium:   integer("findings_medium").default(0),
   findingsLow:      integer("findings_low").default(0),
   toolsScanned:     integer("tools_scanned").default(0),
+  riskData:         text("risk_data"),   // JSON array of ToolRiskEntry[]
   createdAt:        timestamp("created_at").defaultNow().notNull(),
 }, (t) => [index("scans_user_idx").on(t.userId)]);
 

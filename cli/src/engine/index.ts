@@ -77,7 +77,7 @@ export async function runSubchainScan(
             : chalk.yellow("[Hybrid]");
           logger.info(`  ${badge} ${tool.name}${tool.depth > 0 ? chalk.gray(` (via ${tool.parent ?? "?"})`) : ""}`);
 
-          const result = await routeToPipeline(tool);
+          const result = await routeToPipeline(tool, mode);
           graph.addNode(tool.name, tool.kind, result.riskScore, tool.depth);
 
           // Enqueue sub-dependencies for next depth level if mode allows

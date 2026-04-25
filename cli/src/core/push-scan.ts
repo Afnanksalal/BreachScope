@@ -3,9 +3,30 @@ import { loadCredentials } from "./auth.js";
 import { logger } from "./logger.js";
 import type { Finding, ScanResult } from "./types.js";
 
+export interface ToolRiskEntry {
+  name: string;
+  kind: string;
+  depth: number;
+  parent?: string;
+  riskScore: number;
+  aiSummary?: string;
+  osvCount: number;
+  osvIds?: string[];
+  scorecardScore?: number;
+  weeklyDownloads?: number;
+  maintainerCount?: number;
+  findingsCount: number;
+}
+
 export async function pushScanToDashboard(
   result: ScanResult,
-  opts: { mode: string; scanMode: string; url?: string; toolsScanned?: number }
+  opts: {
+    mode: string;
+    scanMode: string;
+    url?: string;
+    toolsScanned?: number;
+    toolRiskData?: ToolRiskEntry[];
+  }
 ): Promise<string | null> {
   const creds = loadCredentials();
   if (!creds) return null;
@@ -21,6 +42,7 @@ export async function pushScanToDashboard(
     startedAt:    result.startedAt.toISOString(),
     completedAt:  result.completedAt.toISOString(),
     toolsScanned: opts.toolsScanned ?? 0,
+    riskData:     opts.toolRiskData ? JSON.stringify(opts.toolRiskData) : undefined,
     findings:     result.findings.map((f: Finding) => ({
       title:       f.title,
       severity:    f.severity,

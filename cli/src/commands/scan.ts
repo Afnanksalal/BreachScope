@@ -21,6 +21,7 @@ import { discoverServices } from "../core/services.js";
 import { promptText, promptSecret, promptConfirm, SecureStore } from "../core/interactive.js";
 import { runLiveProbe } from "../agents/live-probe.js";
 import { pushScanToDashboard } from "../core/push-scan.js";
+import type { SubchainScanResult } from "../core/types.js";
 
 const BANNER = `
   ██████╗ ██████╗ ███████╗ █████╗  ██████╗██╗  ██╗
@@ -131,10 +132,11 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   }
 
   // ── Sub-toolchain scan (always runs unless explicitly targeting single type) ──
+  let subchainResult: SubchainScanResult | null = null;
   const shouldRunSubchain = target === "all" || target === "dependency";
   if (shouldRunSubchain) {
     try {
-      const subchainResult = await runSubchainScan(cwd, mode, config.subchain);
+      subchainResult = await runSubchainScan(cwd, mode, config.subchain);
       findings.push(...subchainResult.allFindings);
       renderDashboard(subchainResult);
     } catch (e) {
@@ -252,7 +254,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
       renderJsonReport(aiResult, opts.file);
     }
 
-    await pushScan(aiResult, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target) });
+    await pushScan(aiResult, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target), subchainResult });
 
     exitOnThreshold(opts, mergedFindings, config.thresholds.failOn);
     return;
@@ -269,27 +271,44 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     if (opts.file) renderJsonReport(result, opts.file);
   }
 
-  await pushScan(result, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target) });
+  await pushScan(result, { mode, scanMode: target, url, explicitFlags: !!(opts.mode || opts.target), subchainResult });
 
   exitOnThreshold(opts, findings, config.thresholds.failOn);
 }
 
 async function pushScan(
   result: ScanResult,
-  opts: { mode: string; scanMode: string; url?: string; explicitFlags?: boolean }
+  opts: { mode: string; scanMode: string; url?: string; explicitFlags?: boolean; subchainResult?: SubchainScanResult | null }
 ): Promise<void> {
   const spinner = ora("Uploading results to dashboard…").start();
+
+  // Build compact tool risk data for the dashboard
+  const toolRiskData = opts.subchainResult?.toolResults.map((r) => ({
+    name:            r.tool.name,
+    kind:            r.tool.kind,
+    depth:           r.tool.depth,
+    parent:          r.tool.parent,
+    riskScore:       r.riskScore,
+    aiSummary:       r.aiSummary,
+    osvCount:        r.osvVulnerabilities.length,
+    osvIds:          r.osvVulnerabilities.map((v) => v.id).slice(0, 5),
+    scorecardScore:  r.scorecard?.score,
+    weeklyDownloads: r.npmMeta?.weeklyDownloads,
+    maintainerCount: r.npmMeta?.maintainers.length,
+    findingsCount:   r.findings.length,
+  })) ?? undefined;
 
   const [scanId] = await Promise.all([
     pushScanToDashboard(result, {
       mode:         opts.mode,
       scanMode:     opts.scanMode,
       url:          opts.url,
-      toolsScanned: result.findings.reduce((acc, f) => {
+      toolsScanned: opts.subchainResult?.toolsScanned ?? result.findings.reduce((acc, f) => {
         return f.tool && !acc.tools.has(f.tool)
           ? { count: acc.count + 1, tools: new Set([...acc.tools, f.tool]) }
           : acc;
       }, { count: 0, tools: new Set<string>() }).count,
+      toolRiskData,
     }),
     // Sync mode settings back to dashboard if user passed explicit flags
     opts.explicitFlags ? syncRemoteConfig(opts.mode, opts.scanMode) : Promise.resolve(),

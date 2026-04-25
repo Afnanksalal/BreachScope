@@ -1,6 +1,7 @@
+import axios from "axios";
 import pLimit from "p-limit";
 import { logger } from "../core/logger.js";
-import type { DetectedTool, ToolPipelineResult, Finding } from "../core/types.js";
+import type { DetectedTool, ToolPipelineResult, Finding, ScanMode } from "../core/types.js";
 import { fetchScorecard, scorecardToFindings } from "../apis/scorecard.js";
 import { queryOSV, osvToFindings } from "../apis/osv.js";
 import { fetchDepsDevProject, depsDevToFindings } from "../apis/deps-dev.js";
@@ -21,66 +22,214 @@ Return JSON:
 riskScore guide: 0=no risk, 25=minor concerns, 50=notable risks, 75=serious risks, 100=critical/avoid.
 No markdown fences.`;
 
-const limit = pLimit(5); // max 5 concurrent API calls
+const limit = pLimit(5);
+
+// Extract GitHub slug from npm repository field
+function extractGithubSlug(repoUrl?: string): string | undefined {
+  if (!repoUrl) return undefined;
+  const m = repoUrl.match(/github\.com[/:]([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?(?:[/#?]|$)/);
+  return m?.[1];
+}
+
+/**
+ * Dangerous patterns in lifecycle scripts (preinstall/postinstall/install).
+ * Runs on the actual package source from GitHub.
+ */
+const DANGEROUS_SCRIPT_PATTERNS = [
+  /curl\s+\S+\s*\|\s*(ba)?sh/i,
+  /wget\s+\S+\s*\|\s*(ba)?sh/i,
+  /eval\s*\(/,
+  /base64\s+(-d|--decode)/,
+  /node\s+-e\s+/,
+  /python[23]?\s+-c\s+/,
+  /child_process/i,
+  /require\(['"]child_process['"]\)/,
+];
+
+/**
+ * Dangerous patterns in source code.
+ */
+const SOURCE_CODE_PATTERNS: Array<{ pattern: RegExp; title: string; severity: Finding["severity"] }> = [
+  {
+    pattern: /eval\s*\(\s*(?:Buffer\.from|atob)\s*\(/i,
+    title: "Obfuscated eval() detected",
+    severity: "critical",
+  },
+  {
+    pattern: /require\(['"]child_process['"]\)[\s\S]{0,150}(?:exec|spawn)\s*\(/i,
+    title: "Dynamic child_process exec in source",
+    severity: "high",
+  },
+  {
+    pattern: /(?:^|[^a-zA-Z])fetch\s*\(\s*['"`]https?:\/\/(?!(?:registry\.npmjs\.org|github\.com|raw\.githubusercontent\.com))/im,
+    title: "Unexpected network call to external host",
+    severity: "medium",
+  },
+  {
+    pattern: /process\.env\.[A-Z_]{5,}[\s\S]{0,100}(?:fetch|http|axios\.)/i,
+    title: "Env var exfiltration pattern",
+    severity: "high",
+  },
+];
+
+/**
+ * Audit lifecycle scripts and sample source code from GitHub for a package.
+ * Only runs when the GitHub repo is known (for major/deep modes).
+ */
+async function crawlPackageSource(
+  packageName: string,
+  github: string
+): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  const rawBase = `https://raw.githubusercontent.com/${github}/HEAD`;
+
+  // ── Install script audit ─────────────────────────────────────────────────
+  try {
+    const pkgRes = await axios.get(`${rawBase}/package.json`, {
+      timeout: 8000,
+      validateStatus: () => true,
+    });
+
+    if (pkgRes.status === 200 && pkgRes.data && typeof pkgRes.data === "object") {
+      const pkg = pkgRes.data as Record<string, unknown>;
+      const scripts = (pkg["scripts"] ?? {}) as Record<string, string>;
+      const LIFECYCLE = ["preinstall", "install", "postinstall", "prepare"];
+
+      for (const scriptName of LIFECYCLE) {
+        const cmd = scripts[scriptName];
+        if (!cmd) continue;
+        for (const pattern of DANGEROUS_SCRIPT_PATTERNS) {
+          if (pattern.test(cmd)) {
+            findings.push({
+              id: `source-script-${packageName}-${scriptName}`,
+              title: `${packageName}: Suspicious "${scriptName}" lifecycle script`,
+              severity: "high",
+              category: "supply-chain",
+              tool: packageName,
+              description: `The "${scriptName}" script in the package's GitHub source contains patterns commonly used in supply chain attacks (e.g., remote code fetch+execute).`,
+              detail: cmd.slice(0, 300),
+              remediation: "Pin to a specific version and inspect each upgrade. Consider `npm config set ignore-scripts true` for CI environments.",
+              references: [
+                `https://github.com/${github}/blob/HEAD/package.json`,
+                `https://www.npmjs.com/package/${packageName}`,
+              ],
+            });
+            break;
+          }
+        }
+      }
+    }
+  } catch {
+    // Network failures are expected — continue
+  }
+
+  // ── Source code pattern scan ─────────────────────────────────────────────
+  const ENTRY_CANDIDATES = ["index.js", "src/index.js", "lib/index.js"];
+  for (const entry of ENTRY_CANDIDATES) {
+    try {
+      const res = await axios.get(`${rawBase}/${entry}`, {
+        timeout: 6000,
+        validateStatus: () => true,
+      });
+
+      if (res.status !== 200 || typeof res.data !== "string") continue;
+
+      const src = res.data.slice(0, 12000); // first 12KB
+
+      for (const { pattern, title, severity } of SOURCE_CODE_PATTERNS) {
+        if (pattern.test(src)) {
+          findings.push({
+            id: `source-code-${packageName}-${title.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+            title: `${packageName}: ${title}`,
+            severity,
+            category: "supply-chain",
+            tool: packageName,
+            description: `Source code analysis of \`${packageName}\` (${entry}) detected a suspicious pattern that may indicate malicious behavior.`,
+            remediation: "Inspect the source manually before using in production. Consider an alternative package.",
+            references: [
+              `https://github.com/${github}/blob/HEAD/${entry}`,
+              `https://www.npmjs.com/package/${packageName}`,
+            ],
+          });
+        }
+      }
+      break; // Stop after first found entry
+    } catch {
+      // Continue to next candidate
+    }
+  }
+
+  return findings;
+}
 
 /**
  * Run the full OSS security pipeline for a detected tool.
+ * Works even without a known GitHub repo (OSV + npm queries don't require it).
+ * For major/deep modes, also crawls package source code from GitHub.
  */
-export async function runOssPipeline(tool: DetectedTool): Promise<ToolPipelineResult> {
-  if (!tool.github) {
-    return emptyResult(tool, "No GitHub repo — skipping OSS pipeline");
-  }
-
-  logger.info(`[oss] Scanning ${tool.name} (${tool.github})`);
+export async function runOssPipeline(
+  tool: DetectedTool,
+  mode: ScanMode = "basic"
+): Promise<ToolPipelineResult> {
+  logger.info(`[oss] Scanning ${tool.name}`);
 
   const findings: Finding[] = [];
 
-  // Run all three public APIs in parallel
-  const [scorecard, osvVulns, depsDevData, npmMeta] = await Promise.all([
-    limit(() => fetchScorecard(tool.github!)),
+  // OSV and npm queries work with just the package name — always run them
+  const [osvVulns, npmMeta] = await Promise.all([
     limit(() => queryOSV(tool.name, tool.version)),
-    limit(() => fetchDepsDevProject(tool.github!)),
     limit(() => fetchNpmMeta(tool.name)),
   ]);
 
-  if (scorecard) {
-    findings.push(...scorecardToFindings(scorecard, tool.name));
+  // Resolve GitHub slug: toolmap > npm repository field
+  const github: string | undefined =
+    tool.github ?? extractGithubSlug(npmMeta?.repository);
+
+  let scorecard = null;
+  let depsDevData = null;
+
+  if (github) {
+    [scorecard, depsDevData] = await Promise.all([
+      limit(() => fetchScorecard(github)),
+      limit(() => fetchDepsDevProject(github)),
+    ]);
   }
 
-  if (osvVulns.length > 0) {
-    findings.push(...osvToFindings(osvVulns, tool.name));
+  if (scorecard) findings.push(...scorecardToFindings(scorecard, tool.name));
+  if (osvVulns.length > 0) findings.push(...osvToFindings(osvVulns, tool.name));
+  if (depsDevData && github) findings.push(...depsDevToFindings(depsDevData, tool.name, github));
+  if (npmMeta) findings.push(...npmMetaToFindings(npmMeta, tool.name));
+
+  // Source code audit — only for major/deep modes and when GitHub is known
+  if (mode !== "basic" && github) {
+    logger.debug(`[oss] Crawling source code for ${tool.name} (${github})`);
+    const sourceFindings = await crawlPackageSource(tool.name, github);
+    findings.push(...sourceFindings);
   }
 
-  if (depsDevData) {
-    findings.push(...depsDevToFindings(depsDevData, tool.name, tool.github!));
-  }
-
-  if (npmMeta) {
-    findings.push(...npmMetaToFindings(npmMeta, tool.name));
-  }
-
-  // GPT-4o risk synthesis
   const riskScore = await synthesizeRisk({
-    tool: tool.name,
-    github: tool.github,
-    scorecardScore: scorecard?.score,
-    scorecardChecks: scorecard?.checks.filter((c) => c.score < 5),
-    osvCount: osvVulns.length,
-    osvIds: osvVulns.map((v) => v.id),
-    maintainerCount: npmMeta?.maintainers.length,
-    weeklyDownloads: npmMeta?.weeklyDownloads,
-    depsDevScore: depsDevData?.scorecardV2?.score?.overall ?? depsDevData?.scorecard?.score,
+    tool:              tool.name,
+    github,
+    scorecardScore:    scorecard?.score,
+    scorecardChecks:   scorecard?.checks.filter((c) => c.score < 5),
+    osvCount:          osvVulns.length,
+    osvIds:            osvVulns.map((v) => v.id),
+    maintainerCount:   npmMeta?.maintainers.length,
+    weeklyDownloads:   npmMeta?.weeklyDownloads,
+    depsDevScore:      depsDevData?.scorecardV2?.score?.overall ?? depsDevData?.scorecard?.score,
+    sourceFindings:    mode !== "basic" ? findings.filter(f => f.id.startsWith("source-")).length : 0,
+    mode,
   });
 
   return {
-    tool,
-    scorecard: scorecard ?? undefined,
+    tool: { ...tool, github: github ?? tool.github },
+    scorecard:          scorecard ?? undefined,
     osvVulnerabilities: osvVulns,
-    depsDevData: depsDevData ?? undefined,
-    npmMeta: npmMeta ?? undefined,
+    depsDevData:        depsDevData ?? undefined,
+    npmMeta:            npmMeta ?? undefined,
     findings,
-    riskScore: riskScore.score,
-    aiSummary: riskScore.summary,
+    riskScore:          riskScore.score,
+    aiSummary:          riskScore.summary,
   };
 }
 
@@ -94,31 +243,16 @@ async function synthesizeRisk(data: Record<string, unknown>): Promise<{ score: n
     });
 
     const clean = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const parsed: unknown = JSON.parse(clean);
-    if (
-      typeof parsed !== "object" || parsed === null ||
-      typeof (parsed as Record<string, unknown>)["riskScore"] !== "number" ||
-      typeof (parsed as Record<string, unknown>)["summary"] !== "string"
-    ) {
-      throw new Error("Invalid synthesis response shape");
+    const parsed = JSON.parse(clean) as Record<string, unknown>;
+    if (typeof parsed["riskScore"] !== "number" || typeof parsed["summary"] !== "string") {
+      throw new Error("invalid shape");
     }
-    const p = parsed as Record<string, unknown>;
-    return { score: p["riskScore"] as number, summary: p["summary"] as string };
+    return { score: parsed["riskScore"] as number, summary: parsed["summary"] as string };
   } catch {
     const osv = Number(data["osvCount"] ?? 0);
     const sc = Number(data["scorecardScore"] ?? 5);
-    const fallbackScore = Math.min(100, osv * 15 + (10 - sc) * 5);
-    return { score: fallbackScore, summary: "Automated risk assessment (AI synthesis unavailable)." };
+    const src = Number(data["sourceFindings"] ?? 0);
+    const fallback = Math.min(100, osv * 15 + (10 - sc) * 5 + src * 10);
+    return { score: fallback, summary: "Automated risk assessment (AI synthesis unavailable)." };
   }
-}
-
-function emptyResult(tool: DetectedTool, reason: string): ToolPipelineResult {
-  logger.debug(`[oss] Skipping ${tool.name}: ${reason}`);
-  return {
-    tool,
-    osvVulnerabilities: [],
-    findings: [],
-    riskScore: 0,
-    aiSummary: reason,
-  };
 }
