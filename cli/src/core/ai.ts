@@ -25,6 +25,7 @@ export interface CompletionOptions {
   tools?: ChatCompletionTool[];
   temperature?: number;
   maxTokens?: number;
+  maxIterations?: number;
 }
 
 export interface CompletionResult {
@@ -78,7 +79,8 @@ export async function agentLoop(
   let totalTokens = 0;
   let iterations = 0;
 
-  while (iterations < 10) {
+  const maxIterations = opts.maxIterations ?? 10;
+  while (iterations < maxIterations) {
     iterations++;
     const result = await complete({ ...opts, messages });
     totalTokens += result.tokensUsed;

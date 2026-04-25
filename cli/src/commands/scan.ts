@@ -338,7 +338,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
 
     renderAIReport(agentResults, lastSynthesis, mergedFindings);
 
-    const aiResult = buildResult(cwd, startedAt, mergedFindings, { mode, url });
+    const aiResult = buildResult(cwd, startedAt, mergedFindings, { mode, url }, url);
 
     if (opts.file) {
       renderJsonReport(aiResult, opts.file);
@@ -351,7 +351,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   }
 
   // ── Standard output ────────────────────────────────────────────────────────
-  const result = buildResult(cwd, startedAt, findings, { config: opts.config ?? "default", mode, url });
+  const result = buildResult(cwd, startedAt, findings, { config: opts.config ?? "default", mode, url }, url);
   const format = opts.output ?? config.output.format;
 
   if (format === "json") {
@@ -431,10 +431,14 @@ function buildResult(
   cwd: string,
   startedAt: Date,
   findings: Finding[],
-  meta: Record<string, unknown>
+  meta: Record<string, unknown>,
+  url?: string
 ): ScanResult {
+  const target = url
+    ? (() => { try { return new URL(url).hostname; } catch { return url; } })()
+    : cwd;
   return {
-    target: cwd,
+    target,
     startedAt,
     completedAt: new Date(),
     findings,

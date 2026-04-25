@@ -102,14 +102,26 @@ const SYSTEM = `You are BreachScope's active penetration testing agent — an ex
 Your mission: authenticate, then ACTIVELY ATTACK the application to find REAL, exploitable vulnerabilities. Not theoretical. Confirmed.
 
 ═══════════════════════════════════════════════════════════════
+SPA / SINGLE-PAGE APP HANDLING
+═══════════════════════════════════════════════════════════════
+Many modern apps are SPAs (React, Angular, Vue) with hash routing (/#/login) or client-side routing.
+• After navigate(), always call wait(1500) to let the JS framework render
+• After click() on a button, call wait(1000) before checking the result
+• If get_interactive_elements() returns nothing, call wait(2000) then try again
+• Use wait_for_selector(selector) to block until an element appears (e.g. nav bar after login)
+• Login success on SPAs: URL changes away from /login, OR a nav/avatar element appears, OR cookies are set
+• DO NOT give up on login after one attempt — try wait() + re-check before concluding it failed
+
+═══════════════════════════════════════════════════════════════
 PHASE 1 — AUTHENTICATION
 ═══════════════════════════════════════════════════════════════
-• navigate() to the login URL
+• navigate() to the login URL, then wait(1500)
 • get_interactive_elements() to see form fields
-• fill() + click() to log in
-• Verify success — check for user-specific content, auth cookies
-• If 2FA appears: report it as a note and continue with non-auth-dependent tests
-• After login, call get_cookies() and note any JWT or session tokens for later attacks
+• fill() each field, then click() the submit button, then wait(2000)
+• Check URL — if it changed away from the login page, you are logged in
+• Call get_cookies() — look for session cookies or JWT tokens
+• If still on login page, try wait_for_selector("nav") or wait(2000) and check again
+• After login, note any JWT in cookies for later attacks
 
 ═══════════════════════════════════════════════════════════════
 PHASE 2 — RECONNAISSANCE
@@ -437,6 +449,34 @@ const TOOLS: ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "wait",
+      description: "Pause for N milliseconds. Use after navigate() or click() on SPAs to let the JS framework render before reading the page.",
+      parameters: {
+        type: "object",
+        properties: {
+          ms: { type: "number", description: "Milliseconds to wait (max 5000)" },
+        },
+        required: ["ms"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "wait_for_selector",
+      description: "Wait until a CSS selector appears on the page (up to 8s). Use after login to confirm the authenticated UI rendered.",
+      parameters: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "CSS selector to wait for, e.g. 'nav', '.user-avatar', '#account-menu'" },
+        },
+        required: ["selector"],
+      },
+    },
+  },
 ];
 
 // ── Result type ───────────────────────────────────────────────────────────────
@@ -579,10 +619,26 @@ export async function runAttackProbe(
 
   async function getPageHtml(): Promise<string> {
     try {
-      const html = await page.content();
-      return html.slice(0, 20000);
+      // Strip script tag contents — Angular/React bundles inflate HTML massively
+      const html = (await page.content())
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "<script>[stripped]</script>");
+      return html.slice(0, 12000);
     } catch (e) {
       return JSON.stringify({ error: String(e) });
+    }
+  }
+
+  async function wait(ms: number): Promise<string> {
+    await page.waitForTimeout(Math.min(ms, 5000));
+    return JSON.stringify({ waited_ms: ms, current_url: page.url() });
+  }
+
+  async function waitForSelector(selector: string): Promise<string> {
+    try {
+      await page.waitForSelector(selector, { timeout: 8000 });
+      return JSON.stringify({ found: true, selector, current_url: page.url() });
+    } catch {
+      return JSON.stringify({ found: false, selector, current_url: page.url() });
     }
   }
 
@@ -1017,6 +1073,7 @@ Begin.`;
         tools: TOOLS,
         temperature: 0.05,
         maxTokens: 16000,
+        maxIterations: 30,
       },
       async (toolName, args) => {
         logger.debug(`  [attack] ${toolName}(${JSON.stringify(args).slice(0, 120)})`);
@@ -1048,6 +1105,8 @@ Begin.`;
           case "check_sensitive_paths": return checkSensitivePaths(String(a["base_url"] ?? baseOrigin));
           case "extract_api_endpoints": return extractApiEndpoints();
           case "web_search":           return webSearch(String(a["query"] ?? ""));
+          case "wait":                 return wait(Number(a["ms"] ?? 1000));
+          case "wait_for_selector":    return waitForSelector(String(a["selector"] ?? "body"));
           default:                     return JSON.stringify({ error: `Unknown tool: ${toolName}` });
         }
       }
