@@ -55,7 +55,7 @@ Look for issues tagged `good first issue`. These are scoped and well-defined.
 ### Install
 
 ```bash
-git clone https://github.com/breachscope/breachscope.git
+git clone https://github.com/Afnanksalal/BreachScope.git
 cd breachscope/cli
 npm install
 npm run build
@@ -267,4 +267,4 @@ chore: bump playwright to 1.60
 
 ## Questions?
 
-Open a [GitHub Discussion](https://github.com/breachscope/breachscope/discussions) — not an issue.
+Open a [GitHub Discussion](https://github.com/Afnanksalal/BreachScope/discussions) — not an issue.

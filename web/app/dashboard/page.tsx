@@ -45,11 +45,6 @@ export default async function DashboardPage() {
   const totalTools    = monthlyScans.reduce((a, s) => a + (s.toolsScanned    ?? 0), 0);
   const totalFindings = monthlyScans.reduce((a, s) => a + (s.findingsTotal   ?? 0), 0);
 
-  const bugScans     = monthlyScans.filter((s) => s.scanMode === "bug");
-  const breachScans  = monthlyScans.filter((s) => s.scanMode === "breach");
-  const bugsFound    = bugScans.reduce((a, s) => a + (s.findingsTotal ?? 0), 0);
-  const breachIssues = breachScans.reduce((a, s) => a + (s.findingsTotal ?? 0), 0);
-
   const catMap = Object.fromEntries(categoryStats.map((r) => [r.category, r.total]));
 
   return (
@@ -90,7 +85,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* Secondary stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-2 gap-4">
           <StatsCard
             title="Total Findings"
             value={totalFindings}
@@ -99,25 +94,11 @@ export default async function DashboardPage() {
             index={4}
           />
           <StatsCard
-            title="Bugs Found"
-            value={bugsFound}
-            sub={`${bugScans.length} bug scan${bugScans.length !== 1 ? "s" : ""}`}
-            accent={bugsFound > 0 ? "yellow" : "green"}
-            index={5}
-          />
-          <StatsCard
-            title="Breach Issues"
-            value={breachIssues}
-            sub={`${breachScans.length} breach scan${breachScans.length !== 1 ? "s" : ""}`}
-            accent={breachIssues > 0 ? "red" : "green"}
-            index={6}
-          />
-          <StatsCard
             title="Code Issues"
             value={catMap["code"] ?? 0}
             sub="from static audit"
             accent={(catMap["code"] ?? 0) > 0 ? "yellow" : "green"}
-            index={7}
+            index={5}
           />
         </div>
 

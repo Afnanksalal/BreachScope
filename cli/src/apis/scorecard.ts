@@ -87,8 +87,8 @@ export function scorecardToFindings(
     });
   }
 
-  // Check individual failing categories
-  const CRITICAL_CHECKS: Record<string, { threshold: number; severity: Finding["severity"]; remediation: string }> = {
+  // Security checks — directly impact safety of using this package
+  const SECURITY_CHECKS: Record<string, { threshold: number; severity: Finding["severity"]; remediation: string }> = {
     "Vulnerabilities": {
       threshold: 7,
       severity: "critical",
@@ -99,40 +99,47 @@ export function scorecardToFindings(
       severity: "high",
       remediation: "The repo contains binary artifacts that cannot be audited. Treat with extreme caution.",
     },
-    "Pinned-Dependencies": {
-      threshold: 5,
-      severity: "high",
-      remediation: "CI/CD dependencies are not pinned — supply chain attacks can inject malicious code.",
-    },
-    "Token-Permissions": {
-      threshold: 5,
-      severity: "high",
-      remediation: "GitHub Actions tokens have excessive permissions — a compromised workflow could push malicious code.",
-    },
     "Branch-Protection": {
       threshold: 3,
       severity: "high",
-      remediation: "Main branch is unprotected — maintainer accounts can be used to directly push malicious code.",
+      remediation: "Main branch is unprotected — maintainer accounts could push malicious code directly.",
     },
     "Maintained": {
       threshold: 3,
       severity: "medium",
       remediation: "This project appears unmaintained. Security vulnerabilities may go unpatched indefinitely.",
     },
+  };
+
+  // Maintainer practice checks — describe the package dev team's CI/CD hygiene,
+  // NOT vulnerabilities in the package itself. Much lower signal for end users.
+  const PRACTICE_CHECKS: Record<string, { threshold: number; severity: Finding["severity"]; remediation: string }> = {
+    "Pinned-Dependencies": {
+      threshold: 5,
+      severity: "low",
+      remediation: "The package's own CI/CD dependencies are not pinned — a compromised build tool could affect future releases.",
+    },
+    "Token-Permissions": {
+      threshold: 5,
+      severity: "low",
+      remediation: "The package's GitHub Actions use overly broad token permissions. This is a risk to maintainers, not to your app directly.",
+    },
     "Code-Review": {
       threshold: 5,
-      severity: "medium",
-      remediation: "Code is merged without review — a single compromised maintainer could ship malicious code.",
+      severity: "low",
+      remediation: "Code may be merged without review — a single compromised maintainer could ship malicious code in future releases.",
     },
     "SAST": {
       threshold: 3,
-      severity: "low",
-      remediation: "No static analysis is run on this codebase. Vulnerability-class bugs may go undetected.",
+      severity: "info",
+      remediation: "The package maintainers do not run static analysis. This is a maintainer practice gap, not a known vulnerability.",
     },
   };
 
   for (const check of result.checks) {
-    const rule = CRITICAL_CHECKS[check.name];
+    const securityRule = SECURITY_CHECKS[check.name];
+    const practiceRule = PRACTICE_CHECKS[check.name];
+    const rule = securityRule ?? practiceRule;
     if (!rule || check.score >= rule.threshold || check.score < 0) continue;
 
     // "Vulnerabilities" scorecard check counts every CVE ever filed against the repo —
@@ -140,10 +147,9 @@ export function scorecardToFindings(
     // version, the scorecard number is noise. Downgrade and explain instead of alarming.
     if (check.name === "Vulnerabilities") {
       if (osvVulnCount === 0) {
-        // OSV says clean for installed version — scorecard repo count is historical noise
         findings.push({
           id: `scorecard-vulnerabilities-${toolName}`,
-          title: `${toolName}: Repository has unresolved CVEs (none affect your installed version)`,
+          title: `${toolName}: Repository has historical CVEs (none affect your installed version)`,
           severity: "info",
           category: "supply-chain",
           tool: toolName,
@@ -152,10 +158,9 @@ export function scorecardToFindings(
           references: check.documentation?.url ? [check.documentation.url] : undefined,
         });
       } else {
-        // OSV also found CVEs — both signals agree, this is real
         findings.push({
           id: `scorecard-vulnerabilities-${toolName}`,
-          title: `${toolName}: Scorecard check "Vulnerabilities" failed (${check.score}/10)`,
+          title: `${toolName}: Scorecard "Vulnerabilities" check failed (${check.score}/10)`,
           severity: rule.severity,
           category: "supply-chain",
           tool: toolName,
@@ -167,13 +172,20 @@ export function scorecardToFindings(
       continue;
     }
 
+    const isMaintainerPractice = !!practiceRule;
+    const titlePrefix = isMaintainerPractice
+      ? `${toolName}: [Maintainer Practice] `
+      : `${toolName}: `;
+
     findings.push({
       id: `scorecard-${check.name.toLowerCase().replace(/[^a-z]/g, "-")}-${toolName}`,
-      title: `${toolName}: Scorecard check "${check.name}" failed (${check.score}/10)`,
+      title: `${titlePrefix}${check.name} check failed (${check.score}/10)`,
       severity: rule.severity,
       category: "supply-chain",
       tool: toolName,
-      description: check.reason,
+      description: isMaintainerPractice
+        ? `${check.reason} — Note: this describes the package maintainer's CI/CD practices, not a vulnerability in the package code itself.`
+        : check.reason,
       remediation: rule.remediation,
       references: check.documentation?.url ? [check.documentation.url] : undefined,
     });

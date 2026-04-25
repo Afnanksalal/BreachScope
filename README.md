@@ -7,7 +7,7 @@ Catches what linters and conventional scanners miss, across every language.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js ≥18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/breachscope/breachscope/badge)](https://scorecard.dev/viewer/?uri=github.com/breachscope/breachscope)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Afnanksalal/BreachScope/badge)](https://scorecard.dev/viewer/?uri=github.com/Afnanksalal/BreachScope)
 
 </div>
 

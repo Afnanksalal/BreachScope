@@ -7,6 +7,17 @@
     "bs": "./dist/index.js"
   },
   "main": "./dist/index.js",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Afnanksalal/BreachScope.git"
+  },
+  "homepage": "https://breachscoope.vercel.app",
+  "author": "afnanksalal",
   "scripts": {
     "build": "tsc",
     "dev": "ts-node src/index.ts",
