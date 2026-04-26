@@ -87,7 +87,7 @@ interface ProbeActivity {
 
 // ─── Smart group types ────────────────────────────────────────────────────────
 
-type SmartGroupKey = "secrets" | "injection" | "auth" | "supplychain" | "infra" | "code" | "other";
+type SmartGroupKey = "sandbox" | "secrets" | "injection" | "auth" | "supplychain" | "infra" | "code" | "other";
 
 interface SmartGroupMeta {
   key: SmartGroupKey;
@@ -101,20 +101,24 @@ interface SmartGroupMeta {
 }
 
 const SMART_GROUPS: SmartGroupMeta[] = [
-  { key: "secrets",     label: "Secrets & Credentials",   description: "API keys, passwords, tokens, .env exposure", priority: 0, colorBorder: "border-red-500/30",    colorBg: "bg-red-500/[0.05]",    colorText: "text-red-300",    colorDot: "bg-red-500"    },
-  { key: "injection",   label: "Injection Attacks",        description: "SQL, command, SSTI, XXE, SSRF, path traversal", priority: 1, colorBorder: "border-orange-500/30", colorBg: "bg-orange-500/[0.05]", colorText: "text-orange-300", colorDot: "bg-orange-500" },
-  { key: "auth",        label: "Auth & Authorization",     description: "JWT flaws, IDOR, CSRF, session issues, rate limiting", priority: 2, colorBorder: "border-yellow-500/30", colorBg: "bg-yellow-500/[0.05]", colorText: "text-yellow-300", colorDot: "bg-yellow-500" },
-  { key: "supplychain", label: "Supply Chain",             description: "Dependency CVEs, malicious packages, unsafe versions", priority: 3, colorBorder: "border-purple-500/30", colorBg: "bg-purple-500/[0.05]", colorText: "text-purple-300", colorDot: "bg-purple-500" },
-  { key: "infra",       label: "Infrastructure & Config",  description: "Toolchain misconfigs, security headers, CORS, TLS", priority: 4, colorBorder: "border-cyan-500/30",   colorBg: "bg-cyan-500/[0.05]",   colorText: "text-cyan-300",   colorDot: "bg-cyan-500"   },
-  { key: "code",        label: "Code Security Patterns",   description: "Static analysis findings, dangerous patterns", priority: 5, colorBorder: "border-white/10",      colorBg: "bg-white/[0.02]",      colorText: "text-white/60",   colorDot: "bg-white/40"   },
-  { key: "other",       label: "Other Findings",           description: "Miscellaneous security issues", priority: 6, colorBorder: "border-white/[0.06]",  colorBg: "bg-white/[0.01]",      colorText: "text-white/40",   colorDot: "bg-white/30"   },
+  { key: "sandbox",     label: "Sandbox Active Exploits",  description: "Confirmed vulnerabilities from the Docker sandbox attack agent", priority: 0, colorBorder: "border-breach-500/30", colorBg: "bg-breach-500/[0.05]", colorText: "text-breach-300", colorDot: "bg-breach-500" },
+  { key: "secrets",     label: "Secrets & Credentials",   description: "API keys, passwords, tokens, .env exposure", priority: 1, colorBorder: "border-red-500/30",    colorBg: "bg-red-500/[0.05]",    colorText: "text-red-300",    colorDot: "bg-red-500"    },
+  { key: "injection",   label: "Injection Attacks",        description: "SQL, command, SSTI, XXE, SSRF, path traversal", priority: 2, colorBorder: "border-orange-500/30", colorBg: "bg-orange-500/[0.05]", colorText: "text-orange-300", colorDot: "bg-orange-500" },
+  { key: "auth",        label: "Auth & Authorization",     description: "JWT flaws, IDOR, CSRF, session issues, rate limiting", priority: 3, colorBorder: "border-yellow-500/30", colorBg: "bg-yellow-500/[0.05]", colorText: "text-yellow-300", colorDot: "bg-yellow-500" },
+  { key: "supplychain", label: "Supply Chain",             description: "Dependency CVEs, malicious packages, unsafe versions", priority: 4, colorBorder: "border-purple-500/30", colorBg: "bg-purple-500/[0.05]", colorText: "text-purple-300", colorDot: "bg-purple-500" },
+  { key: "infra",       label: "Infrastructure & Config",  description: "Toolchain misconfigs, security headers, CORS, TLS", priority: 5, colorBorder: "border-cyan-500/30",   colorBg: "bg-cyan-500/[0.05]",   colorText: "text-cyan-300",   colorDot: "bg-cyan-500"   },
+  { key: "code",        label: "Code Security Patterns",   description: "Static analysis findings, dangerous patterns", priority: 6, colorBorder: "border-white/10",      colorBg: "bg-white/[0.02]",      colorText: "text-white/60",   colorDot: "bg-white/40"   },
+  { key: "other",       label: "Other Findings",           description: "Miscellaneous security issues", priority: 7, colorBorder: "border-white/[0.06]",  colorBg: "bg-white/[0.01]",      colorText: "text-white/40",   colorDot: "bg-white/30"   },
 ];
 
 function categorizeFinding(f: Finding): SmartGroupKey {
   const text = `${f.title} ${f.description}`.toLowerCase();
   const isCode = f.category === "code";
 
-  // Secrets & credentials — category-independent (sandbox agent finds these in any context)
+  // Sandbox agent confirmed exploits — identified by tool name
+  if (f.tool === "sandbox-agent" || f.tool === "sandbox" || f.tool === "sandbox_agent") return "sandbox";
+
+  // Secrets & credentials — category-independent
   if (/secret|api[._\s-]?key|password|credential|private[._\s-]?key|\.env|auth[._\s-]?token|bearer|stripe[._\s-]?key|openai|jwt[._\s-]?secret|database[._\s-]?url|hardcoded|exposed[._\s-]?key|leaked[._\s-]?key|env[._\s-]?var/.test(text)) return "secrets";
 
   // Injection & active exploitation
@@ -339,20 +343,44 @@ function AISynthesisSection({ synthesis }: { synthesis: AISynthesis }) {
 
 // ─── Tool risk table ──────────────────────────────────────────────────────────
 
+function buildDepTree(tools: ToolRiskEntry[]): ToolRiskEntry[] {
+  const byName = new Map(tools.map((t) => [t.name, t]));
+  const roots = tools.filter((t) => t.depth === 0 || !t.parent || !byName.has(t.parent));
+  const childrenOf = (parentName: string): ToolRiskEntry[] =>
+    tools.filter((t) => t.parent === parentName).sort((a, b) => b.riskScore - a.riskScore);
+  const flatten = (nodes: ToolRiskEntry[]): ToolRiskEntry[] => {
+    const result: ToolRiskEntry[] = [];
+    for (const node of [...nodes].sort((a, b) => b.riskScore - a.riskScore)) {
+      result.push(node);
+      result.push(...flatten(childrenOf(node.name)));
+    }
+    return result;
+  };
+  return flatten(roots);
+}
+
 function ToolRiskTable({ tools, findings }: { tools: ToolRiskEntry[]; findings: Finding[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const sorted = [...tools].sort((a, b) => b.riskScore - a.riskScore);
+  const ordered = buildDepTree(tools);
   return (
     <div className="space-y-1">
-      {sorted.map((t) => {
+      {ordered.map((t) => {
         const toolFindings = findings.filter((f) => f.tool === t.name);
         return (
-        <div key={t.name} className="rounded-xl border border-white/[0.06] overflow-hidden">
+        <div
+          key={t.name}
+          className="rounded-xl border border-white/[0.06] overflow-hidden"
+          style={t.depth > 0 ? { marginLeft: `${Math.min(t.depth * 20, 60)}px` } : undefined}
+        >
           <button
             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left min-w-0"
             onClick={() => setExpanded(expanded === t.name ? null : t.name)}
           >
-            {t.depth > 0 && <span className="text-white/20 text-xs shrink-0 font-mono">{"└─".repeat(t.depth)}</span>}
+            {t.depth > 0 && (
+              <span className="text-white/15 text-xs shrink-0 font-mono select-none">
+                {"│  ".repeat(Math.max(t.depth - 1, 0))}└─
+              </span>
+            )}
             <div className="flex-1 min-w-0">
               <span className="text-sm text-white/75 font-mono truncate block">{t.name}</span>
               {t.version && <span className="text-white/25 text-[10px] font-mono">v{t.version}</span>}
@@ -566,6 +594,7 @@ const LOG_TYPE_STYLE: Record<AttackLogEntry["type"], { badge: string; badgeText:
 function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
   const [logOpen, setLogOpen] = useState(false);
   const [endpointsOpen, setEndpointsOpen] = useState(false);
+  const [expandedPTT, setExpandedPTT] = useState<Set<string>>(new Set());
 
   const mem = sandbox.memorySnapshot;
   const log = Array.isArray(sandbox.attackLog) ? sandbox.attackLog.filter((e) => e && typeof e === "object") as AttackLogEntry[] : [];
@@ -646,11 +675,12 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
                 </p>
               </div>
               <div className="divide-y divide-yellow-500/[0.06] max-h-60 overflow-y-auto">
-                {credEntries.map(([key, val]) => (
-                  <div key={key} className="px-4 py-2.5 flex items-start gap-2 min-w-0">
-                    <span className="text-yellow-300/60 text-xs font-mono shrink-0 truncate max-w-[40%]">{key}</span>
-                    <span className="text-white/20 text-xs shrink-0">=</span>
-                    <span className="text-yellow-200/50 text-xs font-mono truncate flex-1">{String(val).slice(0, 60)}</span>
+                {credEntries.map(([key]) => (
+                  <div key={key} className="px-4 py-2.5 flex items-center gap-2 min-w-0">
+                    <svg className="w-3 h-3 text-yellow-500/40 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                    </svg>
+                    <span className="text-yellow-300/70 text-xs font-mono truncate">{key}</span>
                   </div>
                 ))}
               </div>
@@ -726,32 +756,84 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
           )}
 
           {/* ── PTT Tree ── */}
-          {(pttVulnNodes.length > 0 || pttChildNodes.length > 0) && (
+          {(pttVulnNodes.length > 0 || pttRootNodes.length > 0) && (
             <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
-              <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider mb-3">Pentest Task Tree</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider">Pentest Task Tree</p>
+                <button
+                  onClick={() => {
+                    if (expandedPTT.size === pttRootNodes.length) {
+                      setExpandedPTT(new Set());
+                    } else {
+                      setExpandedPTT(new Set(pttRootNodes.map((n) => n.id)));
+                    }
+                  }}
+                  className="text-white/20 text-[10px] hover:text-white/45 transition-colors font-mono"
+                >
+                  {expandedPTT.size === pttRootNodes.length ? "collapse all" : "expand all"}
+                </button>
+              </div>
               <div className="space-y-1">
                 {pttRootNodes.map((root) => {
                   const cfg = PTT_STATUS[root.status];
+                  const children = pttChildNodes.filter((n) => root.children.includes(n.id));
+                  const isExpanded = expandedPTT.has(root.id);
                   return (
                     <div key={root.id}>
-                      <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setExpandedPTT((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(root.id)) next.delete(root.id);
+                            else next.add(root.id);
+                            return next;
+                          });
+                        }}
+                        className="w-full flex items-center gap-2 py-1.5 hover:bg-white/[0.04] rounded-lg px-1 transition-colors text-left"
+                      >
+                        {children.length > 0 && (
+                          <svg className={clsx("w-3 h-3 text-white/20 shrink-0 transition-transform duration-150", isExpanded && "rotate-90")}
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                        )}
+                        {children.length === 0 && <span className="w-3 shrink-0" />}
                         <span className={clsx("w-2 h-2 rounded-full shrink-0", cfg.dot)} />
-                        <span className={clsx("text-xs font-medium", cfg.text)}>{root.title}</span>
-                        <span className={clsx("text-[9px] font-mono border px-1 rounded", cfg.text, "border-current opacity-50")}>{cfg.label}</span>
-                      </div>
-                      <div className="ml-4 mt-1 space-y-1">
-                        {pttChildNodes.filter((n) => root.children.includes(n.id)).map((child) => {
-                          const cc = PTT_STATUS[child.status];
-                          return (
-                            <div key={child.id} className="flex items-center gap-2">
-                              <span className="text-white/10 text-[10px] font-mono shrink-0">└─</span>
-                              <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", cc.dot)} />
-                              <span className={clsx("text-xs", cc.text)}>{child.title}</span>
-                              <span className={clsx("text-[9px] font-mono", cc.text, "opacity-50")}>{cc.label}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                        <span className={clsx("text-xs font-medium flex-1", cfg.text)}>{root.title}</span>
+                        <span className={clsx("text-[9px] font-mono border px-1 rounded shrink-0", cfg.text, "border-current opacity-50")}>{cfg.label}</span>
+                        {children.length > 0 && (
+                          <span className="text-white/15 text-[10px] font-mono shrink-0">{children.length}</span>
+                        )}
+                      </button>
+                      {isExpanded && children.length > 0 && (
+                        <div className="ml-6 mt-0.5 space-y-0.5 border-l border-white/[0.06] pl-3">
+                          {children.map((child) => {
+                            const cc = PTT_STATUS[child.status];
+                            const grandchildren = pttChildNodes.filter((n) => child.children.includes(n.id));
+                            return (
+                              <div key={child.id}>
+                                <div className="flex items-center gap-2 py-1 px-1 rounded hover:bg-white/[0.03]">
+                                  <span className="text-white/10 text-[10px] font-mono shrink-0">└</span>
+                                  <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", cc.dot)} />
+                                  <span className={clsx("text-xs flex-1", cc.text)}>{child.title}</span>
+                                  <span className={clsx("text-[9px] font-mono shrink-0", cc.text, "opacity-50")}>{cc.label}</span>
+                                </div>
+                                {grandchildren.map((gc) => {
+                                  const gc_cfg = PTT_STATUS[gc.status];
+                                  return (
+                                    <div key={gc.id} className="ml-4 flex items-center gap-2 py-0.5 px-1">
+                                      <span className="text-white/[0.06] text-[10px] font-mono shrink-0">└</span>
+                                      <span className={clsx("w-1 h-1 rounded-full shrink-0", gc_cfg.dot)} />
+                                      <span className={clsx("text-[11px] flex-1", gc_cfg.text)}>{gc.title}</span>
+                                      <span className={clsx("text-[9px] font-mono shrink-0", gc_cfg.text, "opacity-40")}>{gc_cfg.label}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1005,7 +1087,8 @@ async function generatePdf(
 
   const sevCounts = { critical: 0, high: 0, medium: 0, low: 0 };
   for (const f of findings) {
-    const s = f.severity.toLowerCase() as keyof typeof sevCounts;
+    const rawSev = typeof f.severity === "string" ? f.severity.toLowerCase() : "";
+    const s = rawSev as keyof typeof sevCounts;
     if (s in sevCounts) sevCounts[s]++;
   }
 
@@ -1048,21 +1131,22 @@ async function generatePdf(
     autoTable(doc, {
       startY: y,
       margin: { left: MARGIN, right: MARGIN },
-      head: [["Severity","Category","Title","File","Remediation"]],
+      head: [["Sev","Cat","Title","File / Line","Remediation"]],
       body: sorted.map((f) => [
-        typeof f.severity === "string" ? f.severity.toUpperCase() : "",
-        f.category,
-        f.title,
-        f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : "—",
-        f.remediation ? f.remediation.slice(0, 120) + (f.remediation.length > 120 ? "…" : "") : "—",
+        typeof f.severity === "string" ? f.severity.toUpperCase() : "?",
+        f.category ?? "—",
+        (f.title ?? "").slice(0, 55),
+        f.file ? `${f.file.slice(0, 20)}${f.line ? `:${f.line}` : ""}` : "—",
+        f.remediation ? f.remediation.slice(0, 70) + (f.remediation.length > 70 ? "…" : "") : "—",
       ]),
-      styles: { fontSize: 7.5, cellPadding: 3, overflow: "linebreak", minCellHeight: 8 },
-      headStyles: { fillColor: [30,30,30], textColor: [255,255,255], fontStyle: "bold", fontSize: 8 },
+      styles: { fontSize: 6.5, cellPadding: 2, overflow: "linebreak", minCellHeight: 6, lineColor: [45,45,45], lineWidth: 0.1 },
+      headStyles: { fillColor: [20,20,24], textColor: [200,200,200], fontStyle: "bold", fontSize: 7, cellPadding: 3 },
+      alternateRowStyles: { fillColor: [18,18,22] },
       columnStyles: {
-        0: { cellWidth: 18, fontStyle: "bold" },
-        1: { cellWidth: 22 },
-        2: { cellWidth: 48 },
-        3: { cellWidth: 30 },
+        0: { cellWidth: 15, fontStyle: "bold" },
+        1: { cellWidth: 20 },
+        2: { cellWidth: 52 },
+        3: { cellWidth: 28 },
         4: { cellWidth: "auto" },
       },
       didParseCell: (data) => {
@@ -1070,6 +1154,7 @@ async function generatePdf(
           const sev = String(data.cell.raw).toLowerCase();
           const [r,g,b] = SEV_COLORS[sev] ?? [148,163,184];
           data.cell.styles.textColor = [r,g,b];
+          data.cell.styles.fontStyle = "bold";
         }
       },
       didDrawPage: () => { y = (docAny.lastAutoTable?.finalY ?? y) + 8; },
@@ -1153,17 +1238,123 @@ async function generatePdf(
 
     if (probeActivity.sandbox) {
       const sb = probeActivity.sandbox;
-      checkY(12);
-      doc.setFontSize(9); doc.setFont("helvetica","bold"); doc.setTextColor(60,60,60);
-      doc.text(`Sandbox Attack Agent — ${sb.projectType}`, MARGIN, y);
+      const mem = sb.memorySnapshot;
+      checkY(20);
+
+      doc.setDrawColor(80,40,0);
+      doc.line(MARGIN, y, W - MARGIN, y);
+      y += 5;
+      doc.setFontSize(11); doc.setFont("helvetica","bold"); doc.setTextColor(30,30,30);
+      doc.text("Sandbox Attack Agent", MARGIN, y);
       y += 5;
       doc.setFontSize(7.5); doc.setFont("helvetica","normal"); doc.setTextColor(100,100,100);
-      doc.text(`${sb.findingsCount} finding(s) · ${sb.tokensUsed.toLocaleString()} tokens · ${sb.attackLog.length} actions`, MARGIN + 2, y);
-      y += 4;
-      for (const chain of sb.attackChains.slice(0, 8)) {
-        checkY(5);
-        const truncated = chain.length > 100 ? chain.slice(0, 100) + "…" : chain;
-        doc.text(`  → ${truncated}`, MARGIN + 2, y); y += 4;
+      doc.text(`Project: ${sb.projectType}  ·  ${sb.findingsCount} finding(s)  ·  ${sb.tokensUsed.toLocaleString()} tokens  ·  ${sb.attackLog.length} actions`, MARGIN, y);
+      y += 6;
+
+      // AI worldview
+      if (mem?.worldview && !mem.worldview.startsWith("Session just started")) {
+        checkY(12);
+        doc.setFontSize(7.5); doc.setFont("helvetica","bold"); doc.setTextColor(60,60,60);
+        doc.text("AI Attack Narrative:", MARGIN, y);
+        y += 4;
+        doc.setFont("helvetica","normal"); doc.setTextColor(90,90,90);
+        const wvLines = doc.splitTextToSize(mem.worldview.slice(0, 400), W - MARGIN * 2 - 4);
+        for (const line of wvLines.slice(0, 6)) {
+          checkY(4);
+          doc.text(line as string, MARGIN + 2, y); y += 3.8;
+        }
+        y += 3;
+      }
+
+      // Attack chains
+      const chains = sb.attackChains.filter((c): c is string => typeof c === "string");
+      if (chains.length > 0) {
+        checkY(12);
+        doc.setFontSize(7.5); doc.setFont("helvetica","bold"); doc.setTextColor(180,90,0);
+        doc.text(`Confirmed Attack Chains (${chains.length}):`, MARGIN, y);
+        y += 4;
+        doc.setFont("helvetica","normal"); doc.setTextColor(100,100,100);
+        for (const chain of chains.slice(0, 10)) {
+          checkY(5);
+          const truncated = chain.length > 110 ? chain.slice(0, 110) + "…" : chain;
+          doc.text(`  → ${truncated}`, MARGIN + 2, y); y += 4;
+        }
+        y += 2;
+      }
+
+      // Confirmed findings table
+      const confirmed = mem?.confirmedFindings ?? [];
+      if (confirmed.length > 0) {
+        checkY(20);
+        doc.setFontSize(7.5); doc.setFont("helvetica","bold"); doc.setTextColor(60,60,60);
+        doc.text(`Sandbox Confirmed Findings (${confirmed.length}):`, MARGIN, y);
+        y += 3;
+        autoTable(doc, {
+          startY: y,
+          margin: { left: MARGIN, right: MARGIN },
+          head: [["Sev","Title","CVSS","Validation","Evidence (excerpt)"]],
+          body: confirmed.map((f) => [
+            (f.severity ?? "").toUpperCase(),
+            (f.title ?? "").slice(0, 45),
+            f.cvss_score > 0 ? String(f.cvss_score) : "—",
+            f.validation_confidence ? `${f.validation_confidence} (${f.validation_score ?? "?"}%)` : "—",
+            (f.evidence ?? f.description ?? "").slice(0, 60),
+          ]),
+          styles: { fontSize: 6.5, cellPadding: 2, overflow: "linebreak", minCellHeight: 6 },
+          headStyles: { fillColor: [60,20,20], textColor: [220,180,180], fontStyle: "bold", fontSize: 7 },
+          columnStyles: {
+            0: { cellWidth: 14, fontStyle: "bold" },
+            1: { cellWidth: 48 },
+            2: { cellWidth: 14 },
+            3: { cellWidth: 30 },
+            4: { cellWidth: "auto" },
+          },
+          didParseCell: (data) => {
+            if (data.column.index === 0 && data.section === "body") {
+              const sev = String(data.cell.raw).toLowerCase();
+              if (sev === "critical") data.cell.styles.textColor = [239,68,68];
+              else if (sev === "high") data.cell.styles.textColor = [249,115,22];
+              else if (sev === "medium") data.cell.styles.textColor = [234,179,8];
+              else data.cell.styles.textColor = [6,182,212];
+              data.cell.styles.fontStyle = "bold";
+            }
+          },
+          didDrawPage: () => { y = (docAny.lastAutoTable?.finalY ?? y) + 6; },
+        });
+        y = (docAny.lastAutoTable?.finalY ?? y) + 6;
+      }
+
+      // Discovered secrets — key names only, no values
+      const creds = mem ? Object.keys(mem.credentials) : [];
+      if (creds.length > 0) {
+        checkY(10);
+        doc.setFontSize(7.5); doc.setFont("helvetica","bold"); doc.setTextColor(180,140,0);
+        doc.text(`Discovered Secret Keys (${creds.length}) — values redacted:`, MARGIN, y);
+        y += 4;
+        doc.setFont("helvetica","normal"); doc.setTextColor(140,120,0);
+        const credLine = creds.map((k) => `[${k}]`).join("  ");
+        const credWrapped = doc.splitTextToSize(credLine, W - MARGIN * 2 - 4);
+        for (const line of credWrapped.slice(0, 4)) {
+          checkY(4);
+          doc.text(line as string, MARGIN + 2, y); y += 3.8;
+        }
+        y += 3;
+      }
+
+      // Infra
+      if (mem && (mem.openPorts.length > 0 || Object.keys(mem.frameworkVersions).length > 0)) {
+        checkY(10);
+        doc.setFontSize(7.5); doc.setFont("helvetica","bold"); doc.setTextColor(60,60,60);
+        doc.text("Infrastructure:", MARGIN, y);
+        y += 4;
+        doc.setFont("helvetica","normal"); doc.setTextColor(100,100,100);
+        if (mem.openPorts.length > 0) {
+          doc.text(`  Open ports: ${mem.openPorts.join(", ")}`, MARGIN + 2, y); y += 4;
+        }
+        for (const [fw, ver] of Object.entries(mem.frameworkVersions).slice(0, 8)) {
+          checkY(4);
+          doc.text(`  ${fw}: ${ver}`, MARGIN + 2, y); y += 4;
+        }
       }
     }
   }
@@ -1287,6 +1478,139 @@ function ReportTab({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Sandbox Findings View ───────────────────────────────────────────────────
+
+function SandboxFindingsView({ sandbox, allFindings }: { sandbox: SandboxActivity; allFindings: Finding[] }) {
+  const mem = sandbox.memorySnapshot;
+  const confirmed = mem?.confirmedFindings ?? [];
+  const chains = sandbox.attackChains.filter((c): c is string => typeof c === "string");
+
+  if (confirmed.length === 0 && chains.length === 0) {
+    return (
+      <div className="py-16 text-center">
+        <p className="text-white/30 text-sm">No confirmed sandbox findings.</p>
+        <p className="text-white/20 text-xs mt-1">The attack agent did not confirm any exploitable vulnerabilities in this session.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Summary strip */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="px-3 py-1.5 rounded-xl bg-breach-500/10 border border-breach-500/20 text-breach-300 text-xs font-medium">
+          {confirmed.length} confirmed finding{confirmed.length !== 1 ? "s" : ""}
+        </span>
+        {chains.length > 0 && (
+          <span className="px-3 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-300 text-xs font-medium">
+            {chains.length} attack chain{chains.length !== 1 ? "s" : ""}
+          </span>
+        )}
+        <span className="text-white/25 text-xs">
+          Active exploitation results from Docker sandbox agent · {sandbox.tokensUsed.toLocaleString()} tokens
+        </span>
+      </div>
+
+      {/* Attack chains */}
+      {chains.length > 0 && (
+        <div className="rounded-2xl border border-orange-500/20 bg-orange-500/[0.04] overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-orange-500/10">
+            <p className="text-orange-300/80 text-xs font-semibold uppercase tracking-wider">Confirmed Attack Chains</p>
+          </div>
+          <div className="divide-y divide-orange-500/[0.08]">
+            {chains.map((chain, i) => (
+              <div key={i} className="flex items-start gap-3 px-5 py-3.5">
+                <span className="text-orange-500/50 text-sm shrink-0 font-mono mt-0.5">{i + 1}</span>
+                <p className="text-orange-200/80 text-sm leading-relaxed">{chain}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Confirmed findings */}
+      {confirmed.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-white/30 text-xs font-semibold uppercase tracking-wider">Confirmed Vulnerabilities</p>
+          {confirmed.map((cf) => {
+            const sevColor = cf.severity === "critical"
+              ? "bg-red-500/15 border-red-500/30 text-red-300"
+              : cf.severity === "high"
+              ? "bg-orange-500/15 border-orange-500/30 text-orange-300"
+              : cf.severity === "medium"
+              ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-300"
+              : "bg-cyan-500/15 border-cyan-500/30 text-cyan-300";
+            const valColor = cf.validation_confidence === "confirmed" ? "text-green-400 bg-green-500/10 border-green-500/20"
+              : cf.validation_confidence === "likely" ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20"
+              : cf.validation_confidence === "false_positive" ? "text-white/25 bg-white/5 border-white/10"
+              : "text-white/35 bg-white/5 border-white/10";
+            const matchedFinding = allFindings.find((f) => f.title?.toLowerCase().trim() === cf.title?.toLowerCase().trim());
+            return (
+              <div key={cf.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+                {/* Header */}
+                <div className="flex items-start gap-3 px-5 py-4">
+                  <span className={clsx("shrink-0 px-2 py-0.5 rounded-full text-xs border font-semibold mt-0.5", sevColor)}>
+                    {cf.severity}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white/85 text-sm font-medium leading-snug">{cf.title}</p>
+                    <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                      {cf.cvss_score > 0 && (
+                        <span className="text-white/30 text-xs font-mono">CVSS {cf.cvss_score}</span>
+                      )}
+                      {cf.validation_confidence && (
+                        <span className={clsx("px-1.5 py-0.5 rounded border text-[10px] font-medium", valColor)}>
+                          {cf.validation_confidence} {cf.validation_score != null ? `· ${cf.validation_score}/100` : ""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="px-5 pb-5 border-t border-white/[0.04] pt-4 space-y-3">
+                  <p className="text-white/50 text-sm leading-relaxed">{cf.description}</p>
+                  {cf.evidence && cf.evidence !== cf.description && (
+                    <div className="p-3 rounded-lg bg-black/30 border border-white/[0.06]">
+                      <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider mb-1.5">Evidence</p>
+                      <pre className="text-red-300/70 text-xs font-mono whitespace-pre-wrap break-all leading-relaxed">{cf.evidence.slice(0, 600)}</pre>
+                    </div>
+                  )}
+                  {matchedFinding?.remediation && (
+                    <div className="p-3 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                      <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider mb-1.5">Fix</p>
+                      <p className="text-white/50 text-sm leading-relaxed">{matchedFinding.remediation}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Secret keys discovered */}
+      {(mem?.credentials && Object.keys(mem.credentials).length > 0) && (
+        <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/[0.04] p-5">
+          <p className="text-yellow-300/70 text-xs font-semibold uppercase tracking-wider mb-3">
+            Extracted Secret Keys <span className="text-yellow-500/50 font-mono">({Object.keys(mem.credentials).length})</span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {Object.keys(mem.credentials).map((key) => (
+              <span key={key} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-yellow-500/10 border border-yellow-500/15 text-yellow-300/70 text-xs font-mono">
+                <svg className="w-2.5 h-2.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                </svg>
+                {key}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1740,7 +2064,7 @@ function MaintainerRiskSection({ tools }: { tools: ToolRiskEntry[] }) {
 
 type Tab = "overview" | "findings" | "probes" | "report";
 
-type FindingsViewMode = "smart" | "grid" | "raw";
+type FindingsViewMode = "smart" | "grid" | "raw" | "sandbox";
 
 export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[] }) {
   const [tab, setTab]             = useState<Tab>("overview");
@@ -1916,9 +2240,10 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-1 bg-white/[0.04] rounded-xl p-1">
               {([
-                ["smart", "Smart Groups"],
-                ["grid",  "Supply Chain"],
-                ["raw",   "Raw List"],
+                ["smart",   "Smart Groups"],
+                ["grid",    "Supply Chain"],
+                ["raw",     "Raw List"],
+                ...(probeActivity?.sandbox ? [["sandbox", "Sandbox Probe"]] as Array<[FindingsViewMode, string]> : []),
               ] as Array<[FindingsViewMode, string]>).map(([mode, label]) => (
                 <button
                   key={mode}
@@ -1926,7 +2251,9 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
                   className={clsx(
                     "px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
                     findingsView === mode
-                      ? "bg-white/10 text-white border border-white/15"
+                      ? mode === "sandbox"
+                        ? "bg-breach-500/20 text-breach-300 border border-breach-500/30"
+                        : "bg-white/10 text-white border border-white/15"
                       : "text-white/35 hover:text-white/60 border border-transparent"
                   )}
                 >
@@ -1957,10 +2284,38 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
           {/* ── Supply Chain Grid view ── */}
           {findingsView === "grid" && <SupplyChainGrid tools={toolRiskData} findings={findings} />}
 
+          {/* ── Sandbox Probe view ── */}
+          {findingsView === "sandbox" && probeActivity?.sandbox && (
+            <SandboxFindingsView sandbox={probeActivity.sandbox} allFindings={findings} />
+          )}
+
           {/* ── Raw List view ── */}
           {findingsView === "raw" && (
             <>
-          {filteredFindings.length === 0 ? (
+          {findings.length === 0 ? (
+            total > 0 ? (
+              <div className="py-16 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-6 h-6 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                  </svg>
+                </div>
+                <p className="text-orange-400 text-sm font-medium">Findings not loaded</p>
+                <p className="text-white/30 text-xs mt-1">Scan recorded {total.toLocaleString()} finding(s) but the data was not stored.</p>
+                <p className="text-white/20 text-xs mt-0.5">Re-run the scan to capture results.</p>
+              </div>
+            ) : (
+              <div className="py-16 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <p className="text-green-400 text-sm font-medium">Clean Scan</p>
+                <p className="text-white/25 text-xs mt-1">No findings detected.</p>
+              </div>
+            )
+          ) : filteredFindings.length === 0 ? (
             <div className="py-12 text-center text-white/25 text-sm">No findings match the current filter.</div>
           ) : (
             (["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const).map((sev) => {
@@ -1981,18 +2336,6 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
                 </section>
               );
             })
-          )}
-
-          {findings.length === 0 && (
-            <div className="py-16 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-4">
-                <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <p className="text-green-400 text-sm font-medium">Clean Scan</p>
-              <p className="text-white/25 text-xs mt-1">No findings detected.</p>
-            </div>
           )}
             </>
           )}

@@ -5,12 +5,12 @@ const LINKS = {
     { label: "Features",   href: "#features" },
     { label: "How It Works", href: "#install" },
     { label: "Changelog",  href: "/docs#changelog" },
-    { label: "Roadmap",    href: "/docs#roadmap" },
+    { label: "Roadmap",    href: "/roadmap" },
   ],
   Resources: [
     { label: "Documentation", href: "/docs" },
     { label: "Releases",      href: "https://github.com/Afnanksalal/BreachScope/releases", external: true },
-    { label: "Contributing",  href: "https://github.com/Afnanksalal/BreachScope/blob/main/CONTRIBUTING.md", external: true },
+    { label: "Contributing",  href: "https://github.com/Afnanksalal/BreachScope/blob/master/CONTRIBUTING.md", external: true },
   ],
   Legal: [
     { label: "MIT License",   href: "/docs#license" },
@@ -77,7 +77,7 @@ export function Footer() {
             © {new Date().getFullYear()} Afnan K Salal. Open source under the MIT license.
           </p>
           <div className="flex items-center gap-4">
-            <span className="text-white/30 text-xs font-mono">v0.3.0</span>
+            <span className="text-white/30 text-xs font-mono">v0.3.1</span>
             <span className="text-white/20 text-xs">·</span>
             <span className="text-white/30 text-xs font-mono">Node.js ≥ 18</span>
           </div>

@@ -54,14 +54,13 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   // and pull API keys for AI mode
   const remote = await fetchRemoteConfig();
   if (remote) {
-    if (!opts.mode)   mode   = remote.defaultMode   as typeof mode;
-    if (!opts.target) target = remote.defaultScanMode as typeof target;
+    if (!opts.mode) mode = remote.defaultMode as typeof mode;
     if (!process.env.OPENAI_API_KEY    && remote.openaiKey)    process.env.OPENAI_API_KEY    = remote.openaiKey;
     if (!process.env.FIRECRAWL_API_KEY && remote.firecrawlKey) process.env.FIRECRAWL_API_KEY = remote.firecrawlKey;
   }
 
   console.log(chalk.dim(BANNER));
-  const scanMode = opts.scanMode ?? "all";
+  const scanMode = opts.scanMode ?? remote?.defaultScanMode ?? "all";
   const scanModeLabel = scanMode === "full"
     ? chalk.red("B") + chalk.yellow("U") + chalk.magenta("G") + chalk.red("+") + chalk.red("BREACH") + chalk.gray(" (everything — max coverage)")
     : scanMode === "breach"
@@ -361,7 +360,7 @@ async function pushScan(
       aiReport: opts.aiReport,
     }),
     // Sync mode settings back to dashboard if user passed explicit flags
-    opts.explicitFlags ? syncRemoteConfig(opts.mode, opts.scanMode ?? "all") : Promise.resolve(),
+    opts.explicitFlags ? syncRemoteConfig(opts.mode ?? "basic", opts.scanMode ?? "all") : Promise.resolve(),
   ]);
 
   if (scanId) {

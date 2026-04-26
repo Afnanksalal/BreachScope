@@ -88,6 +88,8 @@ export default function SettingsPage() {
   const [sandboxDeep, setSandboxDeep] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -118,10 +120,14 @@ export default function SettingsPage() {
       body: JSON.stringify(body),
     });
     if (res.ok) {
-      const data = await res.json();
-      setSettings(data);
+      // Re-fetch to get updated hasOpenAI / hasFirecrawl flags
+      const fresh: Settings = await fetch("/api/settings").then((r) => r.json());
+      setSettings(fresh);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+      // Clear key inputs after successful save
+      setOpenAiKey("");
+      setFirecrawlKey("");
     }
     setSaving(false);
   }
@@ -297,14 +303,42 @@ export default function SettingsPage() {
         {/* Danger zone */}
         <section className="rounded-2xl border border-red-500/15 bg-red-500/[0.03] p-5">
           <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-4">Danger Zone</h3>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-white/70 text-sm font-medium">Clear all scan data</p>
-              <p className="text-white/30 text-xs mt-0.5">Permanently delete all scans and findings from your account.</p>
+              <p className="text-white/30 text-xs mt-0.5">Permanently delete all scans and findings from your account. This cannot be undone.</p>
             </div>
-            <button className="px-4 py-2 rounded-xl border border-red-500/25 text-red-400/70 text-sm hover:bg-red-500/10 hover:text-red-400 transition-all">
-              Delete All Scans
-            </button>
+            {!deleteConfirm ? (
+              <button
+                onClick={() => setDeleteConfirm(true)}
+                className="shrink-0 px-4 py-2 rounded-xl border border-red-500/25 text-red-400/70 text-sm hover:bg-red-500/10 hover:text-red-400 transition-all"
+              >
+                Delete All Scans
+              </button>
+            ) : (
+              <div className="shrink-0 flex items-center gap-2">
+                <span className="text-red-400/70 text-xs">Are you sure?</span>
+                <button
+                  onClick={async () => {
+                    setDeleting(true);
+                    const res = await fetch("/api/scans", { method: "DELETE" });
+                    if (res.ok) window.location.href = "/dashboard";
+                    setDeleting(false);
+                    setDeleteConfirm(false);
+                  }}
+                  disabled={deleting}
+                  className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-xs font-medium hover:bg-red-500/30 transition-all disabled:opacity-50"
+                >
+                  {deleting ? "Deleting…" : "Yes, delete all"}
+                </button>
+                <button
+                  onClick={() => setDeleteConfirm(false)}
+                  className="px-3 py-1.5 rounded-lg border border-white/10 text-white/40 text-xs hover:text-white/60 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         </section>
       </div>

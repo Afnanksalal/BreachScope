@@ -76,13 +76,6 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom */}
-      <div className="px-4 py-4 border-t border-white/[0.06] shrink-0">
-        <div className="p-3 rounded-xl bg-white/[0.04]">
-          <p className="text-white/50 text-xs font-medium mb-1">CLI Login</p>
-          <code className="text-white/35 text-xs">breachscope login</code>
-        </div>
-      </div>
     </>
   );
 

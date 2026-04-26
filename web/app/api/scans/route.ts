@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { scans, findings as findingsTable } from "@/lib/schema";
 import { validateApiKey, unauthorized } from "@/lib/middleware-utils";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
@@ -125,4 +125,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   return NextResponse.json({ id: scan.id, ok: true }, { status: 201 });
+}
+
+export async function DELETE(): Promise<NextResponse> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const userScans = await db
+    .select({ id: scans.id })
+    .from(scans)
+    .where(eq(scans.userId, session.user.id));
+
+  if (userScans.length > 0) {
+    const ids = userScans.map((s) => s.id);
+    await db.delete(findingsTable).where(inArray(findingsTable.scanId, ids));
+    await db.delete(scans).where(eq(scans.userId, session.user.id));
+  }
+
+  return NextResponse.json({ ok: true, deleted: userScans.length });
 }

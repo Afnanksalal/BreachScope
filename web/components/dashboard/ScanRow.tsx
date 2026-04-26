@@ -1,3 +1,5 @@
+"use client";
+
 import { clsx } from "clsx";
 import type { Scan } from "@/lib/schema";
 
@@ -35,7 +37,10 @@ export function ScanRow({ scan }: { scan: Scan }) {
   const modeBadge = MODE_BADGE[scan.scanMode] ?? MODE_BADGE.all;
 
   return (
-    <tr className="border-b border-white/5 hover:bg-white/2 transition-colors group">
+    <tr
+      className="border-b border-white/5 hover:bg-white/[0.04] transition-colors group cursor-pointer"
+      onClick={() => { window.location.href = `/dashboard/scan/${scan.id}`; }}
+    >
       <td className="px-5 py-4">
         <div className="flex items-center gap-3">
           <div className={clsx(
