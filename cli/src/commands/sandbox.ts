@@ -956,14 +956,38 @@ function neutralizeDockerignore(cwd: string): (() => void) {
     hadOriginal = true;
   }
 
-  // Write a permissive .dockerignore — only exclude things that break builds
-  // Explicitly allow .env* so nothing is hidden from the sandbox
+  // Write a permissive .dockerignore — exclude build artifacts and deps (re-installed inside
+  // container) but keep all source files, .env*, and config files so the sandbox has full access.
   fs.writeFileSync(ignorePath, [
+    // Version control
     ".git",
     ".gitignore",
+    // Logs
     "*.log",
+    "logs/",
+    // BreachScope temp files
     ".breachscope-sandbox.Dockerfile",
     ".dockerignore.breachscope-bak",
+    // Dependencies — always reinstalled inside container; copying them would be GBs and cause platform mismatch
+    "**/node_modules",
+    "**/vendor",
+    // Build output — rebuilt inside container
+    "**/dist",
+    "**/build",
+    "**/.next",
+    "**/.nuxt",
+    "**/.turbo",
+    "**/target",
+    "**/__pycache__",
+    "**/*.pyc",
+    "**/.pytest_cache",
+    // IDE / OS
+    "**/.vscode",
+    "**/.idea",
+    "**/.DS_Store",
+    // Test / coverage artifacts (not needed for sandbox)
+    "**/coverage",
+    "**/.nyc_output",
   ].join("\n") + "\n", "utf-8");
 
   return function restore() {
