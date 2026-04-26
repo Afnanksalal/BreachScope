@@ -107,6 +107,7 @@ async function runDockerfileFixAgent(
   projectType: string,
   projectContext: string,
   fixReason: "build" | "runtime",
+  serviceSubpath?: string,
 ): Promise<string> {
   const FIX_TOOLS: ChatCompletionTool[] = [
     {
@@ -195,6 +196,19 @@ async function runDockerfileFixAgent(
 
   const edgeCases = LANGUAGE_EDGE_CASES[projectType] ?? "";
 
+  const monorepoNote = serviceSubpath ? `
+MONOREPO CRITICAL RULE: This Dockerfile targets service '${serviceSubpath}' inside a monorepo.
+The Docker build context is the monorepo ROOT — not the service subdirectory.
+The ONLY working pattern is:
+  WORKDIR /app
+  COPY . .                              ← copies full monorepo root — DO NOT change
+  WORKDIR /app/${serviceSubpath}        ← then switch to service
+  RUN npm install --legacy-peer-deps    ← installs service deps from its own package.json
+NEVER use: COPY package*.json ./        ← fails because build context is the ROOT
+NEVER use: COPY ${serviceSubpath}/package*.json ./ ← also fails
+If the error is about missing package.json or COPY failing: replace with COPY . . pattern above.
+` : "";
+
   const systemPrompt = `You are a Docker expert specializing in fixing broken Dockerfiles. Your ONLY job is to fix the specific error and output a corrected Dockerfile.
 
 RULES:
@@ -204,7 +218,7 @@ RULES:
 4. Do NOT make unrelated changes
 5. Call write_dockerfile once you have the fix
 
-${edgeCases}`;
+${monorepoNote}${edgeCases}`;
 
   const errorType = fixReason === "build" ? "DOCKER BUILD FAILURE" : "CONTAINER STARTUP CRASH";
   const userMessage = `${errorType}
@@ -277,6 +291,7 @@ async function buildWithSelfHealing(
   projectType: string,
   projectContext: string,
   onAttempt: (attempt: number, status: "building" | "failed" | "fixing" | "success", msg?: string) => void,
+  serviceSubpath?: string,
 ): Promise<void> {
   const MAX_ATTEMPTS = 4;
   const seenErrors = new Set<string>();
@@ -319,6 +334,7 @@ async function buildWithSelfHealing(
         projectType,
         projectContext,
         "build",
+        serviceSubpath,
       );
 
       if (!fixedDockerfile || fixedDockerfile === currentDockerfile) {
@@ -355,6 +371,7 @@ async function fixStartupCrash(
   projectEnvVars: Record<string, string>,
   containerName: string,
   onStatus: (msg: string) => void,
+  serviceSubpath?: string,
 ): Promise<string | null> {
   const MAX_RUNTIME_FIXES = 3;
   const seenErrors = new Set<string>();
@@ -383,6 +400,7 @@ async function fixStartupCrash(
       projectType,
       projectContext,
       "runtime",
+      serviceSubpath,
     );
 
     if (!fixedDockerfile || fixedDockerfile === currentDockerfile) {
@@ -708,6 +726,26 @@ RULE 13 — .ENV FILES:
   Add to Dockerfile: ENV NODE_ENV=development
   Or add dotenv loading: CMD ["sh", "-c", "node -r dotenv/config dist/main.js 2>/dev/null || node dist/main.js"]
 
+RULE 14 — MONOREPO DOCKERFILE PATTERN (critical — this is the #1 cause of build failures):
+  When targeting a service inside a monorepo (multiple subdirectories each with their own manifest),
+  the Docker build context is ALWAYS the monorepo ROOT, not the service subdirectory.
+  The ONLY correct pattern is:
+
+    FROM node:20
+    RUN apt-get update && apt-get install -y curl build-essential && rm -rf /var/lib/apt/lists/*
+    WORKDIR /app
+    COPY . .                           ← copies the ENTIRE monorepo from root
+    WORKDIR /app/Backend               ← then switch into the chosen service
+    RUN npm install --legacy-peer-deps
+    RUN npm run build
+    ENV NODE_ENV=development PORT=3000
+    EXPOSE 3000
+    CMD ["node", "dist/main.js"]
+
+  NEVER write: COPY package*.json ./   ← FAILS when service is in a subdirectory
+  NEVER write: COPY Backend/package*.json ./ ← ALSO FAILS (build context has no such path)
+  ALWAYS: COPY . . first (copies full monorepo), then WORKDIR /app/<service>.
+
 ═══════════════════════════════════════════════════════
 IMPORTANT: Read the existing Dockerfile or docker-compose.yml FIRST if present.
 The dev team already solved the startup problem — don't reinvent it, improve on it.
@@ -716,10 +754,11 @@ The dev team already solved the startup problem — don't reinvent it, improve o
 Call write_dockerfile when done. summary field = full security intel from your analysis.`;
 
 async function runCodebaseUnderstandingAgent(
-  buildContext: string,  // Docker build root (monorepo root or project root)
-  servicePath: string,   // Service to analyze and run (may equal buildContext)
+  buildContext: string,        // Docker build root (monorepo root or project root)
+  servicePath: string,         // Service to analyze and run (may equal buildContext)
+  isMonorepoProject = false,   // true when we detected multiple services at root
 ): Promise<CodebaseAnalysis> {
-  const isMonorepoService = buildContext !== servicePath;
+  const isMonorepoService = buildContext !== servicePath || isMonorepoProject;
   const ignorePatterns = ["node_modules", ".git", "dist", "build", ".next", "__pycache__", ".turbo", "vendor", "target"];
 
   // For monorepos: list service files fully + root manifest files only (truncated)
@@ -749,8 +788,12 @@ async function runCodebaseUnderstandingAgent(
     } catch { /* ignore */ }
   }
 
+  const relativeServicePath = buildContext !== servicePath
+    ? path.relative(buildContext, servicePath).replace(/\\/g, "/")
+    : "";
+
   const serviceLabel = isMonorepoService
-    ? `Service: ${path.relative(buildContext, servicePath)} (inside monorepo)`
+    ? (relativeServicePath ? `Service: ${relativeServicePath} (inside monorepo)` : "Monorepo root — AI will pick the target service")
     : "Single project";
 
   const fileTree = [
@@ -809,9 +852,12 @@ async function runCodebaseUnderstandingAgent(
 
   const monorepoContext = isMonorepoService ? `
 MONOREPO: Docker build context is the ROOT (${buildContext}).
-The service we are attacking is at: ${path.relative(buildContext, servicePath)}
-In the Dockerfile: COPY . . copies the full monorepo. WORKDIR should be /app/${path.relative(buildContext, servicePath).replace(/\\/g, "/")}.
-Install root workspace deps first if a root package.json exists, then cd into the service.
+${relativeServicePath
+    ? `The service we are attacking is at: ${relativeServicePath}`
+    : `This root contains multiple services. PICK the backend/API service to attack (the one with the most interesting attack surface — auth, DB, APIs).`}
+In the Dockerfile: use RULE 14 — COPY . . from root first, then WORKDIR /app/<chosen-service>.
+NEVER use COPY package*.json ./ or COPY <service>/package*.json ./ — both fail in monorepo builds.
+Install root workspace deps first if a root package.json exists, then WORKDIR into the service.
 ` : "";
 
   const userMessage = `Analyze this project thoroughly then call write_dockerfile.
@@ -1109,7 +1155,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
 
     const analysisSpinner = ora("AI analyzing codebase...").start();
     try {
-      const analysis = await runCodebaseUnderstandingAgent(cwd, cwd);
+      const analysis = await runCodebaseUnderstandingAgent(cwd, cwd, monorepo);
       if (analysis.dockerfile) {
         aiDockerfile = analysis.dockerfile;
         detectedPort = analysis.port || defaultPort;
@@ -1185,6 +1231,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
           buildSpinner.text = `Build succeeded on attempt ${attempt}`;
         }
       },
+      aiChosenSubpath || undefined,
     );
     const fixNote = buildAttempts > 1 ? ` (fixed in ${buildAttempts} attempts)` : "";
     buildSpinner.succeed(`Image built: ${imageName}${fixNote}`);
@@ -1266,6 +1313,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
         projectEnvVars,
         containerName,
         (msg) => { crashSpinner.text = msg; },
+        aiChosenSubpath || undefined,
       );
       if (fixedContainerId) {
         containerId = fixedContainerId;
@@ -1301,6 +1349,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
           projectEnvVars,
           containerName,
           (msg) => { healthSpinner.text = msg; },
+          aiChosenSubpath || undefined,
         );
         if (fixedContainerId) {
           containerId = fixedContainerId;
