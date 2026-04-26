@@ -110,10 +110,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await db.insert(findingsTable).values(
       rawFindings.slice(0, 1000).map((f) => ({
         scanId:      scan.id,
-        title:       f.title,
+        title:       f.title       ?? "Untitled",
         severity:    f.severity,
         category:    f.category,
-        description: f.description,
+        description: f.description ?? "",
         detail:      f.detail      ?? null,
         remediation: f.remediation ?? null,
         tool:        f.tool        ?? null,

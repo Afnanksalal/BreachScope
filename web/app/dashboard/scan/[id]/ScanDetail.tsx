@@ -114,11 +114,22 @@ function categorizeFinding(f: Finding): SmartGroupKey {
   const text = `${f.title} ${f.description}`.toLowerCase();
   const isCode = f.category === "code";
 
-  if (isCode && /secret|api[._\s-]?key|password|credential|private[._\s-]?key|\.env|auth[._\s-]?token|bearer|stripe[._\s-]?key|openai|jwt[._\s-]?secret|database[._\s-]?url/.test(text)) return "secrets";
-  if (/sql[.\s-]?inject|command[.\s-]?inject|ssti|server[.\s-]?side[.\s-]?template|xxe|ldap[.\s-]?inject|header[.\s-]?inject|ssrf|path[.\s-]?travers|local[.\s-]?file|lfi|rfi|rce|remote[.\s-]?code/.test(text)) return "injection";
-  if (/jwt|auth[.\s-]?bypass|idor|bola|session|csrf|cross[.\s-]?site[.\s-]?req|unauthorized|privilege[.\s-]?escal|rate[.\s-]?limit|brute[.\s-]?force|broken[.\s-]?auth/.test(text)) return "auth";
+  // Secrets & credentials — category-independent (sandbox agent finds these in any context)
+  if (/secret|api[._\s-]?key|password|credential|private[._\s-]?key|\.env|auth[._\s-]?token|bearer|stripe[._\s-]?key|openai|jwt[._\s-]?secret|database[._\s-]?url|hardcoded|exposed[._\s-]?key|leaked[._\s-]?key|env[._\s-]?var/.test(text)) return "secrets";
+
+  // Injection & active exploitation
+  if (/sql[._\s-]?inject|command[._\s-]?inject|ssti|server[._\s-]?side[._\s-]?template|xxe|ldap[._\s-]?inject|header[._\s-]?inject|ssrf|server[._\s-]?side[._\s-]?request|path[._\s-]?travers|local[._\s-]?file|lfi|rfi|rce|remote[._\s-]?code|code[._\s-]?inject|xss|cross[._\s-]?site[._\s-]?script|prototype[._\s-]?pollution|template[._\s-]?inject|shell[._\s-]?inject|open[._\s-]?redirect|zip[._\s-]?slip/.test(text)) return "injection";
+
+  // Auth & access control
+  if (/jwt|auth[._\s-]?bypass|authentication[._\s]bypass|idor|bola|session|csrf|cross[._\s-]?site[._\s-]?req|unauthorized|unauthenticated|privilege[._\s-]?escal|rate[._\s-]?limit|brute[._\s-]?force|broken[._\s-]?auth|access[._\s-]?control|insecure[._\s-]?direct|permission[._\s-]?bypass|missing[._\s-]?auth|improper[._\s-]?auth/.test(text)) return "auth";
+
+  // Supply chain
   if (f.category === "dependency" || f.category === "supply-chain") return "supplychain";
+
+  // Infrastructure & config — both category-based and keyword-based
   if (f.category === "toolchain" || f.category === "blackbox") return "infra";
+  if (/misconfigur|cors[._\s]|tls[._\s]|ssl[._\s]|security[._\s-]?header|endpoint[._\s-]?expos|debug[._\s-]?endpoint|admin[._\s-]?route|open[._\s-]?port|redis[._\s]|service[._\s-]?expos|information[._\s-]?disclosure|version[._\s-]?disclosure/.test(text)) return "infra";
+
   if (isCode) return "code";
   return "other";
 }
