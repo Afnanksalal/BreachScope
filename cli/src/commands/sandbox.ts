@@ -27,6 +27,10 @@ import {
 import { webSearch, crawlUrl } from "../core/crawler.js";
 import { runSandboxAgent } from "../agents/sandbox-agent.js";
 import type { SandboxAgentResult } from "../agents/sandbox-agent.js";
+import { runCodeAgent } from "../agents/code.js";
+import { runDependencyAgent } from "../agents/dependency.js";
+import { runBlackboxAgent } from "../agents/blackbox.js";
+import type { AgentContext } from "../core/types.js";
 import { renderConsoleReport } from "../reporters/console.js";
 import { renderJsonReport } from "../reporters/json.js";
 import { pushScanToDashboard } from "../core/push-scan.js";
@@ -1002,6 +1006,45 @@ function neutralizeDockerignore(cwd: string): (() => void) {
   };
 }
 
+// ── Build AgentContext for static scan agents ─────────────────────────────────
+
+async function buildAgentContext(cwd: string, url?: string): Promise<AgentContext> {
+  const files: Record<string, string> = {};
+
+  let allFiles: string[] = [];
+  try {
+    allFiles = await fg([
+      "**/*.{ts,tsx,js,jsx,py,go,rs,rb,php,cs,java,ex,exs,dart}",
+      "**/package.json", "**/requirements*.txt", "**/go.mod", "**/Cargo.toml",
+      "**/Gemfile", "**/pom.xml", "**/build.gradle", "**/composer.json",
+      "**/.env", "**/.env.*", "**/Dockerfile*", "**/docker-compose*.yml",
+    ], {
+      cwd,
+      ignore: ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.git/**", "**/vendor/**", "**/target/**"],
+      absolute: false,
+      onlyFiles: true,
+      suppressErrors: true,
+    });
+  } catch { /* ignore */ }
+
+  for (const f of allFiles.slice(0, 120)) {
+    try {
+      const content = fs.readFileSync(path.join(cwd, f), "utf-8");
+      files[f] = content.slice(0, 8000);
+    } catch { /* skip unreadable */ }
+  }
+
+  let packageJson: Record<string, unknown> | undefined;
+  try { packageJson = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf-8")); } catch { /* ok */ }
+
+  const deps = Object.keys({
+    ...(packageJson?.["dependencies"] as Record<string, string> ?? {}),
+    ...(packageJson?.["devDependencies"] as Record<string, string> ?? {}),
+  });
+
+  return { files, packageJson, dependencies: deps, url, toolchain: {}, existingFindings: [], crawlCache: {}, scanMode: "all" };
+}
+
 // ── Main command ──────────────────────────────────────────────────────────────
 
 export async function runSandbox(opts: SandboxOptions): Promise<void> {
@@ -1279,18 +1322,24 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
       healthSpinner.succeed(`App is ready at http://${containerIP}:${appPort}`);
     }
 
-    // ── AI sandbox attack agent ─────────────────────────────────────────────
+    // ── Full swarm: dynamic attack + static analysis in parallel ────────────
     if (process.env["OPENAI_API_KEY"]) {
-      logger.section("Phase 1 — AI Attack Agent");
-      console.log(chalk.gray("  Root access inside container — AI has full codebase knowledge and attacks with precision."));
-      console.log(chalk.gray("  Covers: env secrets · internal ports · injection · auth bypass · SSRF · JWT · SSTI · RCE...\n"));
+      logger.section("Phase 1 — Full Swarm Attack");
+      console.log(chalk.gray("  Running 4 agents in parallel:"));
+      console.log(chalk.gray("  · Sandbox attack agent  — root access, JWT forge, DB dump, specialist swarm"));
+      console.log(chalk.gray("  · Code analysis agent   — logic bugs, missing auth, IDOR, injection in source"));
+      console.log(chalk.gray("  · Dependency CVE agent  — known CVEs in all packages"));
+      console.log(chalk.gray("  · Blackbox HTTP agent   — external probe, CORS, headers, exposed endpoints\n"));
 
-      const agentSpinner = ora("Attack agent running — may take 5-10 minutes...").start();
-      try {
-        const serviceSubpath = aiChosenSubpath || "";
+      const swarmSpinner = ora("Swarm running — may take 10-15 minutes...").start();
 
-        const agentResult = await runSandboxAgent(
-          containerId,
+      const agentCtx = await buildAgentContext(cwd, `http://127.0.0.1:${appPort}`);
+
+      const serviceSubpath = aiChosenSubpath || "";
+
+      const [sandboxResult, codeResult, depResult, blackboxResult] = await Promise.allSettled([
+        runSandboxAgent(
+          containerId!,
           containerIP,
           appPort,
           projectType,
@@ -1298,34 +1347,85 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
           serviceSubpath,
           exec,
           (tail) => getContainerLogs(containerId!, tail),
-        );
+        ),
+        runCodeAgent({ ...agentCtx, existingFindings: [] }),
+        runDependencyAgent({ ...agentCtx, existingFindings: [] }),
+        runBlackboxAgent({ ...agentCtx, url: `http://127.0.0.1:${appPort}`, existingFindings: [] }),
+      ]);
 
-        findings.push(...agentResult.findings);
-        agentSpinner.succeed(
-          `Attack complete — ${agentResult.findings.length} finding(s) · ${agentResult.tokensUsed.toLocaleString()} tokens · ${agentResult.attackLog.length} actions`
-        );
+      let totalTokens = 0;
+      let totalActions = 0;
 
-        if (agentResult.attackChains.length > 0) {
+      if (sandboxResult.status === "fulfilled") {
+        findings.push(...sandboxResult.value.findings);
+        sandboxAgentResult = sandboxResult.value;
+        totalTokens += sandboxResult.value.tokensUsed;
+        totalActions += sandboxResult.value.attackLog.length;
+        if (sandboxResult.value.attackChains.length > 0) {
           console.log(chalk.gray(`\n  Attack chains:`));
-          for (const chain of agentResult.attackChains) {
+          for (const chain of sandboxResult.value.attackChains) {
             console.log(chalk.gray(`    → ${chain.slice(0, 120)}`));
           }
         }
+      } else {
+        logger.warn(`Sandbox agent failed: ${sandboxResult.reason}`);
+      }
 
-        if (opts.verbose && agentResult.attackLog.length > 0) {
-          console.log(chalk.gray(`\n  Attack log (${agentResult.attackLog.length} steps):`));
-          for (const entry of agentResult.attackLog.slice(0, 20)) {
-            const icon = entry.type === "finding" ? "🔴" : entry.type === "credential" ? "🔑" : entry.type === "chain" ? "⛓" : entry.type === "http" ? "→" : "$";
-            console.log(chalk.gray(`    ${icon} [${entry.step}] ${entry.tool}: ${entry.input.slice(0, 80)}`));
-          }
+      if (codeResult.status === "fulfilled") {
+        findings.push(...codeResult.value.findings);
+        totalTokens += codeResult.value.tokensUsed;
+        logger.debug(`[code-agent] ${codeResult.value.findings.length} findings`);
+      } else {
+        logger.warn(`Code agent failed: ${codeResult.reason}`);
+      }
+
+      if (depResult.status === "fulfilled") {
+        findings.push(...depResult.value.findings);
+        totalTokens += depResult.value.tokensUsed;
+        logger.debug(`[dep-agent] ${depResult.value.findings.length} findings`);
+      } else {
+        logger.warn(`Dependency agent failed: ${depResult.reason}`);
+      }
+
+      if (blackboxResult.status === "fulfilled") {
+        findings.push(...blackboxResult.value.findings);
+        totalTokens += blackboxResult.value.tokensUsed;
+        logger.debug(`[blackbox-agent] ${blackboxResult.value.findings.length} findings`);
+      } else {
+        logger.warn(`Blackbox agent failed: ${blackboxResult.reason}`);
+      }
+
+      // Deduplicate findings by title across agents
+      const seen = new Set<string>();
+      const deduped = findings.filter((f) => {
+        const key = f.title.toLowerCase().trim();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      findings.length = 0;
+      findings.push(...deduped);
+
+      const breakdown = [
+        sandboxResult.status === "fulfilled" ? `${sandboxResult.value.findings.length} dynamic` : "sandbox failed",
+        codeResult.status === "fulfilled"    ? `${codeResult.value.findings.length} code`    : "code failed",
+        depResult.status === "fulfilled"     ? `${depResult.value.findings.length} deps`     : "deps failed",
+        blackboxResult.status === "fulfilled" ? `${blackboxResult.value.findings.length} http` : "http failed",
+      ].join(" · ");
+
+      swarmSpinner.succeed(
+        `Swarm complete — ${findings.length} finding(s) · ${breakdown} · ${totalTokens.toLocaleString()} tokens · ${totalActions} actions`
+      );
+
+      if (opts.verbose && sandboxAgentResult && sandboxAgentResult.attackLog.length > 0) {
+        console.log(chalk.gray(`\n  Attack log (${sandboxAgentResult.attackLog.length} steps):`));
+        for (const entry of sandboxAgentResult.attackLog.slice(0, 20)) {
+          const icon = entry.type === "finding" ? "🔴" : entry.type === "credential" ? "🔑" : entry.type === "chain" ? "⛓" : entry.type === "http" ? "→" : "$";
+          console.log(chalk.gray(`    ${icon} [${entry.step}] ${entry.tool}: ${entry.input.slice(0, 80)}`));
         }
-
-        sandboxAgentResult = agentResult;
-      } catch (e) {
-        agentSpinner.fail(`Attack agent failed: ${e}`);
       }
     } else {
-      logger.warn("Skipping AI attack agent — OPENAI_API_KEY not set.");
+      logger.warn("Skipping AI agents — OPENAI_API_KEY not set.");
     }
 
     // ── Summary ─────────────────────────────────────────────────────────────

