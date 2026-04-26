@@ -30,7 +30,7 @@ export default function DocsPage() {
           <div className="mb-14 pb-10 border-b border-white/[0.06]">
             <div className="inline-flex items-center gap-2 mb-4 px-2.5 py-1 rounded-full border border-white/[0.08] bg-white/[0.03]">
               <span className="w-1.5 h-1.5 rounded-full bg-breach-500 animate-pulse" />
-              <span className="text-xs text-white/40 font-mono">v0.3.0</span>
+              <span className="text-xs text-white/40 font-mono">v0.3.1</span>
             </div>
             <h1 className="text-4xl font-serif italic text-white mb-3">Documentation</h1>
             <p className="text-white/40 text-base max-w-xl leading-relaxed">
@@ -208,7 +208,10 @@ thresholds:
                 ["-p, --port", "auto", "App port inside the container (auto-detected from project)"],
                 ["-i, --image", "auto", "Custom base Docker image (default: auto-detected by language)"],
                 ["-t, --timeout", "60", "Seconds to wait for the app to start"],
-                ["--deep", "—", "Extended attack sequences — more iterations"],
+                ["--deep", "—", "Extended attack: 120 iterations instead of 80"],
+                ["--breach", "—", "Companion agents focus on supply chain & credential risk"],
+                ["--bug", "—", "Companion agents focus on exploitable code vulnerabilities"],
+                ["--scan-mode", "all", "Explicit companion mode: all | breach | bug"],
                 ["--no-cleanup", "—", "Keep container running after scan for manual inspection"],
                 ["-u, --url", "—", "Target URL context for dashboard reporting"],
                 ["-o, --output", "console", "Output format: console | json"],
@@ -216,6 +219,9 @@ thresholds:
                 ["-v, --verbose", "—", "Debug output"],
               ]}
             />
+            <Callout type="tip">
+              Sandbox defaults (attack depth + companion agent mode) can be set permanently in the dashboard <strong>Settings → Sandbox Defaults</strong>. CLI flags always take priority.
+            </Callout>
             <Callout type="note">
               Requires Docker to be installed and running. The AI agent runs as root inside the container and installs any tool it needs (nmap, sqlmap, nikto, etc.). Results are pushed to the dashboard and displayed as a live terminal replay.
             </Callout>
@@ -551,7 +557,27 @@ jobs:
           <Divider label="Release History" />
 
           {/* ── Changelog ─────────────────────────────────── */}
-          <Section id="changelog" label="Changelog" title="v0.3.0 — 2026-04-27">
+          <Section id="changelog" label="Changelog" title="v0.3.1 — 2026-04-27">
+            <p className="text-white/45 mb-5 leading-relaxed">
+              Sandbox CLI flags, dashboard Sandbox Defaults settings, and multi-language AI dependency agent.
+            </p>
+            <div className="space-y-4">
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Sandbox flags</strong> — <code className="font-mono text-white/65">--breach</code>, <code className="font-mono text-white/65">--bug</code>, <code className="font-mono text-white/65">--scan-mode</code> control companion agent focus. <code className="font-mono text-white/65">--deep</code> now wired end-to-end: 120 attack iterations.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Sandbox Defaults in Settings</strong> — configure Attack Depth (Normal/Deep) and Companion Agent Mode (All/Breach/Bug) from the dashboard. CLI flags always override.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Multi-language AI dependency agent</strong> — dep agent now covers all 10 ecosystems. <code className="font-mono text-white/65">fetch_osv_data</code>, <code className="font-mono text-white/65">fetch_github_advisory</code>, and <code className="font-mono text-white/65">search_vulnerabilities</code> all accept an <code className="font-mono text-white/65">ecosystem</code> parameter. Packages sent to the agent grouped by ecosystem with correct OSV tags.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Fixed" color="red">
+                <code className="font-mono text-white/65">--deep</code> flag was accepted but never forwarded to the sandbox agent — attack iteration count was always 80 regardless of flag.
+              </ChangelogEntry>
+            </div>
+          </Section>
+
+          <Section id="changelog-030" title="v0.3.0 — 2026-04-27">
             <p className="text-white/45 mb-5 leading-relaxed">
               Major sandbox upgrade: AI supervisor + validator agents, CVE intelligence module, 3 new specialist attackers, rabbit hole prevention, Pentest Task Tree, OWASP ZAP integration, and a full sandbox dashboard redesign.
             </p>
@@ -611,7 +637,7 @@ jobs:
 
           <Section id="changelog-010" title="v0.1.0 — 2026-04-25">
             <p className="text-white/45 mb-5 leading-relaxed">
-              Initial release: Docker Attack Arena, 10-language dependency scanning, 66-pattern static analysis, AI scan modes, web dashboard.
+              Initial release: Docker Attack Arena, 10-language dependency scanning, 62-pattern static analysis, AI scan modes, web dashboard.
             </p>
             <div className="space-y-4">
               <ChangelogEntry tag="Added" color="green">
@@ -621,7 +647,7 @@ jobs:
                 <strong>10-language dependency scanning</strong> — JavaScript, Python, Go, Rust, Ruby, Java, PHP, .NET, Elixir, Dart. All ecosystems query OSV.dev.
               </ChangelogEntry>
               <ChangelogEntry tag="Added" color="green">
-                <strong>66-pattern static analysis</strong> in full mode — 13 base + 30 bug + 23 breach patterns. Mode-aware: <code className="font-mono text-white/65">--breach</code>, <code className="font-mono text-white/65">--bug</code>, or combined.
+                <strong>62-pattern static analysis</strong> in full mode — 13 base + 27 bug + 22 breach patterns. Mode-aware: <code className="font-mono text-white/65">--breach</code>, <code className="font-mono text-white/65">--bug</code>, or combined.
               </ChangelogEntry>
               <ChangelogEntry tag="Added" color="green">
                 <strong>Free threat intelligence</strong> — OSV.dev, npm advisory bulk API, NVD keyword search. No API key required.

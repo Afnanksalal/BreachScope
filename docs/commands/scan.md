@@ -47,9 +47,9 @@ AI analysis runs automatically when `OPENAI_API_KEY` is set — no flag needed.
 | Flag(s) | Mode | Patterns | Scanners active |
 |---------|------|----------|----------------|
 | *(none)* | `all` | 13 base | Deps, code, toolchain, subchain |
-| `--breach` | `breach` | 36 (13 + 23) | Deps, code (credential focus), toolchain, subchain |
-| `--bug` | `bug` | 43 (13 + 30) | Deps, code (deep vulns) — skips toolchain, subchain |
-| `--breach --bug` | `full` | 66 (13 + 30 + 23) | Everything — no scanner skipped |
+| `--breach` | `breach` | 35 (13 + 22) | Deps, code (credential focus), toolchain, subchain |
+| `--bug` | `bug` | 40 (13 + 27) | Deps, code (deep vulns) — skips toolchain, subchain |
+| `--breach --bug` | `full` | 62 (13 + 22 + 27) | Everything — no scanner skipped |
 
 ### Breach patterns cover
 GitHub PATs, Stripe/OpenAI/Anthropic/Slack/Supabase/npm tokens, AWS keys, DB connection strings with credentials, Firebase service accounts, DigitalOcean/Cloudflare/Vercel tokens, debug endpoints, admin routes without visible auth middleware.

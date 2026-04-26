@@ -177,9 +177,17 @@ Shorthand: bs scan, bs sandbox, bs login, bs deps, etc.
 | `-p, --port` | auto | App port inside the container |
 | `-i, --image` | auto | Custom base Docker image |
 | `-t, --timeout` | `60` | Seconds to wait for app start |
-| `--deep` | — | Extended attack sequences |
+| `--deep` | — | Extended attack: 120 iterations instead of 80 |
+| `--breach` | — | Companion agents focus on supply chain & credential risk |
+| `--bug` | — | Companion agents focus on exploitable code vulnerabilities |
+| `--scan-mode` | `all` | Explicit companion mode: `all` \| `breach` \| `bug` |
 | `--no-cleanup` | — | Keep container running after scan |
 | `-u, --url` | — | Target URL context for dashboard reporting |
+| `-o, --output` | `console` | Output format: `console` \| `json` |
+| `-f, --file` | — | Write results to file |
+| `-v, --verbose` | — | Debug output |
+
+CLI flags take priority. If no flags are set, sandbox defaults from the dashboard Settings page are used.
 
 ---
 
@@ -261,7 +269,7 @@ When `FIRECRAWL_API_KEY` is set, all agents use it aggressively — searching Ha
 | Agent | Role | Mode Awareness |
 |-------|------|---------------|
 | **Orchestrator** | Plans agent dispatch based on project profile + scan mode | Biases selection by mode |
-| **Dependency** | CVE/advisory research with live web tools | Breach: 20+ packages; Bug: reachable CVEs |
+| **Dependency** | CVE/advisory research across all 10 ecosystems — OSV.dev, GitHub advisories, web search | Breach: 20+ packages; Bug: reachable CVEs |
 | **Code** | Deep source analysis | Breach: credential hunt; Bug: logic bugs; Full: both |
 | **Toolchain** | Live changelog/security page crawling | Breach + full only |
 | **Blackbox** | Adaptive HTTP probing | When URL provided |
@@ -339,7 +347,7 @@ breachscope login  # authenticate once — all future scans auto-upload
   - Structured attack log with per-entry type badges
 - **Report Tab** — export as JSON, Markdown, or real PDF (jsPDF)
 - **API Keys** — generate/revoke CLI tokens (SHA-256 hashed)
-- **Settings** — AES-256-GCM encrypted API keys, scan defaults
+- **Settings** — AES-256-GCM encrypted API keys, scan defaults, sandbox defaults (attack depth + companion agent mode)
 
 ### Self-hosting
 

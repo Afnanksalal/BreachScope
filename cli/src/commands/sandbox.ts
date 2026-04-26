@@ -44,6 +44,9 @@ export interface SandboxOptions {
   image?: string;
   timeout?: number;
   deep?: boolean;
+  breach?: boolean;
+  bug?: boolean;
+  scanMode?: string;
   file?: string;
   url?: string;
   verbose?: boolean;
@@ -1059,7 +1062,7 @@ function neutralizeDockerignore(cwd: string): (() => void) {
 
 // ── Build AgentContext for static scan agents ─────────────────────────────────
 
-async function buildAgentContext(cwd: string, url?: string): Promise<AgentContext> {
+async function buildAgentContext(cwd: string, url?: string, scanMode = "all"): Promise<AgentContext> {
   const files: Record<string, string> = {};
 
   let allFiles: string[] = [];
@@ -1092,8 +1095,9 @@ async function buildAgentContext(cwd: string, url?: string): Promise<AgentContex
   const allDeps = detectAllDepsForContext(cwd, packageJson);
   const deps = allDeps.filter((d) => d.ecosystem === "npm").map((d) => d.name);
 
-  return { files, packageJson, dependencies: deps, allDeps, url, toolchain: {}, existingFindings: [], crawlCache: {}, scanMode: "all" };
+  return { files, packageJson, dependencies: deps, allDeps, url, toolchain: {}, existingFindings: [], crawlCache: {}, scanMode };
 }
+
 
 // ── Main command ──────────────────────────────────────────────────────────────
 
@@ -1124,11 +1128,21 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
   }
   dockerSpinner.succeed("Docker is running");
 
-  // ── Pull API keys from dashboard (same as scan command) ──────────────────
+  // ── Pull API keys + sandbox defaults from dashboard ──────────────────────
   const remote = await fetchRemoteConfig();
   if (remote) {
     if (!process.env["OPENAI_API_KEY"]    && remote.openaiKey)    process.env["OPENAI_API_KEY"]    = remote.openaiKey;
     if (!process.env["FIRECRAWL_API_KEY"] && remote.firecrawlKey) process.env["FIRECRAWL_API_KEY"] = remote.firecrawlKey;
+  }
+
+  // CLI flags take priority; fall back to dashboard sandbox defaults
+  const effectiveScanMode: string = opts.scanMode ?? remote?.sandboxScanMode ?? "all";
+  const effectiveDeep: boolean    = opts.deep     ?? remote?.sandboxDeep     ?? false;
+
+  if (effectiveScanMode !== "all" || effectiveDeep) {
+    const modeLabel = effectiveScanMode !== "all" ? ` · mode: ${chalk.white(effectiveScanMode)}` : "";
+    const depthLabel = effectiveDeep ? ` · ${chalk.yellow("deep")} (120 iterations)` : "";
+    console.log(chalk.gray(`  Sandbox config${modeLabel}${depthLabel}`));
   }
 
   // ── Project + monorepo detection (informational only — AI decides the rest) ─
@@ -1390,7 +1404,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
 
       const swarmSpinner = ora("Swarm running — may take 10-15 minutes...").start();
 
-      const agentCtx = await buildAgentContext(cwd, `http://127.0.0.1:${appPort}`);
+      const agentCtx = await buildAgentContext(cwd, `http://127.0.0.1:${appPort}`, effectiveScanMode);
 
       const serviceSubpath = aiChosenSubpath || "";
 
@@ -1404,6 +1418,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
           serviceSubpath,
           exec,
           (tail) => getContainerLogs(containerId!, tail),
+          effectiveDeep,
         ),
         runCodeAgent({ ...agentCtx, existingFindings: [] }),
         runDependencyAgent({ ...agentCtx, existingFindings: [] }),
@@ -1509,7 +1524,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
     }
 
     // ── Report synthesis + subchain scan (parallel, best-effort) ────────────
-    const agentCtxForReport = await buildAgentContext(cwd, opts.url ?? `http://127.0.0.1:${appPort}`);
+    const agentCtxForReport = await buildAgentContext(cwd, opts.url ?? `http://127.0.0.1:${appPort}`, effectiveScanMode);
     agentCtxForReport.existingFindings = [...findings];
 
     const [subchainResult, reportResult] = await Promise.allSettled([

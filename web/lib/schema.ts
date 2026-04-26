@@ -68,6 +68,8 @@ export const userSettings = pgTable("user_settings", {
   firecrawlKeyEnc:     text("firecrawl_key_enc"),
   defaultMode:         text("default_mode").default("basic"),
   defaultScanMode:     text("default_scan_mode").default("all"),
+  sandboxScanMode:     text("sandbox_scan_mode").default("all"),
+  sandboxDeep:         text("sandbox_deep").default("false"),
   updatedAt:           timestamp("updated_at").defaultNow().notNull(),
 });
 

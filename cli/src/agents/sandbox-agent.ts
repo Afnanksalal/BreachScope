@@ -871,7 +871,8 @@ export async function runSandboxAgent(
   projectContext: string,
   serviceSubpath: string,
   execFn: ExecFn,
-  logsFn: LogsFn
+  logsFn: LogsFn,
+  deep = false,
 ): Promise<SandboxAgentResult> {
   const sessionId = `sandbox-${Date.now()}`;
   const memPath = path.join(os.tmpdir(), `${sessionId}.json`);
@@ -1839,7 +1840,7 @@ Begin immediately with STEP 1.`;
         tools: TOOLS,
         temperature: 0.1,
         maxTokens: 16_000,
-        maxIterations: 80,
+        maxIterations: deep ? 120 : 80,
       },
       async (toolName, args) => {
         logger.debug(`  [sandbox] ${toolName}(${JSON.stringify(args).slice(0, 120)})`);

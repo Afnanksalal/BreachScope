@@ -19,6 +19,17 @@ const SCAN_MODE_OPTIONS = [
   { value: "bug",    label: "Bug",    desc: "Code audit & vulnerability testing" },
 ];
 
+const SANDBOX_SCAN_MODE_OPTIONS = [
+  { value: "all",    label: "All",    desc: "Full analysis: CVE, code, blackbox" },
+  { value: "breach", label: "Breach", desc: "Focus on supply chain & credential risk" },
+  { value: "bug",    label: "Bug",    desc: "Focus on exploitable code vulns" },
+];
+
+const SANDBOX_DEPTH_OPTIONS = [
+  { value: "normal", label: "Normal", desc: "80 attack iterations — balanced coverage" },
+  { value: "deep",   label: "Deep",   desc: "120 attack iterations — exhaustive" },
+];
+
 function FieldRow({
   label,
   hint,
@@ -73,6 +84,8 @@ export default function SettingsPage() {
   const [firecrawlKey, setFirecrawlKey] = useState("");
   const [defaultMode, setDefaultMode] = useState("basic");
   const [defaultScanMode, setDefaultScanMode] = useState("all");
+  const [sandboxScanMode, setSandboxScanMode] = useState("all");
+  const [sandboxDeep, setSandboxDeep] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -83,14 +96,18 @@ export default function SettingsPage() {
         setSettings(data);
         setDefaultMode(data.defaultMode ?? "basic");
         setDefaultScanMode(data.defaultScanMode ?? "all");
+        setSandboxScanMode(data.sandboxScanMode ?? "all");
+        setSandboxDeep(data.sandboxDeep ?? false);
       });
   }, []);
 
   async function handleSave() {
     setSaving(true);
-    const body: Record<string, string> = {
+    const body: Record<string, string | boolean> = {
       defaultMode,
       defaultScanMode,
+      sandboxScanMode,
+      sandboxDeep,
     };
     if (openAiKey) body.openaiKey = openAiKey;
     if (firecrawlKey) body.firecrawlKey = firecrawlKey;
@@ -187,6 +204,61 @@ export default function SettingsPage() {
                     className={clsx(
                       "p-4 rounded-xl border text-left transition-all",
                       defaultScanMode === opt.value
+                        ? "bg-white/[0.08] border-white/[0.15] text-white"
+                        : "bg-black/20 border-white/[0.06] text-white/40 hover:border-white/[0.12] hover:text-white/60"
+                    )}
+                  >
+                    <p className="font-semibold text-sm mb-1">{opt.label}</p>
+                    <p className="text-xs opacity-60">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Sandbox defaults */}
+        <section>
+          <div className="mb-4">
+            <h2 className="text-white font-semibold text-sm">Sandbox Defaults</h2>
+            <p className="text-white/30 text-xs mt-0.5">
+              Controls attack depth and companion AI agent focus when running <code className="font-mono text-white/50">breachscope sandbox</code>.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-white/[0.04] p-5">
+              <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-4">Attack Depth</p>
+              <div className="grid grid-cols-2 gap-3">
+                {SANDBOX_DEPTH_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setSandboxDeep(opt.value === "deep")}
+                    className={clsx(
+                      "p-4 rounded-xl border text-left transition-all",
+                      (sandboxDeep ? "deep" : "normal") === opt.value
+                        ? "bg-white/[0.08] border-white/[0.15] text-white"
+                        : "bg-black/20 border-white/[0.06] text-white/40 hover:border-white/[0.12] hover:text-white/60"
+                    )}
+                  >
+                    <p className="font-semibold text-sm mb-1">{opt.label}</p>
+                    <p className="text-xs opacity-60">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white/[0.04] p-5">
+              <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-4">Companion Agent Mode</p>
+              <p className="text-white/30 text-xs mb-4">Sets focus for the code, dependency, and blackbox agents that run alongside the attack agent.</p>
+              <div className="grid grid-cols-3 gap-3">
+                {SANDBOX_SCAN_MODE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setSandboxScanMode(opt.value)}
+                    className={clsx(
+                      "p-4 rounded-xl border text-left transition-all",
+                      sandboxScanMode === opt.value
                         ? "bg-white/[0.08] border-white/[0.15] text-white"
                         : "bg-black/20 border-white/[0.06] text-white/40 hover:border-white/[0.12] hover:text-white/60"
                     )}

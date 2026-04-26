@@ -25,10 +25,10 @@ breachscope scan --mode major --url https://yourapp.com
 
 | Mode | Orchestrator bias | Code agent focus | Dep agent focus |
 |------|------------------|-----------------|----------------|
-| `all` | Balanced dispatch | Broad vulnerability classes | Top 15 risky packages |
-| `breach` | Dependency + toolchain heavy | Credential hunt — keys, tokens, infra exposure | 20+ packages: hijacks, malware, CVEs, typosquatting |
-| `bug` | Code heavy, skip toolchain | Deep logic bugs — race conditions, IDOR, deserialization | Reachable CVEs in auth/parsing/HTTP packages |
-| `full` | Everything runs | Both bug + breach combined | Aggressive + reachable CVEs (25+ packages) |
+| `all` | Balanced dispatch | Broad vulnerability classes | Top 15 risky packages across all ecosystems |
+| `breach` | Dependency + toolchain heavy | Credential hunt — keys, tokens, infra exposure | 20+ packages: hijacks, malware, CVEs, typosquatting (all ecosystems) |
+| `bug` | Code heavy, skip toolchain | Deep logic bugs — race conditions, IDOR, deserialization | Reachable CVEs in auth/parsing/HTTP packages (all ecosystems) |
+| `full` | Everything runs | Both bug + breach combined | Aggressive + reachable CVEs, 25+ packages (all ecosystems) |
 
 ---
 
@@ -44,13 +44,18 @@ Plans the attack. Reads the project profile (dependencies, file list, toolchain 
 
 ### Dependency Agent
 
-Researches packages using live tools:
-- GitHub Security Advisories
-- OSV.dev vulnerability database
-- Web search for known incidents, supply chain attacks
-- npm advisory data
+Researches packages across **all 10 ecosystems** using live tools — npm, PyPI, Go, crates.io, RubyGems, Maven, Packagist, NuGet, Hex, pub. Each lookup uses the correct ecosystem tag for accurate CVE matching.
 
-**In breach mode**: Investigates 20+ packages aggressively. Looks for active malware, postinstall script exfiltration, maintainer takeovers, typosquatting, dependency confusion.
+Tools available:
+- `fetch_osv_data(package, ecosystem)` — queries OSV.dev directly with the correct ecosystem
+- `fetch_github_advisory(package, ecosystem)` — GitHub Security Advisories per ecosystem
+- `search_vulnerabilities(package, ecosystem)` — targeted web search for CVEs and supply chain incidents
+- `web_search` — broader incident research (HackTricks, Snyk, Socket.dev, Exploit-DB)
+- `crawl_url` — fetches specific advisory pages, NVD CVE entries, registry pages
+
+The agent receives all detected packages grouped by ecosystem and is instructed to pass the correct ecosystem identifier to every lookup call.
+
+**In breach mode**: Investigates 20+ packages aggressively across all ecosystems. Looks for active malware, postinstall script exfiltration, maintainer takeovers, typosquatting, dependency confusion.
 
 **In bug mode**: Cross-references installed versions against known-vulnerable version ranges. Focuses on packages in auth, parsing, and HTTP handling paths.
 

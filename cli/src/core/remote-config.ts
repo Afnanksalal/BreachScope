@@ -6,6 +6,8 @@ export interface RemoteConfig {
   firecrawlKey: string | null;
   defaultMode: string;
   defaultScanMode: string;
+  sandboxScanMode: string;
+  sandboxDeep: boolean;
 }
 
 function isRemoteConfig(v: unknown): v is RemoteConfig {

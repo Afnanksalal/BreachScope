@@ -10,6 +10,8 @@ export interface SettingsResponse {
   hasFirecrawl: boolean;
   defaultMode: string;
   defaultScanMode: string;
+  sandboxScanMode: string;
+  sandboxDeep: boolean;
 }
 
 export async function GET(): Promise<NextResponse<SettingsResponse | { error: string }>> {
@@ -24,6 +26,8 @@ export async function GET(): Promise<NextResponse<SettingsResponse | { error: st
       firecrawlKeyEnc: userSettings.firecrawlKeyEnc,
       defaultMode:     userSettings.defaultMode,
       defaultScanMode: userSettings.defaultScanMode,
+      sandboxScanMode: userSettings.sandboxScanMode,
+      sandboxDeep:     userSettings.sandboxDeep,
     })
     .from(userSettings)
     .where(eq(userSettings.userId, session.user.id))
@@ -34,6 +38,8 @@ export async function GET(): Promise<NextResponse<SettingsResponse | { error: st
     hasFirecrawl:    !!row?.firecrawlKeyEnc,
     defaultMode:     row?.defaultMode     ?? "basic",
     defaultScanMode: row?.defaultScanMode ?? "all",
+    sandboxScanMode: row?.sandboxScanMode ?? "all",
+    sandboxDeep:     row?.sandboxDeep === "true",
   });
 }
 
@@ -65,6 +71,12 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   }
   if (typeof payload.defaultScanMode === "string" && ["all", "breach", "bug"].includes(payload.defaultScanMode)) {
     updates.defaultScanMode = payload.defaultScanMode;
+  }
+  if (typeof payload.sandboxScanMode === "string" && ["all", "breach", "bug"].includes(payload.sandboxScanMode)) {
+    updates.sandboxScanMode = payload.sandboxScanMode;
+  }
+  if (typeof payload.sandboxDeep === "boolean") {
+    updates.sandboxDeep = payload.sandboxDeep ? "true" : "false";
   }
 
   await db

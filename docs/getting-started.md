@@ -55,12 +55,12 @@ breachscope sandbox
 
 ## Scan Focus
 
-| Flag(s) | What it focuses on |
-|---------|-------------------|
-| *(none)* | Balanced — CVE lookup + code audit + supply chain (13 base patterns) |
-| `--breach` | Supply chain attacks, CVEs, leaked credentials and API keys (35 patterns) |
-| `--bug` | Code vulnerabilities — injection, auth bypass, deserialization, logic bugs (40 patterns) |
-| `--breach --bug` | Everything combined — maximum coverage (62 patterns, all scanners) |
+| Flag(s) | What it focuses on | Patterns |
+|---------|-------------------|----------|
+| *(none)* | Balanced — CVE lookup + code audit + supply chain | 13 base |
+| `--breach` | Supply chain attacks, CVEs, leaked credentials and API keys | 35 |
+| `--bug` | Code vulnerabilities — injection, auth bypass, deserialization, logic bugs | 40 |
+| `--breach --bug` | Everything combined — maximum coverage, all scanners | 62 |
 
 ---
 
@@ -122,15 +122,26 @@ The `sandbox` command spins up a Docker container, deploys your app, and runs a 
 ```bash
 breachscope sandbox
 
+# Extended attack (120 iterations instead of 80)
+breachscope sandbox --deep
+
+# Focus companion agents on supply chain risk
+breachscope sandbox --breach
+
+# Focus companion agents on code vulnerabilities
+breachscope sandbox --bug
+
 # Keep container running after scan for manual inspection
 breachscope sandbox --no-cleanup
 ```
+
+Sandbox defaults (attack depth + companion agent focus) can also be set permanently in the dashboard Settings page — CLI flags always take priority.
 
 **What happens:**
 1. AI reads your entire codebase (including `.env` and secrets) and writes a purpose-built Dockerfile — monorepo-aware
 2. Self-healing build loop: up to 4 attempts with AI-powered Dockerfile fixes on failure
 3. Supervisor agent analyzes all recon data and creates a prioritized attack plan
-4. 4 agents run in parallel: dynamic sandbox attack, static code analysis, dependency CVE scan, blackbox HTTP probe
+4. 4 agents run in parallel: dynamic sandbox attack, static code analysis, dependency CVE scan (all 10 ecosystems), blackbox HTTP probe
 5. 11 specialist attackers: SQLi, JWT forge, auth bypass, SSRF, XSS, path traversal, Redis exploit, prototype pollution, race conditions, business logic, LLM prompt injection
 6. OWASP ZAP active scan runs inside the container
 7. Validator agent independently re-confirms every critical/high finding with a confidence score
@@ -145,8 +156,8 @@ Results appear in the dashboard Sandbox tab: AI narrative, discovered secrets, c
 # Full static scan — all patterns, deep mode
 breachscope scan --mode deep --breach --bug
 
-# Docker attack arena — active exploitation
-breachscope sandbox --deep
+# Docker attack arena — deep mode, all companion agents
+breachscope sandbox --deep --breach --bug
 ```
 
 ---
@@ -166,6 +177,7 @@ Sign up free with GitHub, Google OAuth, or email/password.
 ## Next Steps
 
 - [Full scan command reference](./commands/scan.md)
+- [Sandbox command reference](./commands/sandbox.md)
 - [AI multi-agent mode](./ai-agents.md)
 - [Supabase integration](./integrations/supabase.md)
 - [CI/CD setup](./commands/scan.md#cicd)

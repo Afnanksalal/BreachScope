@@ -100,13 +100,25 @@ program
   .option("-p, --port <number>", "app port inside the container (auto-detected from project)", parseInt)
   .option("-i, --image <name>", "custom base Docker image to use (default: auto-detected)")
   .option("-t, --timeout <seconds>", "max seconds to wait for the app to start (default: 60)", parseInt)
-  .option("--deep", "run extended attack sequences (more iterations)")
+  .option("--deep", "run extended attack sequences (120 iterations instead of 80)")
+  .option("--breach", "focus companion agents on supply chain & credential risk")
+  .option("--bug", "focus companion agents on exploitable code vulnerabilities")
+  .option("--scan-mode <mode>", "companion agent focus: all | breach | bug (overrides --breach/--bug)")
   .option("--no-cleanup", "keep the container running after the scan (for manual inspection)")
   .option("-u, --url <url>", "target URL context (for dashboard reporting)")
   .option("-o, --output <format>", "output format: console | json", "console")
   .option("-f, --file <path>", "write results to a file")
   .option("-v, --verbose", "verbose debug output")
   .action(async (opts) => {
+    if (opts.scanMode && ["all", "breach", "bug"].includes(opts.scanMode)) {
+      // explicit --scan-mode wins
+    } else if (opts.breach && opts.bug) {
+      opts.scanMode = "all";
+    } else if (opts.breach) {
+      opts.scanMode = "breach";
+    } else if (opts.bug) {
+      opts.scanMode = "bug";
+    }
     await runSandbox(opts);
   });
 

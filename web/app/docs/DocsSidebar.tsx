@@ -52,7 +52,8 @@ const SECTIONS = [
   {
     title: "Changelog",
     items: [
-      { label: "v0.3.0", anchor: "changelog" },
+      { label: "v0.3.1", anchor: "changelog" },
+      { label: "v0.3.0", anchor: "changelog-030" },
       { label: "v0.2.0", anchor: "changelog-020" },
       { label: "v0.1.0", anchor: "changelog-010" },
     ],

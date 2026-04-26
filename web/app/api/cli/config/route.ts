@@ -13,6 +13,8 @@ interface ConfigResponse {
   firecrawlKey: string | null;
   defaultMode: string;
   defaultScanMode: string;
+  sandboxScanMode: string;
+  sandboxDeep: boolean;
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse<ConfigResponse | { error: string }>> {
@@ -25,6 +27,8 @@ export async function GET(req: NextRequest): Promise<NextResponse<ConfigResponse
       firecrawlKeyEnc: userSettings.firecrawlKeyEnc,
       defaultMode:     userSettings.defaultMode,
       defaultScanMode: userSettings.defaultScanMode,
+      sandboxScanMode: userSettings.sandboxScanMode,
+      sandboxDeep:     userSettings.sandboxDeep,
     })
     .from(userSettings)
     .where(eq(userSettings.userId, authed.userId))
@@ -36,6 +40,8 @@ export async function GET(req: NextRequest): Promise<NextResponse<ConfigResponse
       firecrawlKey:    null,
       defaultMode:     "basic",
       defaultScanMode: "all",
+      sandboxScanMode: "all",
+      sandboxDeep:     false,
     });
   }
 
@@ -50,6 +56,8 @@ export async function GET(req: NextRequest): Promise<NextResponse<ConfigResponse
     firecrawlKey,
     defaultMode:     row.defaultMode     ?? "basic",
     defaultScanMode: row.defaultScanMode ?? "all",
+    sandboxScanMode: row.sandboxScanMode ?? "all",
+    sandboxDeep:     row.sandboxDeep === "true",
   });
 }
 
@@ -71,8 +79,14 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   if (typeof body.defaultScanMode === "string" && (VALID_SCAN_MODES as readonly string[]).includes(body.defaultScanMode)) {
     updates.defaultScanMode = body.defaultScanMode;
   }
+  if (typeof body.sandboxScanMode === "string" && (VALID_SCAN_MODES as readonly string[]).includes(body.sandboxScanMode)) {
+    updates.sandboxScanMode = body.sandboxScanMode;
+  }
+  if (typeof body.sandboxDeep === "boolean") {
+    updates.sandboxDeep = body.sandboxDeep ? "true" : "false";
+  }
 
-  if (!updates.defaultMode && !updates.defaultScanMode) {
+  if (!updates.defaultMode && !updates.defaultScanMode && !updates.sandboxScanMode && updates.sandboxDeep === undefined) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 

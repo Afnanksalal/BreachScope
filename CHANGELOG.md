@@ -6,6 +6,48 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.1] — 2026-04-27
+
+### Added
+
+**Sandbox CLI flags**
+- `--breach` — companion AI agents (code, dep, blackbox) run in breach mode (supply chain & credential focus)
+- `--bug` — companion agents run in bug mode (exploitable code vulnerabilities)
+- `--scan-mode <all|breach|bug>` — explicit override, wins over `--breach`/`--bug`
+- `--deep` now wired up end-to-end: 120 attack iterations instead of 80 (was previously accepted but not passed to the agent)
+- Output flags `-o/--output` and `-f/--file` documented and accessible from sandbox command
+- Flag priority: `--scan-mode` → `--breach`/`--bug` → dashboard settings → `"all"` fallback
+
+**Dashboard Sandbox Defaults (Settings page)**
+- New "Sandbox Defaults" section with two configurable options:
+  - **Attack Depth**: Normal (80 iterations) / Deep (120 iterations)
+  - **Companion Agent Mode**: All / Breach / Bug
+- Settings stored as `sandbox_scan_mode` and `sandbox_deep` in `user_settings` table
+- Synced to CLI at runtime via `/api/cli/config` — CLI flags always take priority
+
+**Multi-language AI dependency agent**
+- Dependency agent now covers all 10 ecosystems instead of npm-only
+- `fetch_osv_data(name, ecosystem)` queries OSV.dev directly with the correct ecosystem tag (npm, PyPI, Go, crates.io, RubyGems, Packagist, Maven, NuGet, Hex, pub)
+- `fetch_github_advisory(name, ecosystem)` uses the correct GitHub advisory ecosystem filter per language
+- `fetchPackageAdvisories(name, ecosystem)` replaces `fetchNpmAdvisories` — includes ecosystem in search query
+- `buildUserMessage` now groups all detected packages by ecosystem and sends them to the agent; agent receives explicit instructions on which ecosystem parameter to pass per lookup
+- Tool handlers in `runDependencyAgent` pass `args["ecosystem"]` to all crawler functions
+
+### Changed
+
+- `RemoteConfig` interface gains `sandboxScanMode: string` and `sandboxDeep: boolean`
+- `SandboxOptions` gains `breach?`, `bug?`, `scanMode?` fields
+- `runSandboxAgent` signature gains `deep?: boolean` parameter
+- `buildAgentContext` in sandbox gains `scanMode` parameter — passed through to all companion agents
+- `SettingsResponse` and `/api/settings` GET/PUT include sandbox fields
+- `/api/cli/config` GET/PATCH include sandbox fields
+
+### Fixed
+
+- `sandbox --deep` flag was accepted by the CLI but never forwarded to the sandbox agent's `maxIterations` — now correctly sets 120 iterations
+
+---
+
 ## [0.3.0] — 2026-04-27
 
 ### Added
@@ -189,6 +231,7 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+[0.3.1]: https://github.com/Afnanksalal/BreachScope/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Afnanksalal/BreachScope/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Afnanksalal/BreachScope/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Afnanksalal/BreachScope/releases/tag/v0.1.0
