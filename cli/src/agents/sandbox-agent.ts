@@ -10,6 +10,7 @@
  */
 
 import { agentLoop } from "../core/ai.js";
+import { webSearch, crawlUrl } from "../core/crawler.js";
 import { logger } from "../core/logger.js";
 import type { Finding } from "../core/types.js";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
@@ -262,6 +263,18 @@ You are NOT following a checklist. Think like an attacker who wants maximum impa
    exec_cmd(["sh", "-c", "apt-get install -y chromium -q && chromium --headless --no-sandbox --dump-dom http://localhost:PORT 2>/dev/null | head -200"])
    Or just use curl for XSS payload injection — check responses for reflected content.
 
+7. WEB RESEARCH — use this constantly, not as a last resort:
+   When you see a framework version → web_search("Flask 2.0.1 CVE exploit") immediately
+   When you see a service (Spring Boot, Log4j) → web_search("Spring Boot Actuator RCE heapdump credentials 2024")
+   When you want exact payloads → crawl_url("https://book.hacktricks.xyz/pentesting-web/ssti-server-side-template-injection")
+   When you find a CVE → crawl_url("https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX") for CVSS, description, references
+   When you need PoC → web_search("CVE-XXXX-XXXXX proof of concept github exploit")
+   When you need payloads → crawl_url("https://raw.githubusercontent.com/swisskyrepo/PayloadsAllTheThings/master/Server%20Side%20Template%20Injection/README.md")
+
+   RESEARCH BEFORE EVERY ATTACK: A 2-second search can tell you the exact payload that works vs 10 blind guesses.
+   Use web_search at least once per new attack surface discovered.
+   Use crawl_url to read full exploit write-ups, not just summaries.
+
 ═══════════════════════════════════════════════════════════════
 MEMORY DISCIPLINE
 ═══════════════════════════════════════════════════════════════
@@ -453,6 +466,34 @@ const TOOLS: ChatCompletionTool[] = [
         properties: {
           lines: { type: "number" },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description: "Search the internet for exploit techniques, CVE details, PoC code, HackTricks articles, PayloadsAllTheThings payloads, Exploit-DB entries, security research. Use aggressively — when you find a service, framework version, or vulnerability indicator, search for known exploits immediately. Examples: 'Spring Boot Actuator RCE exploit', 'Log4Shell JNDI bypass WAF 2024', 'JWT none algorithm bypass', 'SSTI Jinja2 RCE payload'.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query — be specific: include version numbers, CVE IDs, framework names, exploit technique names" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "crawl_url",
+      description: "Fetch and read the full content of a specific URL. Use for CVE detail pages (nvd.nist.gov, cve.mitre.org), HackTricks articles (book.hacktricks.xyz), PayloadsAllTheThings raw files (raw.githubusercontent.com/swisskyrepo/PayloadsAllTheThings), Exploit-DB entries, GitHub PoC repos, vendor security advisories. Read exact payloads, step-by-step exploit instructions, and PoC code.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Full URL to fetch — HackTricks, NVD, Exploit-DB, GitHub PoC, PayloadsAllTheThings, etc." },
+        },
+        required: ["url"],
       },
     },
   },
@@ -747,6 +788,16 @@ Begin.`;
             a["body"] ? String(a["body"]) : undefined,
           );
           case "get_logs":          return getLogsTool(Number(a["lines"] ?? 150));
+          case "web_search": {
+            const query = String(a["query"] ?? "");
+            attackLog.push(`[search] ${query.slice(0, 80)}`);
+            return webSearch(query, 10);
+          }
+          case "crawl_url": {
+            const url = String(a["url"] ?? "");
+            attackLog.push(`[crawl] ${url.slice(0, 80)}`);
+            return crawlUrl(url);
+          }
           default:                  return JSON.stringify({ error: `Unknown tool: ${toolName}` });
         }
       }

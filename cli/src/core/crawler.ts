@@ -13,7 +13,7 @@ async function tryGetFirecrawl() {
   if (_firecrawl) return _firecrawl;
   try {
     const { default: FirecrawlApp } = await import("@mendable/firecrawl-js");
-    _firecrawl = new FirecrawlApp({ apiKey }) as typeof _firecrawl;
+    _firecrawl = new FirecrawlApp({ apiKey }) as unknown as typeof _firecrawl;
     return _firecrawl;
   } catch {
     return null;
@@ -22,7 +22,7 @@ async function tryGetFirecrawl() {
 
 // ── Core web search — Firecrawl if available, free APIs as fallback ────────────
 
-export async function webSearch(query: string, limit = 5): Promise<string> {
+export async function webSearch(query: string, limit = 10): Promise<string> {
   logger.debug(`[crawl] search: "${query}"`);
   const client = await tryGetFirecrawl();
 

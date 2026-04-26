@@ -1,5 +1,5 @@
 import { agentLoop } from "../core/ai.js";
-import { webSearch, fetchNpmAdvisories, fetchGitHubAdvisory, fetchOSVData } from "../core/crawler.js";
+import { webSearch, crawlUrl, fetchNpmAdvisories, fetchGitHubAdvisory, fetchOSVData } from "../core/crawler.js";
 import { logger } from "../core/logger.js";
 import type { AgentContext, AgentResult, Finding } from "../core/types.js";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
@@ -15,6 +15,8 @@ Think deeply. Look for:
 - Outdated packages with known CVEs
 - Packages resolving from non-registry sources
 - Typosquatting candidates near popular packages
+
+Use web_search and crawl_url aggressively — search every suspicious package for CVEs, hijacks, and malicious activity. Crawl NVD, GitHub advisories, and Socket.dev reports for full details.
 
 Return ONLY a JSON array of Finding objects with: id, title, severity, category ("dependency"), description, remediation, references, tool.
 No markdown fences.`;
@@ -34,6 +36,7 @@ Prioritize and actively investigate:
 
 For each finding, explain exactly what breach impact it has: data exfiltration, RCE, credential theft, etc.
 Search aggressively — don't stop at 1-2 packages. Cover the 20 riskiest packages in the list.
+Use web_search for every package that looks suspicious. Use crawl_url to read full GitHub advisories, NVD CVE pages, and Socket.dev/Snyk reports for complete exploit details and impact assessment.
 
 Return ONLY a JSON array of Finding objects with: id, title, severity, category ("dependency"), description, remediation, references, tool.
 No markdown fences.`;
@@ -52,6 +55,7 @@ Focus on:
 - Authentication bypass in auth middleware
 
 Cross-reference the dependency list against known vulnerable versions. Be specific about which version range is affected and what the fix version is.
+Use web_search and crawl_url to look up exact CVE details, NVD CVSS scores, and PoC exploits for each vulnerable package you identify.
 
 Return ONLY a JSON array of Finding objects with: id, title, severity, category ("dependency"), description, remediation, references, tool.
 No markdown fences.`;
@@ -103,13 +107,27 @@ const TOOLS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "web_search",
-      description: "Search the web for security-related information",
+      description: "Search the web for supply chain attacks, CVEs, package hijacks, malicious packages, maintainer compromises. Use aggressively — search every suspicious package for known incidents. Examples: 'event-stream npm attack 2024', 'lodash prototype pollution CVE exploit', 'left-pad npm supply chain incident'.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string" },
+          query: { type: "string", description: "Include package name, CVE ID, or attack type — be specific" },
         },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "crawl_url",
+      description: "Fetch a specific advisory page, CVE detail, npm package page, GitHub security advisory, or threat intelligence report. Use to get full details on a suspected compromised package or exploit chain.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Full URL: NVD CVE, GitHub advisory, npmjs.com package page, Socket.dev report, Snyk advisory" },
+        },
+        required: ["url"],
       },
     },
   },
@@ -152,7 +170,12 @@ export async function runDependencyAgent(ctx: AgentContext): Promise<AgentResult
       }
       if (toolName === "web_search") {
         sourcesCrawled.push(`web:${query}`);
-        return webSearch(query);
+        return webSearch(query, 10);
+      }
+      if (toolName === "crawl_url") {
+        const url = String(args["url"] ?? "");
+        sourcesCrawled.push(`crawl:${url}`);
+        return crawlUrl(url);
       }
       return "Unknown tool";
     }

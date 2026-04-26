@@ -1,5 +1,5 @@
 import { agentLoop } from "../core/ai.js";
-import { webSearch } from "../core/crawler.js";
+import { webSearch, crawlUrl } from "../core/crawler.js";
 import { logger } from "../core/logger.js";
 import type { AgentContext, AgentResult } from "../core/types.js";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
@@ -22,7 +22,7 @@ Focus on:
 - Insecure deserialization
 - Second-order vulnerabilities (data stored in one place, used dangerously elsewhere)
 
-Use web_search to look up CVEs related to suspicious code patterns or library versions.
+Use web_search aggressively — when you spot a library version, a dangerous API, or a suspicious pattern, search for its CVE history, PoC exploits, and HackTricks coverage immediately. Use crawl_url to read specific CVE pages, HackTricks articles, or exploit write-ups to get exact attack payloads and confirm exploitability.
 
 Rate severity honestly. Not every pattern match is critical — consider exploitability and impact.
 Return ONLY a JSON array of Finding objects: id, title, severity, category ("code"), description, remediation, references, file, line, detail.
@@ -49,7 +49,7 @@ For each bug:
 1. Identify the exact file + line number
 2. Explain the full attack path (how an attacker would trigger it)
 3. Rate exploitability vs. impact to assign severity accurately
-4. Use web_search to find related CVEs or prior art for similar patterns
+4. Use web_search to find related CVEs, PoC exploits, and prior art for similar patterns. Use crawl_url to read HackTricks, NVD CVE pages, or GitHub PoC repos for exact payloads and attack steps.
 
 Return ONLY a JSON array of Finding objects: id, title, severity, category ("code"), description, remediation, references, file, line, detail.
 No markdown fences. Prioritize novel, high-impact bugs over obvious patterns the scanner already caught.`;
@@ -75,7 +75,7 @@ For each finding:
 2. Explain the immediate impact: what can an attacker do with this credential right now?
 3. Give precise remediation: which service to revoke on, what to replace it with
 
-Use web_search to verify if a key format matches a known service's token format when uncertain.
+Use web_search to verify key formats, look up breach history for identified tokens, and search for known exploits. Use crawl_url to read specific advisory pages, vendor security disclosures, or HaveIBeenPwned-style resources when you identify a credential type.
 
 Return ONLY a JSON array of Finding objects: id, title, severity, category ("code"), description, remediation, references, file, line, detail.
 No markdown fences. Every finding must be actionable.`;
@@ -99,13 +99,27 @@ const TOOLS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "web_search",
-      description: "Search for a known CVE or verify an API key format. Use sparingly — prioritize reading actual code.",
+      description: "Search for CVEs, exploit techniques, PoC code, HackTricks coverage, and security research. Use aggressively — when you see a library, API pattern, or vulnerability class, search for known exploits immediately. Examples: 'express-session CVE exploit', 'JWT none algorithm bypass payload', 'prototype pollution RCE Node.js'.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string" },
+          query: { type: "string", description: "Specific search: include library names, version numbers, CVE IDs, vulnerability class" },
         },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "crawl_url",
+      description: "Fetch and read the full content of a specific security resource — CVE detail pages (nvd.nist.gov), HackTricks articles (book.hacktricks.xyz), PayloadsAllTheThings raw files, Exploit-DB entries, GitHub security advisories, or vendor security bulletins. Use to get exact payloads and confirm exploit steps.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Full URL: NVD CVE page, HackTricks, PayloadsAllTheThings raw, Exploit-DB, GitHub advisory" },
+        },
+        required: ["url"],
       },
     },
   },
@@ -203,7 +217,12 @@ Strategy: review the pre-loaded files first. Then read_file any file that looks 
       if (toolName === "web_search") {
         const query = String(args["query"] ?? "");
         sourcesCrawled.push(`web:${query}`);
-        return webSearch(query, 3);
+        return webSearch(query, 8);
+      }
+      if (toolName === "crawl_url") {
+        const url = String(args["url"] ?? "");
+        sourcesCrawled.push(`crawl:${url}`);
+        return crawlUrl(url);
       }
       return "Unknown tool";
     }

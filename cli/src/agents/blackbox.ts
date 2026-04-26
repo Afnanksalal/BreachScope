@@ -1,5 +1,5 @@
 import { agentLoop } from "../core/ai.js";
-import { webSearch } from "../core/crawler.js";
+import { webSearch, crawlUrl } from "../core/crawler.js";
 import { logger } from "../core/logger.js";
 import type { AgentContext, AgentResult } from "../core/types.js";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
@@ -32,6 +32,8 @@ Look for:
 
 When you find something, explain the concrete attack scenario — not just the header is missing.
 
+Use web_search aggressively when you identify a framework, server version, or vulnerability indicator — search for known CVEs, exploit techniques, and HackTricks coverage immediately. Use crawl_url to read specific advisory pages, PortSwigger research, or HackTricks articles to get exact attack payloads and verify exploitability.
+
 Return ONLY a JSON array of Finding objects: id, title, severity, category ("blackbox"), description, remediation, references, detail.`;
 
 const TOOLS: ChatCompletionTool[] = [
@@ -56,13 +58,27 @@ const TOOLS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "web_search",
-      description: "Search for vulnerabilities related to the observed tech stack or specific CVEs",
+      description: "Search for CVEs, exploit techniques, and security research related to the observed tech stack, server version, or headers. Use aggressively — when you see 'X-Powered-By: Express 4.18', search for known Express 4.18 CVEs immediately. Examples: 'nginx 1.18 CVE exploit', 'GraphQL introspection attack payloads', 'JWT RS256 to HS256 confusion attack'.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string" },
+          query: { type: "string", description: "Include version numbers, framework names, CVE IDs — be specific" },
         },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "crawl_url",
+      description: "Fetch a specific security resource — PortSwigger research, HackTricks (book.hacktricks.xyz), NVD CVE pages, vendor security advisories, or OWASP testing guides. Use to get exact attack payloads and step-by-step exploit instructions.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Full URL: PortSwigger, HackTricks, NVD, OWASP, vendor advisory" },
+        },
+        required: ["url"],
       },
     },
   },
@@ -118,7 +134,12 @@ Think like an attacker — what can you chain together?`;
       if (toolName === "web_search") {
         const query = String(args["query"] ?? "");
         sourcesCrawled.push(`web:${query}`);
-        return webSearch(query, 3);
+        return webSearch(query, 8);
+      }
+      if (toolName === "crawl_url") {
+        const url = String(args["url"] ?? "");
+        sourcesCrawled.push(`crawl:${url}`);
+        return crawlUrl(url);
       }
       return "Unknown tool";
     }
