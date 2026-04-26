@@ -157,14 +157,14 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 - All ecosystems query OSV.dev with correct ecosystem tags
 
 **Scan modes**
-- `--breach`: 36 credential/infra patterns + aggressive supply chain CVE hunting
-- `--bug`: 43 code vulnerability patterns + deep code AI agent
-- `--breach --bug` (full): 66 total patterns, all scanners, both AI personalities
+- `--breach`: 35 credential/infra patterns + aggressive supply chain CVE hunting
+- `--bug`: 40 code vulnerability patterns + deep code AI agent
+- `--breach --bug` (full): 62 total patterns, all scanners, both AI personalities
 
-**Static code patterns (66 total in full mode)**
+**Static code patterns (62 total in full mode)**
 - Base (13): hardcoded secrets, `eval()`, SQL concat, weak crypto, CORS wildcard, prototype pollution, path traversal, SSL verify disabled, error stack exposure
-- Bug (+30): Python `pickle.loads`, `yaml.load`, `subprocess shell=True`; Go `fmt.Sprintf` SQL, `unsafe.Pointer`; Rust unsafe blocks; SSRF, open redirect, mass assignment, NoSQL injection, `dangerouslySetInnerHTML`, JWT `alg:none`, ReDoS, template injection, zip-slip, timing attack, XXE, LDAP injection
-- Breach (+23): GitHub PAT, Stripe/OpenAI/Anthropic/Slack/Supabase/SendGrid/Twilio/AWS keys, Firebase private key, DB connection strings, debug endpoints, admin routes, cloud tokens
+- Bug (+27): Python `pickle.loads`, `yaml.load`, `subprocess shell=True`; Go `fmt.Sprintf` SQL, `unsafe.Pointer`; Rust unsafe blocks; SSRF, open redirect, mass assignment, NoSQL injection, `dangerouslySetInnerHTML`, JWT `alg:none`, ReDoS, template injection, zip-slip, timing attack, XXE, LDAP injection
+- Breach (+22): GitHub PAT, Stripe/OpenAI/Anthropic/Slack/Supabase/SendGrid/Twilio/AWS keys, Firebase private key, DB connection strings, debug endpoints, admin routes, cloud tokens
 
 **Free threat intelligence (no API key required)**
 - OSV.dev POST API — comprehensive open vulnerability database

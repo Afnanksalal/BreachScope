@@ -171,9 +171,14 @@ export async function crawlUrl(url: string): Promise<string> {
   }
 }
 
-/** Security advisories for an npm package. */
+/** Security advisories for a package in any ecosystem. */
+export async function fetchPackageAdvisories(packageName: string, ecosystem = "npm"): Promise<string> {
+  return webSearch(`"${packageName}" ${ecosystem} security vulnerability CVE`);
+}
+
+/** @deprecated Use fetchPackageAdvisories */
 export async function fetchNpmAdvisories(packageName: string): Promise<string> {
-  return webSearch(`"${packageName}" npm security vulnerability CVE`);
+  return fetchPackageAdvisories(packageName, "npm");
 }
 
 /** Fetch the latest security changelog for a known SaaS tool. */
@@ -186,15 +191,39 @@ export async function fetchToolChangelog(tool: "supabase" | "vercel" | "github")
   return crawlUrl(urls[tool]);
 }
 
-/** Search GitHub Security Advisories for a package. */
-export async function fetchGitHubAdvisory(packageName: string): Promise<string> {
-  // OSV covers GitHub advisories, use it first
-  const osvResult = await freeVulnSearch(`"${packageName}" vulnerability`);
+/** Search GitHub Security Advisories for a package in any ecosystem. */
+export async function fetchGitHubAdvisory(packageName: string, ecosystem = "npm"): Promise<string> {
+  const osvResult = await freeVulnSearch(`"${packageName}" ${ecosystem} vulnerability`);
   if (osvResult && !osvResult.startsWith("No threat")) return osvResult;
-  return crawlUrl(`https://github.com/advisories?query=${encodeURIComponent(`ecosystem%3Anpm+${packageName}`)}`);
+  const eco = ecosystem.toLowerCase().replace(/\./g, "");
+  return crawlUrl(`https://github.com/advisories?query=${encodeURIComponent(`ecosystem%3A${eco}+${packageName}`)}`);
 }
 
-/** Fetch OSV.dev vulnerability data for a package. */
-export async function fetchOSVData(packageName: string): Promise<string> {
-  return freeVulnSearch(`"${packageName}" vulnerability`);
+/** Fetch OSV.dev vulnerability data for a package in any ecosystem. */
+export async function fetchOSVData(packageName: string, ecosystem = "npm"): Promise<string> {
+  try {
+    const res = await fetch("https://api.osv.dev/v1/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ package: { name: packageName, ecosystem }, version: "" }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (res.ok) {
+      const data = await res.json() as {
+        vulns?: Array<{ id: string; summary?: string; severity?: Array<{ score?: number }>; aliases?: string[] }>;
+      };
+      if (data.vulns?.length) {
+        const entries = data.vulns.slice(0, 10).map((v) => {
+          const score = v.severity?.[0]?.score;
+          const cves = v.aliases?.filter((a) => a.startsWith("CVE-")).join(", ");
+          return `- **${v.id}**${cves ? ` (${cves})` : ""}${score ? ` CVSS ${score}` : ""}: ${v.summary ?? "No summary"}`;
+        }).join("\n");
+        return `## OSV.dev — ${packageName} [${ecosystem}] (${data.vulns.length} vulnerabilities)\n${entries}`;
+      }
+      return `## OSV.dev — ${packageName} [${ecosystem}]\nNo known vulnerabilities.`;
+    }
+  } catch (e) {
+    logger.debug(`[crawl] osv fetchOSVData failed: ${e}`);
+  }
+  return freeVulnSearch(`"${packageName}" ${ecosystem} vulnerability`);
 }

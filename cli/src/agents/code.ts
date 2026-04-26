@@ -71,9 +71,11 @@ Hunt for:
 - **SaaS misconfigs**: Supabase anon key used server-side with no RLS, Firebase rules allowing public read/write
 
 For each finding:
-1. Quote the exact line or value (truncated if too long)
+1. Report the variable/key NAME and file location — NEVER paste the actual secret value into the finding description or detail field
 2. Explain the immediate impact: what can an attacker do with this credential right now?
 3. Give precise remediation: which service to revoke on, what to replace it with
+
+IMPORTANT — .env files: ONLY flag entries where the VALUE is a weak placeholder (e.g. "change-me", "your-key-here", "example", "todo", "replace-in-prod", "xxx", "test"). Skip entries with real strong values — .env files are designed to hold secrets and flagging valid credentials in .env is noise, not signal.
 
 Use web_search to verify key formats, look up breach history for identified tokens, and search for known exploits. Use crawl_url to read specific advisory pages, vendor security disclosures, or HaveIBeenPwned-style resources when you identify a credential type.
 
@@ -257,7 +259,7 @@ export async function runCodeAgent(ctx: AgentContext): Promise<AgentResult> {
     : scanMode === "bug"
     ? "DEEP BUG HUNT: find real, exploitable logic bugs, injection flaws, auth bypasses. Read the actual code — don't guess, verify."
     : scanMode === "breach"
-    ? "BREACH HUNT: find credentials, secrets, API keys, hardcoded tokens. Quote the exact value and line."
+    ? "BREACH HUNT: find credentials, secrets, API keys, hardcoded tokens hardcoded in SOURCE FILES. Report the variable/key name and file location — NEVER include actual secret values in finding descriptions. For .env files: ONLY flag weak or placeholder values (e.g. 'change-me', 'your-key-here', 'example', 'todo', 'replace-me') — skip real strong values since .env is meant to store secrets."
     : "SECURITY AUDIT: find real vulnerabilities across all classes.";
 
   const userMessage = `${modeHint}

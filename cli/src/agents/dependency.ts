@@ -1,7 +1,7 @@
 import { agentLoop } from "../core/ai.js";
-import { webSearch, crawlUrl, fetchNpmAdvisories, fetchGitHubAdvisory, fetchOSVData } from "../core/crawler.js";
+import { webSearch, crawlUrl, fetchPackageAdvisories, fetchGitHubAdvisory, fetchOSVData } from "../core/crawler.js";
 import { logger } from "../core/logger.js";
-import type { AgentContext, AgentResult, Finding } from "../core/types.js";
+import type { AgentContext, AgentResult, Finding, LanguageDep } from "../core/types.js";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 
 const SYSTEM_ALL = `You are BreachScope's Dependency Agent — a specialist in supply chain security.
@@ -112,7 +112,7 @@ const TOOLS: ChatCompletionTool[] = [
         properties: {
           title:       { type: "string" },
           severity:    { type: "string", enum: ["critical", "high", "medium", "low"] },
-          description: { type: "string", description: "Exact package name, installed version, vulnerable version range, CVE ID or incident reference, and attack impact." },
+          description: { type: "string", description: "Exact package name, ecosystem, installed version, vulnerable version range, CVE ID or incident reference, and attack impact." },
           evidence:    { type: "string", description: "CVE ID, advisory URL, or direct quote from the advisory confirming the vulnerability." },
           remediation: { type: "string", description: "Exact fix version or action." },
           references:  { type: "array", items: { type: "string" }, description: "Advisory URLs" },
@@ -136,9 +136,7 @@ const TOOLS: ChatCompletionTool[] = [
       description: "Remove a finding that is speculative, lacks evidence, or where the installed version is not actually in the vulnerable range.",
       parameters: {
         type: "object",
-        properties: {
-          id: { type: "string" },
-        },
+        properties: { id: { type: "string" } },
         required: ["id"],
       },
     },
@@ -147,11 +145,12 @@ const TOOLS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "search_vulnerabilities",
-      description: "Search the web for known vulnerabilities and security incidents for an npm package",
+      description: "Search the web for known CVEs, security advisories, and supply chain incidents for any package regardless of language. Works for npm, PyPI, Go, Rust (crates.io), Ruby (RubyGems), PHP (Packagist), Java (Maven), .NET (NuGet), Elixir (Hex), Dart (pub), and more.",
       parameters: {
         type: "object",
         properties: {
-          package_name: { type: "string", description: "The npm package name" },
+          package_name: { type: "string", description: "Package name (any ecosystem)" },
+          ecosystem:    { type: "string", description: "Ecosystem: npm | PyPI | Go | crates.io | RubyGems | Maven | Packagist | NuGet | Hex | pub" },
         },
         required: ["package_name"],
       },
@@ -161,11 +160,12 @@ const TOOLS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "fetch_github_advisory",
-      description: "Fetch GitHub Security Advisories for an npm package",
+      description: "Fetch GitHub Security Advisories for a package from any ecosystem (npm, PyPI, Go, Rust, Ruby, Java, PHP, etc.)",
       parameters: {
         type: "object",
         properties: {
           package_name: { type: "string" },
+          ecosystem:    { type: "string", description: "Ecosystem hint for the advisory search" },
         },
         required: ["package_name"],
       },
@@ -175,13 +175,14 @@ const TOOLS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "fetch_osv_data",
-      description: "Fetch OSV.dev vulnerability database entries for an npm package",
+      description: "Query OSV.dev vulnerability database for a package. Covers all ecosystems: npm, PyPI, Go, crates.io, RubyGems, Maven, Packagist, NuGet, Hex, pub, and more.",
       parameters: {
         type: "object",
         properties: {
           package_name: { type: "string" },
+          ecosystem:    { type: "string", description: "OSV ecosystem name: npm | PyPI | Go | crates.io | RubyGems | Maven | Packagist | NuGet | Hex | pub" },
         },
-        required: ["package_name"],
+        required: ["package_name", "ecosystem"],
       },
     },
   },
@@ -189,11 +190,11 @@ const TOOLS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "web_search",
-      description: "Search the web for supply chain attacks, CVEs, package hijacks, malicious packages, maintainer compromises. Use aggressively — search every suspicious package for known incidents. Examples: 'event-stream npm attack 2024', 'lodash prototype pollution CVE exploit', 'left-pad npm supply chain incident'.",
+      description: "Search the web for supply chain attacks, CVEs, package hijacks, malicious packages, maintainer compromises — for ANY language ecosystem. Examples: 'requests PyPI vulnerability CVE', 'log4j Maven RCE exploit', 'event-stream npm supply chain attack', 'serde crates.io security advisory'.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Include package name, CVE ID, or attack type — be specific" },
+          query: { type: "string", description: "Include package name, ecosystem, CVE ID, or attack type — be specific" },
         },
         required: ["query"],
       },
@@ -203,11 +204,11 @@ const TOOLS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "crawl_url",
-      description: "Fetch a specific advisory page, CVE detail, npm package page, GitHub security advisory, or threat intelligence report. Use to get full details on a suspected compromised package or exploit chain.",
+      description: "Fetch a specific advisory page, CVE detail, package registry page, GitHub security advisory, or threat intelligence report. Works for any language: NVD, OSV.dev, GHSA, PyPI, crates.io, RubyGems, pkg.go.dev, Packagist, NuGet, Snyk, Socket.dev.",
       parameters: {
         type: "object",
         properties: {
-          url: { type: "string", description: "Full URL: NVD CVE, GitHub advisory, npmjs.com package page, Socket.dev report, Snyk advisory" },
+          url: { type: "string", description: "Full URL to fetch" },
         },
         required: ["url"],
       },
@@ -252,16 +253,19 @@ export async function runDependencyAgent(ctx: AgentContext): Promise<AgentResult
       if (toolName === "get_findings") return store.get();
       if (toolName === "remove_finding") return store.remove(String(args["id"] ?? ""));
       if (toolName === "search_vulnerabilities") {
-        sourcesCrawled.push(`npm-advisories:${pkg}`);
-        return fetchNpmAdvisories(pkg);
+        const eco = String(args["ecosystem"] ?? "npm");
+        sourcesCrawled.push(`${eco}-advisories:${pkg}`);
+        return fetchPackageAdvisories(pkg, eco);
       }
       if (toolName === "fetch_github_advisory") {
+        const eco = String(args["ecosystem"] ?? "npm");
         sourcesCrawled.push(`github-advisory:${pkg}`);
-        return fetchGitHubAdvisory(pkg);
+        return fetchGitHubAdvisory(pkg, eco);
       }
       if (toolName === "fetch_osv_data") {
+        const eco = String(args["ecosystem"] ?? "npm");
         sourcesCrawled.push(`osv:${pkg}`);
-        return fetchOSVData(pkg);
+        return fetchOSVData(pkg, eco);
       }
       if (toolName === "web_search") {
         sourcesCrawled.push(`web:${query}`);
@@ -306,24 +310,49 @@ export async function runDependencyAgent(ctx: AgentContext): Promise<AgentResult
 }
 
 function buildUserMessage(ctx: AgentContext, scanMode: string): string {
-  const pkgJson = ctx.packageJson ?? {};
-  const deps = {
-    dependencies: (pkgJson["dependencies"] as Record<string, string>) ?? {},
-    devDependencies: (pkgJson["devDependencies"] as Record<string, string>) ?? {},
-  };
+  const allDeps: LanguageDep[] = ctx.allDeps ?? [];
+
+  // Group by ecosystem
+  const byEco: Record<string, LanguageDep[]> = {};
+  for (const d of allDeps) {
+    (byEco[d.ecosystem] ??= []).push(d);
+  }
+  const ecosystems = Object.keys(byEco);
+
+  // Format each ecosystem block
+  const depBlocks = ecosystems.map((eco) => {
+    const list = byEco[eco]!;
+    const entries = list.map((d) => `  "${d.name}": "${d.version ?? "unknown"}"`).join(",\n");
+    return `### ${eco} (${list.length} packages)\n{\n${entries}\n}`;
+  }).join("\n\n");
 
   const modeInstruction = scanMode === "full"
-    ? `MAXIMUM COVERAGE MODE: Combine breach + bug analysis. Aggressively hunt packages with known exploits, hijacks, or exfiltration potential AND cross-reference exploitable CVEs in auth/parsing/HTTP packages. Cover at least 25 packages. Every finding must explain attack path and impact.`
+    ? `MAXIMUM COVERAGE MODE: Combine breach + bug analysis. Aggressively hunt packages with known exploits, hijacks, or exfiltration potential AND cross-reference exploitable CVEs in auth/parsing/HTTP packages. Cover at least 25 packages across ALL ecosystems. Every finding must explain attack path and impact.`
     : scanMode === "breach"
-    ? `BREACH MODE: This is an active breach investigation. Aggressively hunt for packages with known exploits, recent hijacks, or that could exfiltrate data. Cover at least 20 packages. Every finding should explain immediate breach impact.`
+    ? `BREACH MODE: This is an active breach investigation. Aggressively hunt for packages with known exploits, recent hijacks, or that could exfiltrate data. Cover at least 20 packages across ALL ecosystems. Every finding should explain immediate breach impact.`
     : scanMode === "bug"
-    ? `BUG MODE: Focus on packages with exploitable CVEs that are reachable in this application. Cross-reference known vulnerable version ranges. Prioritize packages used in auth, parsing, and HTTP handling.`
-    : `STANDARD MODE: Identify the top supply chain risks across this dependency list.`;
+    ? `BUG MODE: Focus on packages with exploitable CVEs that are reachable in this application. Cross-reference known vulnerable version ranges. Prioritize packages used in auth, parsing, and HTTP handling across ALL ecosystems.`
+    : `STANDARD MODE: Identify the top supply chain risks across ALL ecosystems in this dependency list.`;
 
   return `${modeInstruction}
 
+This project uses ${ecosystems.length} ecosystem(s): ${ecosystems.join(", ")}.
+Total unique packages: ${allDeps.length}
+
+IMPORTANT: Use the correct ecosystem parameter when calling fetch_osv_data, fetch_github_advisory, and search_vulnerabilities.
+- npm packages → ecosystem: "npm"
+- Python packages → ecosystem: "PyPI"
+- Go modules → ecosystem: "Go"
+- Rust crates → ecosystem: "crates.io"
+- Ruby gems → ecosystem: "RubyGems"
+- PHP packages → ecosystem: "Packagist"
+- Java/Maven → ecosystem: "Maven"
+- .NET/NuGet → ecosystem: "NuGet"
+- Elixir → ecosystem: "Hex"
+- Dart → ecosystem: "pub"
+
 WORKFLOW:
-1. Research packages using search_vulnerabilities, fetch_osv_data, fetch_github_advisory, web_search, crawl_url
+1. Research packages using search_vulnerabilities, fetch_osv_data, fetch_github_advisory, web_search, crawl_url — always pass the correct ecosystem
 2. For each confirmed vulnerability: call save_finding() with CVE ID or advisory URL as evidence
 3. Every 5-6 researched packages: call get_findings() to review quality
 4. Use remove_finding() on any finding where the installed version is not in the vulnerable range, or you can't confirm a real CVE/incident
@@ -332,13 +361,10 @@ WORKFLOW:
 FEEDBACK LOOP: save_finding → get_findings → remove_finding is your quality gate.
 Only findings with a confirmed CVE or documented incident should survive.
 
-package.json dependencies:
-${JSON.stringify(deps, null, 2)}
+Dependencies by ecosystem:
+${depBlocks || "(no dependencies detected)"}
 
-Total unique packages: ${ctx.dependencies.length}
-All package names: ${ctx.dependencies.join(", ")}
-
-Research the riskiest packages first. Be thorough — prioritize packages used in auth, HTTP handling, parsing, and file operations.
+Research the riskiest packages first across all ecosystems. Prioritize packages used in auth, HTTP handling, parsing, and file operations.
 When done, output remaining findings as a JSON array (fallback for anything not submitted via save_finding).`;
 }
 

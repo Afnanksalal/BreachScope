@@ -33,9 +33,9 @@ It was built because incidents like the [ua-parser-js hijack](https://github.com
 | Flag(s) | Mode | Focus | Patterns |
 |---------|------|-------|----------|
 | *(none)* | `all` | Balanced — CVE + code + supply chain | 13 base |
-| `--breach` | `breach` | CVEs, hijacked packages, leaked credentials, infra exposure | 36 patterns |
-| `--bug` | `bug` | Injection flaws, auth bypasses, deserialization, logic bugs | 43 patterns |
-| `--breach --bug` | `full` | Everything — maximum coverage | **66 patterns** |
+| `--breach` | `breach` | CVEs, hijacked packages, leaked credentials, infra exposure | 35 patterns |
+| `--bug` | `bug` | Injection flaws, auth bypasses, deserialization, logic bugs | 40 patterns |
+| `--breach --bug` | `full` | Everything — maximum coverage | **62 patterns** |
 
 ---
 
@@ -92,7 +92,7 @@ Your Codebase (any of 10 languages)
           │
           ▼
   [Static Scanners]
-  66 code patterns · Toolchain probe · Blackbox · Smoke tests
+  62 code patterns · Toolchain probe · Blackbox · Smoke tests
   Free threat intel: OSV.dev · NVD CVE · npm advisories
           │
           ▼
@@ -162,7 +162,7 @@ Shorthand: bs scan, bs sandbox, bs login, bs deps, etc.
 | `-m, --mode` | `basic` | Scan depth: `basic` \| `major` \| `deep` |
 | `--breach` | — | Breach mode: CVE hunting, credential leaks, supply chain |
 | `--bug` | — | Bug mode: deep code audit, injection, deserialization, auth |
-| `--breach --bug` | — | Full mode: both combined — 66 patterns, all scanners |
+| `--breach --bug` | — | Full mode: both combined — 62 patterns, all scanners |
 | `-t, --target` | `all` | Scope: `all` \| `dependency` \| `toolchain` \| `code` \| `blackbox` \| `smoke` |
 | `-u, --url` | — | Target URL for blackbox and smoke probing |
 | `-o, --output` | `console` | Output: `console` \| `json` \| `sarif` |
@@ -306,13 +306,13 @@ Detects every tool your codebase uses, classifies it as OSS/SaaS/hybrid, runs sp
 - Firecrawl-powered security page + changelog crawling
 - GPT-4o research for known incidents, breach patterns, SDK CVEs
 
-### Static Code Patterns (66 total in full mode)
+### Static Code Patterns (62 total in full mode)
 
 | Set | Count | Examples |
 |-----|-------|---------|
 | Base | 13 | Hardcoded secrets, eval(), SQL concat, weak crypto, CORS wildcard, path traversal |
-| Bug | +30 | Python pickle/yaml/subprocess, Go fmt.Sprintf SQLi, SSRF, JWT none, XXE, mass assignment, ReDoS |
-| Breach | +23 | GitHub PAT, Stripe/OpenAI/Anthropic keys, DB connection strings, Firebase private key, admin routes |
+| Bug | +27 | Python pickle/yaml/subprocess, Go fmt.Sprintf SQLi, SSRF, JWT none, XXE, mass assignment, ReDoS |
+| Breach | +22 | GitHub PAT, Stripe/OpenAI/Anthropic keys, DB connection strings, Firebase private key, admin routes |
 
 ---
 
@@ -454,7 +454,7 @@ breachscope/
 │       ├── engine/              # Recursive sub-toolchain engine + dependency graph
 │       ├── scanners/
 │       │   ├── dependency/      # JS, Python, Go, Rust, Ruby, Java, PHP, .NET, Elixir, Dart
-│       │   ├── code/            # patterns.ts (66 rules: base + bug + breach), index.ts
+│       │   ├── code/            # patterns.ts (62 rules: 13 base + 27 bug + 22 breach), index.ts
 │       │   ├── toolchain/       # Supabase, Vercel, GitHub scanners
 │       │   ├── blackbox/        # HTTP security header + path probe
 │       │   └── smoke/           # Live app behavior tests

@@ -58,9 +58,9 @@ breachscope sandbox
 | Flag(s) | What it focuses on |
 |---------|-------------------|
 | *(none)* | Balanced — CVE lookup + code audit + supply chain (13 base patterns) |
-| `--breach` | Supply chain attacks, CVEs, leaked credentials and API keys (36 patterns) |
-| `--bug` | Code vulnerabilities — injection, auth bypass, deserialization, logic bugs (43 patterns) |
-| `--breach --bug` | Everything combined — maximum coverage (66 patterns, all scanners) |
+| `--breach` | Supply chain attacks, CVEs, leaked credentials and API keys (35 patterns) |
+| `--bug` | Code vulnerabilities — injection, auth bypass, deserialization, logic bugs (40 patterns) |
+| `--breach --bug` | Everything combined — maximum coverage (62 patterns, all scanners) |
 
 ---
 
@@ -90,7 +90,7 @@ CVEs are looked up against OSV.dev with the correct ecosystem per language.
 | Target | What it does |
 |--------|-------------|
 | `dependency` | Audits all package manifests across all languages for CVEs and supply chain risks |
-| `code` | Scans source files with 13–66 regex patterns depending on mode |
+| `code` | Scans source files with 13–62 regex patterns depending on mode |
 | `toolchain` | Probes Supabase, Vercel, GitHub APIs for misconfigurations |
 | `blackbox` | Hits a live URL for header, CORS, and path exposure issues |
 | `smoke` | Tests live app behavior — error leakage, auth bypass, payload limits |

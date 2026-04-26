@@ -30,6 +30,10 @@ import type { SandboxAgentResult } from "../agents/sandbox-agent.js";
 import { runCodeAgent } from "../agents/code.js";
 import { runDependencyAgent } from "../agents/dependency.js";
 import { runBlackboxAgent } from "../agents/blackbox.js";
+import { runCodeAudit } from "../scanners/code/index.js";
+import { runDependencyScanner } from "../scanners/dependency/index.js";
+import { runSubchainScan } from "../engine/index.js";
+import { runReportAgent, lastSynthesis } from "../agents/report.js";
 import type { AgentContext } from "../core/types.js";
 import { renderConsoleReport } from "../reporters/console.js";
 import { renderJsonReport } from "../reporters/json.js";
@@ -1084,12 +1088,11 @@ async function buildAgentContext(cwd: string, url?: string): Promise<AgentContex
   let packageJson: Record<string, unknown> | undefined;
   try { packageJson = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf-8")); } catch { /* ok */ }
 
-  const deps = Object.keys({
-    ...(packageJson?.["dependencies"] as Record<string, string> ?? {}),
-    ...(packageJson?.["devDependencies"] as Record<string, string> ?? {}),
-  });
+  const { detectAllDepsForContext } = await import("../core/context.js");
+  const allDeps = detectAllDepsForContext(cwd, packageJson);
+  const deps = allDeps.filter((d) => d.ecosystem === "npm").map((d) => d.name);
 
-  return { files, packageJson, dependencies: deps, url, toolchain: {}, existingFindings: [], crawlCache: {}, scanMode: "all" };
+  return { files, packageJson, dependencies: deps, allDeps, url, toolchain: {}, existingFindings: [], crawlCache: {}, scanMode: "all" };
 }
 
 // ── Main command ──────────────────────────────────────────────────────────────
@@ -1391,7 +1394,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
 
       const serviceSubpath = aiChosenSubpath || "";
 
-      const [sandboxResult, codeResult, depResult, blackboxResult] = await Promise.allSettled([
+      const [sandboxResult, codeResult, depResult, blackboxResult, staticCodeResult, staticDepResult] = await Promise.allSettled([
         runSandboxAgent(
           containerId!,
           containerIP,
@@ -1405,6 +1408,8 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
         runCodeAgent({ ...agentCtx, existingFindings: [] }),
         runDependencyAgent({ ...agentCtx, existingFindings: [] }),
         runBlackboxAgent({ ...agentCtx, url: `http://127.0.0.1:${appPort}`, existingFindings: [] }),
+        runCodeAudit(cwd, "full"),
+        runDependencyScanner(cwd),
       ]);
 
       let totalTokens = 0;
@@ -1449,6 +1454,16 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
         logger.warn(`Blackbox agent failed: ${blackboxResult.reason}`);
       }
 
+      if (staticCodeResult.status === "fulfilled") {
+        findings.push(...staticCodeResult.value);
+        logger.debug(`[static-code] ${staticCodeResult.value.length} findings`);
+      }
+
+      if (staticDepResult.status === "fulfilled") {
+        findings.push(...staticDepResult.value);
+        logger.debug(`[static-dep] ${staticDepResult.value.length} findings`);
+      }
+
       // Deduplicate findings by title across agents
       const seen = new Set<string>();
       const deduped = findings.filter((f) => {
@@ -1467,11 +1482,15 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
         logger.debug(`Code: ${(codeResult as PromiseRejectedResult).reason}`);
       }
 
+      const staticCode = staticCodeResult.status === "fulfilled" ? staticCodeResult.value.length : 0;
+      const staticDep  = staticDepResult.status === "fulfilled"  ? staticDepResult.value.length  : 0;
+
       const breakdown = [
         sandboxResult.status === "fulfilled" ? `${sandboxResult.value.findings.length} dynamic` : "sandbox failed",
         codeResult.status === "fulfilled"    ? `${codeResult.value.findings.length} code`    : "code failed",
         depResult.status === "fulfilled"     ? `${depResult.value.findings.length} deps`     : "deps failed",
         blackboxResult.status === "fulfilled" ? `${blackboxResult.value.findings.length} http` : "http failed",
+        `${staticCode} static-code · ${staticDep} static-deps`,
       ].join(" · ");
 
       swarmSpinner.succeed(
@@ -1487,6 +1506,45 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
       }
     } else {
       logger.warn("Skipping AI agents — OPENAI_API_KEY not set.");
+    }
+
+    // ── Report synthesis + subchain scan (parallel, best-effort) ────────────
+    const agentCtxForReport = await buildAgentContext(cwd, opts.url ?? `http://127.0.0.1:${appPort}`);
+    agentCtxForReport.existingFindings = [...findings];
+
+    const [subchainResult, reportResult] = await Promise.allSettled([
+      runSubchainScan(cwd, "deep", undefined as never),
+      process.env["OPENAI_API_KEY"] ? runReportAgent(agentCtxForReport) : Promise.resolve(null),
+    ]);
+
+    const toolRiskData = subchainResult.status === "fulfilled" && subchainResult.value
+      ? subchainResult.value.toolResults.map((r) => ({
+          name:            r.tool.name,
+          kind:            r.tool.kind,
+          depth:           r.tool.depth,
+          parent:          r.tool.parent,
+          riskScore:       r.riskScore,
+          aiSummary:       r.aiSummary,
+          osvCount:        r.osvVulnerabilities.length,
+          osvIds:          r.osvVulnerabilities.map((v) => v.id),
+          scorecardScore:  r.scorecard?.score ?? r.scorecard?.score,
+          weeklyDownloads: r.npmMeta?.weeklyDownloads,
+          maintainerCount: r.npmMeta?.maintainers.length,
+          findingsCount:   r.findings.length,
+          github:          r.tool.github,
+          version:         r.tool.version,
+        }))
+      : undefined;
+
+    // Merge subchain findings (CVEs etc.) that aren't already captured
+    if (subchainResult.status === "fulfilled" && subchainResult.value) {
+      const existingTitles = new Set(findings.map((f) => f.title.toLowerCase().trim()));
+      for (const f of (subchainResult.value.allFindings ?? [])) {
+        if (!existingTitles.has(f.title.toLowerCase().trim())) {
+          findings.push(f);
+          existingTitles.add(f.title.toLowerCase().trim());
+        }
+      }
     }
 
     // ── Summary ─────────────────────────────────────────────────────────────
@@ -1535,8 +1593,10 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
         mode: "deep",
         scanMode: "sandbox",
         url: opts.url,
-        toolsScanned: 0,
+        toolsScanned: subchainResult.status === "fulfilled" ? (subchainResult.value?.toolsScanned ?? 0) : 0,
+        toolRiskData,
         probeData: sandboxProbeData,
+        aiReport: lastSynthesis ? JSON.stringify(lastSynthesis) : undefined,
       });
       if (scanId) {
         console.log(chalk.gray(`\n  Results saved — view at ${chalk.white(`https://breachscoope.vercel.app/dashboard/scan/${scanId}`)}`));

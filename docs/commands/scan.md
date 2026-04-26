@@ -19,7 +19,7 @@ bs scan [options]
 | `-m, --mode` | `basic` | Scan depth: `basic \| major \| deep` |
 | `--breach` | — | Breach mode: CVE hunting, credential leaks, supply chain attacks |
 | `--bug` | — | Bug mode: deep code audit, injection flaws, deserialization, auth bypasses |
-| `--breach --bug` | — | Full mode: both combined — 66 patterns, all scanners |
+| `--breach --bug` | — | Full mode: both combined — 62 patterns, all scanners |
 | `-t, --target` | `all` | Scanner scope: `all \| dependency \| toolchain \| code \| blackbox \| smoke` |
 | `-u, --url` | — | Target URL for blackbox and smoke probing |
 | `-o, --output` | `console` | Output format: `console \| json \| sarif` |

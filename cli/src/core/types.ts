@@ -237,10 +237,18 @@ export type AgentName =
   | "blackbox"
   | "report";
 
+export interface LanguageDep {
+  name: string;
+  version?: string;
+  ecosystem: string; // npm | PyPI | Go | crates.io | RubyGems | Maven | Packagist | NuGet | Hex | pub
+}
+
 export interface AgentContext {
   files: Record<string, string>;
   packageJson?: Record<string, unknown>;
   dependencies: string[];
+  /** All dependencies across all detected languages, grouped by ecosystem */
+  allDeps?: LanguageDep[];
   url?: string;
   toolchain: ToolchainConfig;
   existingFindings: Finding[];
