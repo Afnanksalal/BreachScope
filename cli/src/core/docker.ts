@@ -65,6 +65,23 @@ export async function isContainerRunning(containerId: string): Promise<boolean> 
   }
 }
 
+// ── Port availability ──────────────────────────────────────────────────────────
+
+export async function findAvailablePort(preferred: number, maxTries = 20): Promise<number> {
+  const net = await import("net");
+  for (let i = 0; i < maxTries; i++) {
+    const port = preferred + i;
+    const available = await new Promise<boolean>((resolve) => {
+      const srv = net.createServer();
+      srv.once("error", () => resolve(false));
+      srv.once("listening", () => srv.close(() => resolve(true)));
+      srv.listen(port, "0.0.0.0");
+    });
+    if (available) return port;
+  }
+  throw new Error(`No available port found starting from ${preferred}`);
+}
+
 // ── Container lifecycle ────────────────────────────────────────────────────────
 
 export interface StartContainerOptions {

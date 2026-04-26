@@ -23,6 +23,7 @@ import {
   generateDockerfile,
   getContainerExitCode,
   isContainerRunning,
+  findAvailablePort,
 } from "../core/docker.js";
 import { webSearch, crawlUrl } from "../core/crawler.js";
 import { runSandboxAgent } from "../agents/sandbox-agent.js";
@@ -424,10 +425,11 @@ async function fixStartupCrash(
         restoreIgnore();
       }
 
+      const retryHostPort = await findAvailablePort(appPort);
       const newContainerId = await startContainer({
         image: imageName,
         name: containerName,
-        hostPort: appPort,
+        hostPort: retryHostPort,
         containerPort: appPort,
         networkMode: "bridge",
         attackMode: true,
@@ -1141,7 +1143,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
 
   const projectType = detectProjectType(cwd);
   const defaultPort = opts.port ?? detectAppPort(cwd, projectType);
-  console.log(chalk.gray(`  Project type: ${chalk.white(projectType)} · Default port: ${chalk.white(String(defaultPort))}`));
+  console.log(chalk.gray(`  Project type: ${chalk.white(projectType)}`));
 
   // ── Phase 0: AI codebase understanding ───────────────────────────────────
   let projectContext = "";
@@ -1257,10 +1259,14 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
   // ── Start container ───────────────────────────────────────────────────────
   const startSpinner = ora("Starting sandbox container...").start();
   try {
+    const hostPort = await findAvailablePort(appPort);
+    if (hostPort !== appPort) {
+      logger.info(`Port ${appPort} in use — binding host port ${hostPort} → container port ${appPort}`);
+    }
     containerId = await startContainer({
       image: imageName,
       name: containerName,
-      hostPort: appPort,
+      hostPort,
       containerPort: appPort,
       networkMode: "bridge",
       attackMode: true,
