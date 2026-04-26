@@ -23,7 +23,6 @@ import {
   generateDockerfile,
   getContainerExitCode,
   isContainerRunning,
-  findAvailablePort,
 } from "../core/docker.js";
 import { webSearch, crawlUrl } from "../core/crawler.js";
 import { runSandboxAgent } from "../agents/sandbox-agent.js";
@@ -425,16 +424,16 @@ async function fixStartupCrash(
         restoreIgnore();
       }
 
-      const retryHostPort = await findAvailablePort(appPort);
-      const newContainerId = await startContainer({
+      const retryResult = await startContainer({
         image: imageName,
         name: containerName,
-        hostPort: retryHostPort,
+        hostPort: appPort,
         containerPort: appPort,
         networkMode: "bridge",
         attackMode: true,
         envVars: projectEnvVars,
       });
+      const newContainerId = retryResult.containerId;
 
       // Give it 12s to see if it crashes again
       const crashed = await checkContainerCrashed(newContainerId, 12_000);
@@ -1259,19 +1258,19 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
   // ── Start container ───────────────────────────────────────────────────────
   const startSpinner = ora("Starting sandbox container...").start();
   try {
-    const hostPort = await findAvailablePort(appPort);
-    if (hostPort !== appPort) {
-      logger.info(`Port ${appPort} in use — binding host port ${hostPort} → container port ${appPort}`);
-    }
-    containerId = await startContainer({
+    const startResult = await startContainer({
       image: imageName,
       name: containerName,
-      hostPort,
+      hostPort: appPort,
       containerPort: appPort,
       networkMode: "bridge",
       attackMode: true,
       envVars: projectEnvVars,
     });
+    containerId = startResult.containerId;
+    if (startResult.hostPort !== appPort) {
+      logger.info(`Port ${appPort} in use — bound to host port ${startResult.hostPort}`);
+    }
     startSpinner.succeed(`Container started: ${containerId.slice(0, 12)}`);
   } catch (e) {
     startSpinner.fail(`Failed to start container: ${e}`);

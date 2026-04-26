@@ -96,13 +96,51 @@ export interface StartContainerOptions {
   attackMode?: boolean;
 }
 
-export async function startContainer(opts: StartContainerOptions): Promise<string> {
+export async function startContainer(opts: StartContainerOptions): Promise<{ containerId: string; hostPort: number }> {
+  const containerPort = opts.containerPort ?? opts.hostPort ?? 3000;
+  const maxPortTries = 20;
+
+  const triedNames: string[] = [];
+
+  for (let i = 0; i < maxPortTries; i++) {
+    // Each attempt gets a unique name so there is never a name conflict between retries
+    const attemptName = i === 0 ? opts.name : `${opts.name}-r${i}`;
+    triedNames.push(attemptName);
+
+    // Clean up any leftover container with this name (from a crashed previous session)
+    try { await execAsync(`docker rm -f ${attemptName}`, { timeout: 10_000 }); } catch { /* doesn't exist */ }
+
+    const hostPort = opts.hostPort ? opts.hostPort + i : undefined;
+    const result = await _tryStartContainer({ ...opts, name: attemptName }, hostPort, containerPort);
+
+    if (result.ok) {
+      // Clean up the unused retry containers from earlier attempts
+      for (const n of triedNames.slice(0, -1)) {
+        try { await execAsync(`docker rm -f ${n}`, { timeout: 10_000 }); } catch { /* ignore */ }
+      }
+      return { containerId: result.id, hostPort: hostPort ?? containerPort };
+    }
+
+    if (!result.portConflict) {
+      try { await execAsync(`docker rm -f ${attemptName}`, { timeout: 10_000 }); } catch { /* ignore */ }
+      throw new Error(result.error);
+    }
+    // port conflict — clean up this attempt's container and try next port
+    try { await execAsync(`docker rm -f ${attemptName}`, { timeout: 10_000 }); } catch { /* ignore */ }
+  }
+
+  throw new Error(`Could not bind any host port in range ${opts.hostPort}–${(opts.hostPort ?? 3000) + maxPortTries - 1}`);
+}
+
+async function _tryStartContainer(
+  opts: StartContainerOptions,
+  hostPort: number | undefined,
+  containerPort: number
+): Promise<{ ok: true; id: string } | { ok: false; portConflict: boolean; error: string }> {
   const args = ["run", "-d", "--name", opts.name];
 
-  if (opts.hostPort && opts.containerPort) {
-    args.push("-p", `${opts.hostPort}:${opts.containerPort}`);
-  } else if (opts.hostPort) {
-    args.push("-p", `${opts.hostPort}:3000`);
+  if (hostPort) {
+    args.push("-p", `${hostPort}:${containerPort}`);
   }
 
   // Write env vars to a temp file to avoid shell interpretation of special chars
@@ -133,23 +171,25 @@ export async function startContainer(opts: StartContainerOptions): Promise<strin
   args.push(opts.image);
 
   // Use spawn with array args — no shell, no special char interpretation
-  return new Promise<string>((resolve, reject) => {
+  return new Promise((resolve) => {
     const proc = spawn("docker", args, { stdio: "pipe", timeout: 30_000 });
     let stdout = "";
     let stderr = "";
     proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
     proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
     proc.on("close", (code) => {
-      // Clean up temp env file
-      if (envFilePath) {
-        try { fs.unlinkSync(envFilePath); } catch { /* ignore */ }
+      if (envFilePath) { try { fs.unlinkSync(envFilePath); } catch { /* ignore */ } }
+      if (code === 0) {
+        resolve({ ok: true, id: stdout.trim() });
+      } else {
+        const msg = `docker run failed (exit ${code}): ${stderr.slice(0, 500)}`;
+        const portConflict = stderr.includes("port is already allocated") || stderr.includes("Bind for") || stderr.includes("already in use");
+        resolve({ ok: false, portConflict, error: msg });
       }
-      if (code === 0) resolve(stdout.trim());
-      else reject(new Error(`docker run failed (exit ${code}): ${stderr.slice(0, 500)}`));
     });
     proc.on("error", (e) => {
       if (envFilePath) { try { fs.unlinkSync(envFilePath); } catch { /* ignore */ } }
-      reject(e);
+      resolve({ ok: false, portConflict: false, error: String(e) });
     });
   });
 }
