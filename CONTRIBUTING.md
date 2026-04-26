@@ -115,11 +115,16 @@ cli/src/
 │       ├── patterns.ts  # AUDIT_PATTERNS (13) + BUG_PATTERNS (30) + BREACH_PATTERNS (23)
 │       └── index.ts     # runCodeAudit(cwd, scanMode?) — selects pattern set by mode
 ├── agents/
-│   ├── orchestrator.ts  # Mode-aware dispatch planner
-│   ├── code.ts          # SYSTEM_ALL, SYSTEM_BUG, SYSTEM_BREACH — selected at runtime
-│   ├── dependency.ts    # SYSTEM_ALL, SYSTEM_BUG, SYSTEM_BREACH — selected at runtime
-│   ├── sandbox-agent.ts # Docker attack arena AI agent (PentestGPT architecture)
-│   └── live-probe.ts    # Interactive SaaS service probing
+│   ├── orchestrator.ts        # Mode-aware dispatch planner
+│   ├── code.ts                # SYSTEM_ALL, SYSTEM_BUG, SYSTEM_BREACH — selected at runtime
+│   ├── dependency.ts          # SYSTEM_ALL, SYSTEM_BUG, SYSTEM_BREACH — selected at runtime
+│   ├── sandbox-agent.ts       # Docker attack arena AI agent (PentestGPT architecture)
+│   ├── sandbox-supervisor.ts  # Pre-attack supervisor: builds prioritized SpecialistTask[] plan from recon data
+│   ├── sandbox-validator.ts   # Post-attack validator: re-verifies critical/high findings with confidence scores
+│   └── live-probe.ts          # Interactive SaaS service probing
+├── core/
+│   ├── cve-intel.ts     # CVE enrichment: EPSS, NVD CVSS, Nuclei template, Exploit-DB — concurrent fetch
+│   └── ...
 └── commands/
     ├── scan.ts          # Main scan orchestrator — gates scanners by scanMode
     └── sandbox.ts       # Docker attack arena entry point

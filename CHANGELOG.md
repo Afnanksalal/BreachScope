@@ -6,6 +6,103 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.0] — 2026-04-27
+
+### Added
+
+**Sandbox supervisor agent** (`src/agents/sandbox-supervisor.ts`)
+- New `runSupervisor()` agent analyzes all recon data (credentials, endpoints, open ports) and produces a prioritized `SpecialistTask[]` attack plan before the main exploit loop
+- Supervisor performs targeted web searches for known CVEs against detected framework versions before assigning tasks
+- Plans include: exact endpoint paths, credential values to use, rationale, estimated impact, and chained attack hypotheses
+- Early-exit guard: supervisor skips if no recon data is present (avoids wasted tokens on empty sessions)
+- 11 specialist attack types: `sql_injection`, `jwt_attack`, `auth_bypass`, `ssrf`, `xss`, `file_traversal`, `redis_exploit`, `prototype_pollution`, `race_condition`, `business_logic`, `ai_llm_attacks`
+
+**Sandbox validator agent** (`src/agents/sandbox-validator.ts`)
+- New `validateFinding()` and `validateFindings()` independently re-verify critical and high findings after the main attack loop
+- Validator is skeptical-by-default: re-runs replication steps from scratch and must reproduce the same evidence to confirm
+- Confidence levels: `confirmed` (≥90), `likely` (60–89), `uncertain` (30–59), `false_positive` (<30)
+- Validation results annotated onto findings in the dashboard — confidence badge + score displayed next to each sandbox finding
+- Medium/low findings skipped (score 70 / confidence `likely`) to avoid burning tokens on low-impact issues
+- Max 5 critical/high validations per session
+
+**CVE intelligence module** (`src/core/cve-intel.ts`)
+- `getCVEIntel(cveId)` fetches EPSS exploitation probability, NVD CVSS score/vector/severity, Nuclei template availability, and Exploit-DB presence — all concurrently
+- `batchCVEIntel(ids[])` sequences up to 10 CVEs with 700ms delay between NVD requests (respects 5 req/30s rate limit without an API key)
+- `formatCVEShort(intel)` returns one-line summary with exploitation risk signal for inline agent use
+- EPSS score displayed as `🔴 HIGH` / `🟡 MEDIUM` / `🟢 LOW` exploitation risk in batch output
+- In-process cache prevents duplicate API calls within a session
+- Nuclei template check tries 3 URL patterns to handle repository structure variations
+
+**3 new specialist agents in sandbox**
+- `race_condition` — targets concurrent state operations (financial transfers, inventory, order placement) with parallel request storms
+- `business_logic` — exploits pricing manipulation, permission escalation through valid API flows, workflow bypass
+- `ai_llm_attacks` — prompt injection, jailbreak, system prompt extraction, indirect injection via user-controlled content for AI-powered endpoints
+
+**Rabbit hole prevention**
+- In-memory `Map<string, number>` tracks exact command execution frequency per session
+- Commands attempted ≥3 times trigger automatic abandonment with a `[RABBIT HOLE]` log entry and hypothesis reassignment
+- No disk I/O — avoids TOCTOU races during concurrent memory updates
+
+**Pentest Task Tree (PTT)**
+- `PTTNode` interface with hierarchical structure: root → category → specific attack nodes
+- Keyword-based categorization: findings routed by title/description keywords (not severity) to `ptt-creds`, `ptt-auth`, `ptt-inject`, `ptt-services`, or `ptt-web`
+- Node statuses: `unexplored` → `in_progress` → `confirmed_vuln` / `not_vulnerable` / `needs_more_info`
+- PTT tree visualized in dashboard with color-coded status dots and labels
+
+**Attack chain linking**
+- `ConfirmedFinding.parent_finding_id` links a finding to its prerequisite (e.g. "JWT secret found → admin token forged")
+- Chain relationships displayed in dashboard findings
+
+**OWASP ZAP integration (inside container)**
+- `zap_scan` tool runs entirely via `execFn` (inside the Docker container) — no host-side fetch
+- Actions: `install` (finds JAR dynamically with `find /opt/zap`), `spider`, `active_scan`, `alerts`
+- ZAP daemon started with `-host 0.0.0.0` for container-internal access via `curl` REST calls
+- ZAP invoked after initial recon; active scan results feed into the finding pipeline
+
+**Chain-of-thought (CoT) prompting**
+- Every tool call preceded by mandatory `[WHAT I KNOW] → [HYPOTHESIS] → [EXPECTED] → [ATTACK] → [IF IT WORKS] → [IF IT FAILS]` reasoning block
+- System prompt enforces CoT as a hard requirement — agent cannot skip straight to tool use
+
+**Monorepo Docker support** (self-healing build pipeline)
+- `UNDERSTANDING_SYSTEM` RULE 14: explicit monorepo pattern — `COPY . .` from root, then `WORKDIR /app/<service>` — never `COPY package*.json ./` from a subdirectory root
+- `runCodebaseUnderstandingAgent` accepts `isMonorepoProject` flag; activates monorepo context when ≥2 services detected regardless of whether paths differ
+- `serviceSubpath` threaded through `buildWithSelfHealing` → `runDockerfileFixAgent` — fix agent receives monorepo note with exact forbidden patterns when repairing a failed build
+- `serviceSubpath` threaded through `fixStartupCrash` → `runDockerfileFixAgent` for the same guarantee on runtime crash recovery
+- `aiChosenSubpath` passed from `runSandbox` to both heal functions so every repair attempt is monorepo-aware
+
+**`SandboxMemorySnapshot` — rich memory export**
+- New `SandboxMemorySnapshot` type captures: worldview, credentials, discovered endpoints (up to 80), discovered services, open ports, framework versions, PTT tree, confirmed findings with CVSS and validation scores
+- Snapshot included in `SandboxAgentResult` and pushed to dashboard as part of `ProbeData.sandbox`
+
+### Changed
+
+- `SandboxAgentResult` gains `memorySnapshot: SandboxMemorySnapshot` field
+- `ProbeData.sandbox` in `push-scan.ts` gains `memorySnapshot?` field
+- Sandbox push in `sandbox.ts` includes full memory snapshot
+
+### Fixed
+
+- `attackLog` typed as `string[]` in web dashboard — corrected to `AttackLogEntry[]` (was the root cause of the `e.startsWith is not a function` crash)
+- `f.severity.toUpperCase()` called on potentially non-string values — wrapped with `typeof` guard at all 6 call sites in `ScanDetail.tsx`
+- `svc.steps.map()` calling `.startsWith()` on non-string items — pre-filtered with type guard
+- `sandbox.attackLog.filter()` using string `.startsWith()` on `AttackLogEntry` objects — replaced with structured entry parsing
+
+### Dashboard — Sandbox tab redesign
+
+- Replaced raw terminal-only view with a full-featured attack intelligence panel:
+  - **Stats grid** (6 tiles): Findings, Chains, Secrets, Endpoints, Actions, Tokens — each color-coded
+  - **AI Attack Narrative** — agent's running worldview summarizing what it discovered
+  - **Confirmed Attack Chains** — orange panel with numbered multi-step exploit chains
+  - **Discovered Secrets** — yellow `key = value` panel showing all extracted credentials
+  - **Sandbox Findings** — red panel with severity badge, CVSS score, validator confidence + score per finding
+  - **Open Ports** — detected internal services as port badges
+  - **Framework Versions** — detected tech stack from recon
+  - **PTT Tree** — visual hierarchy with color-coded node status
+  - **Discovered Endpoints** — collapsible grid of mapped routes
+  - **Structured Attack Log** — per-entry type badges (`exec`/`http`/`finding`/`chain`/`credential`/`search`/`crawl`/`info`) replacing raw string display; collapsible
+
+---
+
 ## [0.2.0] — 2026-04-26
 
 ### Added
@@ -92,5 +189,6 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+[0.3.0]: https://github.com/Afnanksalal/BreachScope/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Afnanksalal/BreachScope/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Afnanksalal/BreachScope/releases/tag/v0.1.0

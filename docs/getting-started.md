@@ -117,16 +117,25 @@ Free threat intel (OSV.dev, NVD, npm advisories) works with no API key.
 
 ## Docker Attack Arena
 
-The `sandbox` command spins up a Docker container and runs an AI agent as root to actively exploit your app:
+The `sandbox` command spins up a Docker container, deploys your app, and runs a multi-agent swarm to actively exploit it:
 
 ```bash
 breachscope sandbox
 
-# Extended attack mode
-breachscope sandbox --deep
+# Keep container running after scan for manual inspection
+breachscope sandbox --no-cleanup
 ```
 
-The agent installs any tool it needs (nmap, sqlmap, nikto), extracts env credentials, and tests JWT bypass, SSTI, SSRF, path traversal, command injection, and more. Results appear as a terminal replay in the dashboard.
+**What happens:**
+1. AI reads your entire codebase (including `.env` and secrets) and writes a purpose-built Dockerfile — monorepo-aware
+2. Self-healing build loop: up to 4 attempts with AI-powered Dockerfile fixes on failure
+3. Supervisor agent analyzes all recon data and creates a prioritized attack plan
+4. 4 agents run in parallel: dynamic sandbox attack, static code analysis, dependency CVE scan, blackbox HTTP probe
+5. 11 specialist attackers: SQLi, JWT forge, auth bypass, SSRF, XSS, path traversal, Redis exploit, prototype pollution, race conditions, business logic, LLM prompt injection
+6. OWASP ZAP active scan runs inside the container
+7. Validator agent independently re-confirms every critical/high finding with a confidence score
+
+Results appear in the dashboard Sandbox tab: AI narrative, discovered secrets, confirmed findings with CVSS + validator confidence, Pentest Task Tree, framework versions, full structured attack log.
 
 ---
 

@@ -30,7 +30,7 @@ export default function DocsPage() {
           <div className="mb-14 pb-10 border-b border-white/[0.06]">
             <div className="inline-flex items-center gap-2 mb-4 px-2.5 py-1 rounded-full border border-white/[0.08] bg-white/[0.03]">
               <span className="w-1.5 h-1.5 rounded-full bg-breach-500 animate-pulse" />
-              <span className="text-xs text-white/40 font-mono">v0.1.0</span>
+              <span className="text-xs text-white/40 font-mono">v0.3.0</span>
             </div>
             <h1 className="text-4xl font-serif italic text-white mb-3">Documentation</h1>
             <p className="text-white/40 text-base max-w-xl leading-relaxed">
@@ -547,6 +547,90 @@ jobs:
     sarif_file: results.sarif`}
             />
           </Section>
+
+          <Divider label="Release History" />
+
+          {/* ── Changelog ─────────────────────────────────── */}
+          <Section id="changelog" label="Changelog" title="v0.3.0 — 2026-04-27">
+            <p className="text-white/45 mb-5 leading-relaxed">
+              Major sandbox upgrade: AI supervisor + validator agents, CVE intelligence module, 3 new specialist attackers, rabbit hole prevention, Pentest Task Tree, OWASP ZAP integration, and a full sandbox dashboard redesign.
+            </p>
+            <div className="space-y-4">
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Sandbox Supervisor</strong> — pre-attack agent that analyzes all recon data (credentials, endpoints, ports) and builds a prioritized <code className="font-mono text-white/65">SpecialistTask[]</code> attack plan. Performs CVE web searches against detected framework versions. Max 6 tasks per session.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Sandbox Validator</strong> — independently re-verifies every critical/high finding after the attack loop. Confidence levels: <code className="font-mono text-white/65">confirmed</code> (≥90) · <code className="font-mono text-white/65">likely</code> (60–89) · <code className="font-mono text-white/65">uncertain</code> (30–59) · <code className="font-mono text-white/65">false_positive</code> (&lt;30). Max 5 validations per session.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>CVE Intelligence module</strong> (<code className="font-mono text-white/65">cve-intel.ts</code>) — fetches EPSS exploitation probability, NVD CVSS, Nuclei template availability, and Exploit-DB presence concurrently. EPSS risk: 🔴 &gt;50% · 🟡 10–50% · 🟢 &lt;10%. In-process cache, NVD rate-limit compliant.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>3 new specialist attackers</strong>: <code className="font-mono text-white/65">race_condition</code>, <code className="font-mono text-white/65">business_logic</code>, <code className="font-mono text-white/65">ai_llm_attacks</code> — total 11 specialist types.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Rabbit hole prevention</strong> — commands attempted ≥3 times are auto-abandoned with a <code className="font-mono text-white/65">[RABBIT HOLE]</code> log entry. In-memory Map, no disk I/O.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Pentest Task Tree (PTT)</strong> — hierarchical attack nodes with keyword-based categorization and status tracking: <code className="font-mono text-white/65">unexplored → in_progress → confirmed_vuln / not_vulnerable / needs_more_info</code>.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>OWASP ZAP integration</strong> — spider + active scan runs inside the container via execFn; results feed the finding pipeline.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Chain-of-thought prompting</strong> — every tool call preceded by mandatory <code className="font-mono text-white/65">[WHAT I KNOW] → [HYPOTHESIS] → [EXPECTED] → [ATTACK]</code> reasoning block.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Monorepo Docker support</strong> — <code className="font-mono text-white/65">COPY . .</code> from root, then <code className="font-mono text-white/65">WORKDIR /app/service</code>. Self-healing build loop threads <code className="font-mono text-white/65">serviceSubpath</code> through all repair agents.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Changed" color="yellow">
+                <strong>Sandbox dashboard redesign</strong> — stats grid, AI attack narrative, confirmed chains, discovered secrets, sandbox findings with CVSS + validator confidence, PTT tree, structured attack log with per-entry type badges.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Fixed" color="red">
+                <code className="font-mono text-white/65">attackLog</code> typed as <code className="font-mono text-white/65">string[]</code> in dashboard — corrected to <code className="font-mono text-white/65">AttackLogEntry[]</code> (root of <code className="font-mono text-white/65">e.startsWith is not a function</code> crash).
+              </ChangelogEntry>
+            </div>
+          </Section>
+
+          <Section id="changelog-020" title="v0.2.0 — 2026-04-26">
+            <p className="text-white/45 mb-5 leading-relaxed">
+              AI-first sandbox flow, aggressive web research across all agents, monorepo detection, remote config at sandbox startup.
+            </p>
+            <div className="space-y-4">
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Phase 0 codebase understanding</strong> — before any Docker work, an AI agent reads every source file, <code className="font-mono text-white/65">.env</code>, and config to build a full security picture. AI writes a purpose-built Dockerfile from what it learned.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Aggressive web research</strong> — <code className="font-mono text-white/65">web_search</code> and <code className="font-mono text-white/65">crawl_url</code> tools in all agents. Agents research every framework version, CVE, and library immediately. Search limit raised 5 → 10.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Changed" color="yellow">
+                Sandbox startup timeout raised 60 → 90 seconds (max 180s). Unknown project type generates Ubuntu 22.04 toolbox container instead of exiting.
+              </ChangelogEntry>
+            </div>
+          </Section>
+
+          <Section id="changelog-010" title="v0.1.0 — 2026-04-25">
+            <p className="text-white/45 mb-5 leading-relaxed">
+              Initial release: Docker Attack Arena, 10-language dependency scanning, 66-pattern static analysis, AI scan modes, web dashboard.
+            </p>
+            <div className="space-y-4">
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Docker Attack Arena</strong> (<code className="font-mono text-white/65">breachscope sandbox</code>) — PentestGPT / HackingBuddyGPT architecture with evolving attack strategy, persistent AttackMemory, 60 iterations per session.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>10-language dependency scanning</strong> — JavaScript, Python, Go, Rust, Ruby, Java, PHP, .NET, Elixir, Dart. All ecosystems query OSV.dev.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>66-pattern static analysis</strong> in full mode — 13 base + 30 bug + 23 breach patterns. Mode-aware: <code className="font-mono text-white/65">--breach</code>, <code className="font-mono text-white/65">--bug</code>, or combined.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Free threat intelligence</strong> — OSV.dev, npm advisory bulk API, NVD keyword search. No API key required.
+              </ChangelogEntry>
+              <ChangelogEntry tag="Added" color="green">
+                <strong>Web dashboard</strong> — AI synthesis, sandbox terminal replay, PDF export, AES-256-GCM encrypted stored API keys.
+              </ChangelogEntry>
+            </div>
+          </Section>
         </article>
       </div>
 
@@ -608,6 +692,30 @@ function ServiceBadge({ name }: { name: string }) {
     <span className="text-[10px] font-mono text-white/35 bg-white/[0.04] border border-white/[0.06] rounded px-1.5 py-0.5">
       {name}
     </span>
+  );
+}
+
+function ChangelogEntry({
+  tag,
+  color,
+  children,
+}: {
+  tag: "Added" | "Changed" | "Fixed";
+  color: "green" | "yellow" | "red";
+  children: React.ReactNode;
+}) {
+  const colorMap = {
+    green:  "text-green-400 bg-green-500/[0.08] border-green-500/20",
+    yellow: "text-yellow-400 bg-yellow-500/[0.08] border-yellow-500/20",
+    red:    "text-red-400 bg-red-500/[0.08] border-red-500/20",
+  };
+  return (
+    <div className="flex gap-3 items-start">
+      <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border mt-0.5 ${colorMap[color]}`}>
+        {tag}
+      </span>
+      <p className="text-white/45 text-sm leading-relaxed">{children}</p>
+    </div>
   );
 }
 

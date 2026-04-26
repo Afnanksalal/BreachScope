@@ -74,10 +74,10 @@ export function Footer() {
       <div className="border-t border-white/[0.05]">
         <div className="max-w-6xl mx-auto px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-white/35 text-xs">
-            © {new Date().getFullYear()} BreachScope. Open source under the MIT license.
+            © {new Date().getFullYear()} Afnan K Salal. Open source under the MIT license.
           </p>
           <div className="flex items-center gap-4">
-            <span className="text-white/30 text-xs font-mono">v0.1.0</span>
+            <span className="text-white/30 text-xs font-mono">v0.3.0</span>
             <span className="text-white/20 text-xs">·</span>
             <span className="text-white/30 text-xs font-mono">Node.js ≥ 18</span>
           </div>

@@ -5,7 +5,6 @@
 **Full-stack security scanner — supply chain, code, Docker attack arena, AI agents.**  
 Catches what linters and conventional scanners miss, across every language.
 
-[![npm](https://img.shields.io/npm/v/breachscope?color=red)](https://www.npmjs.com/package/breachscope)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js ≥18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 
@@ -103,9 +102,15 @@ Your Codebase (any of 10 languages)
           │
           ▼
   [Docker Attack Arena]  ← breachscope sandbox
-  AI agent runs as root · installs nmap/sqlmap/nikto freely
-  JWT attacks · SSTI · SSRF · path traversal · cmd injection
-  Prototype pollution · SQL injection · env secret extraction
+  Phase 0: AI reads codebase + .env → generates Dockerfile (monorepo-aware)
+  Self-healing build (4 attempts, web-search fix agent)
+  Supervisor → prioritized SpecialistTask[] plan
+  Swarm: sandbox agent + code agent + dep agent + blackbox agent (parallel)
+  11 specialists: SQL · JWT · auth bypass · SSRF · XSS · traversal
+                  Redis · prototype pollution · race conditions
+                  business logic · LLM prompt injection · ZAP
+  Validator → independent re-verification of critical/high findings
+  CVE intel: EPSS · NVD · Nuclei templates · Exploit-DB (per CVE)
           │
           ▼
   [Web Dashboard]  breachscoope.vercel.app
@@ -180,7 +185,7 @@ Shorthand: bs scan, bs sandbox, bs login, bs deps, etc.
 
 ## Docker Attack Arena (`sandbox`)
 
-The most complete part of BreachScope. Reads your entire codebase first, generates a purpose-built Dockerfile, deploys your app with all secrets intact, then unleashes an AI agent as root to actively exploit it.
+The most complete part of BreachScope. Reads your entire codebase, generates a purpose-built Dockerfile, deploys your app with all secrets intact, then runs a multi-agent swarm to actively exploit it.
 
 ```bash
 # From your project root
@@ -192,38 +197,46 @@ breachscope sandbox --no-cleanup
 
 **How it runs:**
 
-1. **Phase 0 — AI codebase understanding**: Reads every source file, `.env`, config, and secret before touching Docker. Builds a full security picture: tech stack, real credentials, auth mechanisms, database, all endpoints.
-2. **Dockerfile generation**: AI writes a purpose-built Dockerfile based on what it learned — not a template. No multi-stage builds; all source code, `.env` files, and secrets are copied into the image.
-3. **`.env` included**: The `.dockerignore` is temporarily neutralized so every secret file lands in the container. The AI has full access.
-4. **App tested**: Agent runs the test suite, maps all routes, reads every env file, confirms the app is working before attacking.
-5. **Full attack**: AI agent as root with no restrictions — installs nmap/sqlmap/nikto, extracts DB credentials and connects, forges JWT tokens, exploits SSTI/SSRF/SQLi/path traversal, pivots from one finding to the next.
+1. **Phase 0 — AI codebase understanding**: Reads every source file, `.env`, config, and secret before touching Docker. Builds a full security picture: tech stack, real credentials, auth mechanisms, database, all endpoints. Handles monorepos — detects services, picks the most interesting one to attack.
+2. **Dockerfile generation**: AI writes a purpose-built Dockerfile from what it learned — not a template. Correct base image, start command, port, all deps. Monorepo-aware: uses `COPY . .` + `WORKDIR /app/<service>` pattern.
+3. **Self-healing build**: Up to 4 build attempts. On failure, AI searches Stack Overflow/docs, applies the fix, rebuilds. Startup crash? Same heal loop on container logs.
+4. **Phase 1 — Multi-agent swarm**: 4 agents run in parallel — sandbox attack, static code analysis, dependency CVE scan, blackbox HTTP probe.
+5. **Supervisor planning**: Before exploiting, a supervisor agent analyzes all recon (credentials, endpoints, open ports, framework versions) and generates a prioritized attack plan with exact targets and chained hypotheses.
+6. **Full attack**: AI agent as root — installs nmap/sqlmap/nikto/ffuf/nuclei/ZAP, extracts DB credentials and connects, forges JWT tokens, exploits SSTI/SSRF/SQLi/path traversal, runs specialist agents for race conditions, business logic, and LLM prompt injection.
+7. **Validation**: After the attack loop, a second AI agent independently re-validates every critical and high finding from scratch — assigns a confidence score and evidence to each.
 
-**What the AI agent attacks:**
-- Extracts all environment variables and credentials — connects to every DB it finds
-- JWT `alg:none` bypass, weak secret brute force, admin token forge
-- SSTI in all template engines (Jinja2, Pug, EJS, Handlebars, Twig, Mako)
-- SSRF — probes AWS/GCP metadata endpoints, internal services
-- Path traversal, command injection, SQL injection, prototype pollution, XXE
-- Spring Boot Actuator endpoints — heapdump, env, mappings
-- Log4Shell detection, deserialization gadget chains
-- Network scan inside container — finds hidden services, default creds
+**What the sandbox swarm covers:**
+
+| Specialist | Attack |
+|-----------|--------|
+| `sql_injection` | SQLi via sqlmap, manual payloads, error-based extraction |
+| `jwt_attack` | `alg:none`, weak secret brute force, admin token forge |
+| `auth_bypass` | IDOR, mass assignment, privilege escalation, CSRF |
+| `ssrf` | AWS/GCP metadata, internal service pivot |
+| `xss` | Stored/reflected/DOM XSS in all input vectors |
+| `file_traversal` | Path traversal, LFI/RFI, zip-slip |
+| `redis_exploit` | Unauthenticated Redis, session hijacking |
+| `prototype_pollution` | Deep object merge, `__proto__` / `constructor.prototype` |
+| `race_condition` | Parallel request storms on financial/state operations |
+| `business_logic` | Pricing manipulation, permission escalation, workflow bypass |
+| `ai_llm_attacks` | Prompt injection, jailbreak, system prompt extraction |
 
 **Supported project types:**
 
 | Language | Detection | Base Image |
 |----------|-----------|------------|
-| Node.js / Bun | `package.json` | node:20-slim |
-| Python | `requirements.txt`, `pyproject.toml` | python:3.12-slim |
-| Go | `go.mod` | golang:1.22-alpine |
-| Rust | `Cargo.toml` | rust:1.78-slim |
-| Ruby | `Gemfile` | ruby:3.3-slim |
-| Java | `pom.xml`, `build.gradle` | eclipse-temurin:21-jdk |
-| PHP | `composer.json` | php:8.3-cli |
+| Node.js / Bun | `package.json` | node:20 |
+| Python | `requirements.txt`, `pyproject.toml` | python:3.11 |
+| Go | `go.mod` | golang:1.22 |
+| Rust | `Cargo.toml` | rust:1.77 |
+| Ruby | `Gemfile` | ruby:3.3 |
+| Java | `pom.xml`, `build.gradle` | maven:3.9-eclipse-temurin-21 |
+| PHP | `composer.json` | php:8.3-apache |
 | .NET | `*.csproj` | mcr.microsoft.com/dotnet/sdk:8.0 |
-| Elixir | `mix.exs` | elixir:1.16-slim |
-| Dart | `pubspec.yaml` | dart:3.3 |
+| Elixir | `mix.exs` | elixir:1.16 |
+| Dart | `pubspec.yaml` | dart:stable |
 
-Results appear as a **live terminal replay** in the dashboard's Sandbox tab.
+Results appear in the dashboard's **Sandbox tab** — AI narrative, discovered secrets, confirmed findings with CVSS and validator confidence, PTT tree, open ports, framework versions, full structured attack log.
 
 ---
 
@@ -253,8 +266,12 @@ When `FIRECRAWL_API_KEY` is set, all agents use it aggressively — searching Ha
 | **Toolchain** | Live changelog/security page crawling | Breach + full only |
 | **Blackbox** | Adaptive HTTP probing | When URL provided |
 | **Report** | Attack chain synthesis, executive summary | Always |
+| **Sandbox Supervisor** | Analyzes recon, builds prioritized specialist attack plan | Sandbox only |
+| **Sandbox Validator** | Independently re-verifies critical/high findings | Sandbox only |
 
-Token usage: ~20,000–60,000 tokens per scan (~$0.05–$0.15 at GPT-4o pricing).
+**CVE intelligence**: every CVE found triggers an EPSS exploitation probability lookup (FIRST.org), NVD metadata (CVSS, severity, description), Nuclei template availability check, and Exploit-DB presence detection — all in parallel.
+
+Token usage: ~20,000–60,000 tokens per scan (~$0.05–$0.15 at GPT-4o pricing). Sandbox sessions: ~80,000–200,000 tokens.
 
 ---
 
@@ -310,9 +327,16 @@ breachscope login  # authenticate once — all future scans auto-upload
 ### Features
 
 - **Scan History** — search, filter by scan mode (all/breach/bug/full) and depth (basic/major/deep)
-- **Overview Tab** — severity bars, scan mode label, duration, tools scanned, AI executive summary
-- **Findings Tab** — collapsible cards: severity badge, category, file:line, matched code snippet, remediation, references
-- **Sandbox Tab** — full terminal replay of the Docker AI agent session — every command, HTTP request, credential found, and attack chain
+- **Overview Tab** — severity bars, scan mode label, duration, tools scanned, AI executive summary, attack chains
+- **Findings Tab** — Smart Groups view, Supply Chain grid, Raw list with severity/category filters
+- **Sandbox Tab** — full attack intelligence panel:
+  - AI narrative (agent's running worldview)
+  - Discovered secrets with key=value display
+  - Confirmed findings with CVSS scores and validator confidence badges
+  - PTT (Pentest Task Tree) with color-coded node statuses
+  - Open ports and detected framework versions
+  - Discovered endpoints
+  - Structured attack log with per-entry type badges
 - **Report Tab** — export as JSON, Markdown, or real PDF (jsPDF)
 - **API Keys** — generate/revoke CLI tokens (SHA-256 hashed)
 - **Settings** — AES-256-GCM encrypted API keys, scan defaults
@@ -418,7 +442,11 @@ jobs:
 breachscope/
 ├── cli/                         # CLI package (npm: breachscope)
 │   └── src/
-│       ├── core/                # Types, config, logger, AI client, tool map, push-scan
+│       ├── core/
+│       │   ├── ai.ts            # agentLoop, token tracking
+│       │   ├── cve-intel.ts     # EPSS, NVD, Nuclei template, Exploit-DB lookup
+│       │   ├── push-scan.ts     # Dashboard upload with ProbeData + SandboxMemorySnapshot
+│       │   └── ...              # Types, config, logger, tool map, docker, crawler
 │       ├── detectors/           # Multi-signal, multi-language tool detection
 │       ├── classifiers/         # GPT-4o OSS/SaaS/hybrid classifier
 │       ├── apis/                # Scorecard, OSV.dev, deps.dev, npm, PyPI APIs
@@ -430,9 +458,16 @@ breachscope/
 │       │   ├── toolchain/       # Supabase, Vercel, GitHub scanners
 │       │   ├── blackbox/        # HTTP security header + path probe
 │       │   └── smoke/           # Live app behavior tests
-│       ├── agents/              # Orchestrator, dependency, code, toolchain, blackbox, report
-│       │   ├── sandbox-agent.ts # Docker attack arena AI agent (PentestGPT architecture)
-│       │   └── live-probe.ts    # Interactive SaaS service probing
+│       ├── agents/
+│       │   ├── sandbox-agent.ts    # Main Docker attack arena agent (PentestGPT architecture)
+│       │   │                       # PTT, AttackMemory, 11 specialists, CoT prompting, ZAP
+│       │   ├── sandbox-supervisor.ts # Recon analysis → prioritized SpecialistTask[] plan
+│       │   ├── sandbox-validator.ts  # Independent finding re-verification + confidence scoring
+│       │   ├── live-probe.ts        # Interactive SaaS service probing
+│       │   └── ...                  # Orchestrator, dependency, code, toolchain, blackbox, report
+│       ├── commands/
+│       │   └── sandbox.ts       # Monorepo detection, self-healing build/runtime loop,
+│       │                        #   AI Dockerfile generation, parallel swarm dispatch
 │       └── reporters/           # Console, JSON, risk dashboard, AI console
 ├── web/                         # Next.js 15 dashboard (breachscoope.vercel.app)
 │   ├── app/
@@ -442,6 +477,10 @@ breachscope/
 │   │   ├── schema.ts            # DB: users, scans, findings (with detail col), api_keys, settings
 │   │   └── crypto.ts            # AES-256-GCM for stored API keys
 │   └── scripts/                 # seed.ts, migrate.ts
+├── docs/
+│   ├── getting-started.md
+│   ├── ai-agents.md
+│   └── commands/scan.md
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 └── SECURITY.md

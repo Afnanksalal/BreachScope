@@ -560,7 +560,9 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
   const log = Array.isArray(sandbox.attackLog) ? sandbox.attackLog.filter((e) => e && typeof e === "object") as AttackLogEntry[] : [];
   const chains = sandbox.attackChains.filter((c): c is string => typeof c === "string");
 
-  const credEntries = mem ? Object.entries(mem.credentials) : [];
+  const credEntries = mem
+    ? Object.entries(mem.credentials)
+    : log.filter((e) => e.type === "credential").map((e) => [e.tool ?? "secret", e.output ?? ""] as [string, string]);
   const fwEntries   = mem ? Object.entries(mem.frameworkVersions) : [];
 
   const pttVulnNodes  = mem?.pttTree.filter((n) => n.status === "confirmed_vuln") ?? [];
@@ -585,7 +587,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
           { label: "Findings",  value: sandbox.findingsCount, color: sandbox.findingsCount > 0 ? "text-red-400" : "text-green-400", bg: sandbox.findingsCount > 0 ? "bg-red-500/[0.06] border-red-500/15" : "bg-green-500/[0.06] border-green-500/15" },
           { label: "Chains",    value: chains.length,         color: chains.length > 0 ? "text-orange-400" : "text-white/25",      bg: chains.length > 0 ? "bg-orange-500/[0.06] border-orange-500/15" : "bg-white/[0.03] border-white/[0.06]" },
           { label: "Secrets",   value: credEntries.length,    color: credEntries.length > 0 ? "text-yellow-400" : "text-white/25",  bg: credEntries.length > 0 ? "bg-yellow-500/[0.06] border-yellow-500/15" : "bg-white/[0.03] border-white/[0.06]" },
-          { label: "Endpoints", value: mem?.discoveredEndpoints.length ?? 0, color: "text-white/50", bg: "bg-white/[0.03] border-white/[0.06]" },
+          { label: "Endpoints", value: mem?.discoveredEndpoints.length ?? log.filter((e) => e.type === "http").length, color: "text-white/50", bg: "bg-white/[0.03] border-white/[0.06]" },
           { label: "Actions",   value: log.length,            color: "text-white/35",  bg: "bg-white/[0.03] border-white/[0.06]" },
           { label: "Tokens",    value: sandbox.tokensUsed > 0 ? `${Math.round(sandbox.tokensUsed / 1000)}K` : "—", color: "text-white/25", bg: "bg-white/[0.03] border-white/[0.06]" },
         ].map((s) => (

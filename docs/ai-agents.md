@@ -80,6 +80,44 @@ CISO-grade synthesis — always runs last. Identifies attack chains (A + B + C =
 
 ---
 
+## Sandbox Agents
+
+The `breachscope sandbox` command runs an additional three specialized agents on top of the main attack loop.
+
+### Sandbox Supervisor
+
+Runs before the main exploit loop. Receives all recon data (discovered credentials, endpoints, open ports, framework versions) and produces a prioritized `SpecialistTask[]` attack plan.
+
+- Performs targeted web searches for known CVEs against detected framework/library versions
+- Produces tasks with exact context: endpoint paths, parameter names, credential values, chained hypotheses
+- Falls back gracefully if recon data is insufficient (skips with a log entry rather than burning tokens)
+- Max 6 tasks per session — quality over quantity
+
+### Sandbox Validator
+
+Runs after the main attack loop. Independently re-verifies every critical and high finding by re-running replication steps from scratch.
+
+- Skeptical by default: must reproduce the same evidence to confirm
+- Confidence levels: `confirmed` (≥90/100), `likely` (60–89), `uncertain` (30–59), `false_positive` (<30)
+- Results annotated onto findings in the dashboard: confidence badge + score
+- Caps at 5 validations per session to control token use
+- Medium/low findings skipped (auto-assigned `likely` / 70 score)
+
+### CVE Intelligence (`cve-intel.ts`)
+
+Triggered whenever a CVE ID is found during dependency scanning or live attack. Fetches in parallel:
+
+| Signal | Source | What it provides |
+|--------|--------|-----------------|
+| EPSS score | FIRST.org API | Exploitation probability in 30 days (0–100%) |
+| CVSS + severity | NVD API | Base score, vector string, severity label |
+| Nuclei template | projectdiscovery/nuclei-templates | Exploit-ready template available? |
+| Exploit-DB entry | Reference URL matching | Public PoC / exploit exists? |
+
+EPSS risk classification: 🔴 >50% (HIGH) · 🟡 10–50% (MEDIUM) · 🟢 <10% (LOW). Displayed inline in agent output and batch CVE reports.
+
+---
+
 ## Live Service Probing
 
 With an interactive terminal (`stdin.isTTY`), BreachScope discovers SaaS services in your codebase and prompts for credentials to probe them live:

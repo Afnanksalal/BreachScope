@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.x     | ✓ Current |
+| 0.3.x   | ✓ Current |
+| < 0.3   | ✗ Unsupported |
 
 ## Reporting a Vulnerability
 
@@ -12,7 +13,7 @@
 
 If you discover a vulnerability in BreachScope itself, report it responsibly:
 
-**Email:** security@breachscoope.vercel.app  
+**Email:** itsafnanksalal@gmail.com  
 **PGP:** Available on request
 
 ### What to include
