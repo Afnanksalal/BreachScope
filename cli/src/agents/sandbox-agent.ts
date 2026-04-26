@@ -74,10 +74,23 @@ interface AttackMemory {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type AttackLogEntryType = "exec" | "http" | "search" | "crawl" | "finding" | "credential" | "chain" | "info";
+
+export interface AttackLogEntry {
+  step: number;
+  type: AttackLogEntryType;
+  tool: string;
+  input: string;
+  output: string;
+  exitCode?: number;
+  status?: number;
+  timestamp: string;
+}
+
 export interface SandboxAgentResult {
   findings: Finding[];
   tokensUsed: number;
-  attackLog: string[];
+  attackLog: AttackLogEntry[];
   attackChains: string[];
   memoryPath: string;
 }
@@ -453,16 +466,51 @@ MEMORY DISCIPLINE
 • save_credential() for every secret, token, key, connection string found
 
 ═══════════════════════════════════════════════════════════════
-SEVERITY CALIBRATION
+WHAT IS AND IS NOT A FINDING
 ═══════════════════════════════════════════════════════════════
-CRITICAL — real secrets with actual values (not placeholders), RCE proven, DB dumped, auth bypass giving admin
-HIGH — SSTI with code exec, JWT forgery working, path traversal reading /etc/passwd, internal service without auth
-MEDIUM — SSRF partially working, verbose errors with stack traces, debug endpoints exposed, weak JWT algorithm
-LOW — missing security headers, non-exploitable info disclosure, cookie flags
+NOT A FINDING — "env vars are accessible" — we injected them into the container ON PURPOSE. Everyone already knows they're there.
+NOT A FINDING — "credentials found in env" alone. That is not a vulnerability.
+NOT A FINDING — listing what env vars exist without exploiting them.
 
-NEVER save a finding without concrete evidence. "May be vulnerable" is not a finding.
-NEVER output 0 findings if you found real credentials, working exploits, or accessible internal services.
-A real API key in env IS critical. An accessible Redis without auth IS high. A working JWT forge IS critical.
+IS A FINDING — you CONNECTED to the database using the DATABASE_URL and dumped real data
+IS A FINDING — you FORGED an admin JWT and accessed a protected endpoint
+IS A FINDING — you found an auth bypass, SQL injection, IDOR, RCE, SSTI in the actual source code
+IS A FINDING — you accessed Redis/MongoDB without auth and read session data
+IS A FINDING — you found a hardcoded secret IN THE CODE (not in env) that bypasses auth
+IS A FINDING — debug endpoint exposing internal state, stack traces with real file paths
+IS A FINDING — MASTER_API_KEY=master-key-123 lets you bypass all auth — prove it by calling an admin endpoint
+
+SEVERITY:
+CRITICAL — DB dumped, auth bypass proven with HTTP response, admin access achieved, RCE
+HIGH — JWT forged and working, internal service accessible and queried, path traversal reading sensitive files
+MEDIUM — SSRF partially working, verbose errors leaking stack traces, debug endpoint exposed
+LOW — minor info disclosure, non-exploitable header issues
+
+═══════════════════════════════════════════════════════════════
+SOURCE CODE ANALYSIS — MANDATORY
+═══════════════════════════════════════════════════════════════
+Read the actual source code in /app. Find REAL bugs — logic flaws, missing auth checks, injection points.
+
+exec_cmd(["sh","-c","find /app/src -name '*.ts' -o -name '*.js' 2>/dev/null | grep -v node_modules | grep -v dist | head -50"])
+exec_cmd(["sh","-c","cat /app/src/main.ts 2>/dev/null || cat /app/src/index.ts 2>/dev/null"])
+exec_cmd(["sh","-c","find /app/src -name '*.controller.ts' -o -name '*.service.ts' -o -name '*.guard.ts' -o -name '*.middleware.ts' 2>/dev/null | head -30"])
+
+For each controller: read it, find unguarded routes, missing auth decorators (@Public, no @UseGuards), IDOR patterns
+For each service: find raw SQL queries, eval(), unvalidated input, hardcoded tokens
+For each guard/middleware: find bypass conditions, weak validation, JWT verification gaps
+
+Bugs to hunt in NestJS/Node.js code:
+- Missing @UseGuards on sensitive routes
+- @Public() decorator on dangerous endpoints
+- role checks done client-side or skipped
+- findOne(id) without ownership check = IDOR
+- String interpolation in queries = SQLi
+- req.body spread into DB update = mass assignment
+- eval() or Function() with user input = RCE
+- path.join with user input = path traversal
+- MASTER_API_KEY hardcoded in code = auth bypass
+- JWT decoded but not verified (jwt.decode vs jwt.verify)
+- Missing rate limiting on auth endpoints
 
 ═══════════════════════════════════════════════════════════════
 OUTPUT FORMAT (at the end)
@@ -673,8 +721,21 @@ export async function runSandboxAgent(
 ): Promise<SandboxAgentResult> {
   const sessionId = `sandbox-${Date.now()}`;
   const memPath = path.join(os.tmpdir(), `${sessionId}.json`);
-  const attackLog: string[] = [];
+  const attackLog: AttackLogEntry[] = [];
+  let logStep = 0;
   const baseUrl = `http://${containerIP}:${appPort}`;
+
+  function pushLog(type: AttackLogEntryType, tool: string, input: string, output: string, extras?: { exitCode?: number; status?: number }): void {
+    attackLog.push({
+      step: ++logStep,
+      type,
+      tool,
+      input: input.slice(0, 300),
+      output: output.slice(0, 2000),
+      timestamp: new Date().toISOString(),
+      ...extras,
+    });
+  }
 
   const initialMemory = createMemory(sessionId, baseUrl, projectType);
   saveMemory(memPath, initialMemory);
@@ -726,7 +787,7 @@ export async function runSandboxAgent(
       timestamp: new Date().toISOString(),
     });
     saveMemory(memPath, mem);
-    attackLog.push(`FINDING [${severity.toUpperCase()}]: ${title}`);
+    pushLog("finding", "save_finding", `[${severity.toUpperCase()}] ${title}`, description.slice(0, 500));
     return JSON.stringify({ success: true, id, total_findings: mem.confirmed_findings.length });
   }
 
@@ -747,7 +808,6 @@ export async function runSandboxAgent(
       else matchedHyp.status = "in_progress";
     }
     saveMemory(memPath, mem);
-    attackLog.push(`ATTEMPT [${result.toUpperCase()}]: ${attack} → ${target}`);
     return JSON.stringify({ success: true });
   }
 
@@ -769,7 +829,7 @@ export async function runSandboxAgent(
       mem.interesting_files.push(source);
     }
     saveMemory(memPath, mem);
-    attackLog.push(`CREDENTIAL: ${key} (from ${source})`);
+    pushLog("credential", "save_credential", key, `Found in: ${source}`);
     return JSON.stringify({ success: true, key, source });
   }
 
@@ -793,16 +853,15 @@ export async function runSandboxAgent(
     const mem = loadMemory(memPath);
     if (!mem.attack_chains.includes(chain)) mem.attack_chains.push(chain);
     saveMemory(memPath, mem);
-    attackLog.push(`CHAIN: ${chain.slice(0, 120)}`);
+    pushLog("chain", "save_attack_chain", chain.slice(0, 300), "Attack chain documented");
     return JSON.stringify({ success: true });
   }
 
   async function execCmd(cmd: string[], timeoutSeconds = 60): Promise<string> {
-    attackLog.push(`exec: ${cmd.join(" ").slice(0, 120)}`);
+    const cmdStr = cmd.join(" ");
     const result = await execFn(cmd, timeoutSeconds * 1000);
 
     // Auto-record installed tools
-    const cmdStr = cmd.join(" ");
     if (/apt-get install|pip install|pip3 install|npm install -g/.test(cmdStr) && result.exitCode === 0) {
       const mem = loadMemory(memPath);
       const toolMatch = cmdStr.match(/install\s+(?:-[a-z]+\s+)*(.+)/);
@@ -827,12 +886,14 @@ export async function runSandboxAgent(
       }
       if (newPorts.length > 0) {
         saveMemory(memPath, mem);
-        return JSON.stringify({
+        const out = JSON.stringify({
           stdout: result.stdout.slice(0, 12_000),
           stderr: result.stderr.slice(0, 2_000),
           exit_code: result.exitCode,
           note: `[BreachScope: detected ${newPorts.length} new open port(s): ${newPorts.join(", ")}]`,
         });
+        pushLog("exec", "exec_cmd", cmdStr, `exit:${result.exitCode}\n${result.stdout.slice(0, 1500)}`, { exitCode: result.exitCode });
+        return out;
       }
     }
 
@@ -864,20 +925,24 @@ export async function runSandboxAgent(
       }
       if (credSaved > 0) {
         saveMemory(memPath, mem);
-        return JSON.stringify({
+        const out = JSON.stringify({
           stdout: result.stdout.slice(0, 12_000),
           stderr: result.stderr.slice(0, 2_000),
           exit_code: result.exitCode,
           note: `[BreachScope: auto-extracted ${credSaved} potential credential(s) to memory — use save_credential() for the most important ones]`,
         });
+        pushLog("exec", "exec_cmd", cmdStr, `exit:${result.exitCode} | ${credSaved} credential(s) auto-extracted\n${result.stdout.slice(0, 1200)}`, { exitCode: result.exitCode });
+        return out;
       }
     }
 
-    return JSON.stringify({
+    const out = JSON.stringify({
       stdout: result.stdout.slice(0, 12_000),
       stderr: result.stderr.slice(0, 2_000),
       exit_code: result.exitCode,
     });
+    pushLog("exec", "exec_cmd", cmdStr, `exit:${result.exitCode}\n${result.stdout.slice(0, 1500)}${result.stderr ? "\nSTDERR: " + result.stderr.slice(0, 300) : ""}`, { exitCode: result.exitCode });
+    return out;
   }
 
   async function httpTool(
@@ -887,7 +952,6 @@ export async function runSandboxAgent(
     body?: string,
   ): Promise<string> {
     const url = reqPath.startsWith("http") ? reqPath : `${baseUrl}${reqPath}`;
-    attackLog.push(`HTTP ${method} ${reqPath.slice(0, 100)}`);
 
     try {
       const resp = await fetch(url, {
@@ -931,7 +995,7 @@ export async function runSandboxAgent(
         }
       }
 
-      return JSON.stringify({
+      const responseOut = JSON.stringify({
         status: resp.status,
         headers: Object.fromEntries(
           Object.entries(respHeaders).filter(([k]) =>
@@ -941,7 +1005,10 @@ export async function runSandboxAgent(
         body: text + tokenNote,
         redirect_location: respHeaders["location"],
       });
+      pushLog("http", "http", `${method} ${reqPath}`, `HTTP ${resp.status}\n${text.slice(0, 1500)}`, { status: resp.status });
+      return responseOut;
     } catch (e) {
+      pushLog("http", "http", `${method} ${reqPath}`, `ERROR: ${String(e)}`);
       return JSON.stringify({ error: String(e), url, note: "App may not be listening — try exec_cmd to start it or explore /app statically" });
     }
   }
@@ -1074,13 +1141,15 @@ Begin immediately with STEP 1.`;
           case "get_logs":          return getLogsTool(Number(a["lines"] ?? 200));
           case "web_search": {
             const query = String(a["query"] ?? "");
-            attackLog.push(`[search] ${query.slice(0, 100)}`);
-            return webSearch(query, 10);
+            const searchResult = await webSearch(query, 10);
+            pushLog("search", "web_search", query, searchResult.slice(0, 1500));
+            return searchResult;
           }
           case "crawl_url": {
             const url = String(a["url"] ?? "");
-            attackLog.push(`[crawl] ${url.slice(0, 100)}`);
-            return crawlUrl(url);
+            const crawlResult = await crawlUrl(url);
+            pushLog("crawl", "crawl_url", url, crawlResult.slice(0, 1500));
+            return crawlResult;
           }
           default: return JSON.stringify({ error: `Unknown tool: ${toolName}` });
         }

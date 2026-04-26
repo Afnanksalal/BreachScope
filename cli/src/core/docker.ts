@@ -22,21 +22,47 @@ export async function buildImage(
   contextDir: string,
   imageName: string,
   dockerfilePath?: string
-): Promise<void> {
-  const args = ["build", "-t", imageName];
+): Promise<string> {
+  const args = ["build", "--progress=plain", "-t", imageName];
   if (dockerfilePath) args.push("-f", dockerfilePath);
   args.push(contextDir);
 
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     const proc = spawn("docker", args, { stdio: "pipe", timeout: 600_000 });
-    let errOutput = "";
-    proc.stderr.on("data", (d: Buffer) => { errOutput += d.toString(); });
+    let fullLog = "";
+    proc.stdout.on("data", (d: Buffer) => { fullLog += d.toString(); });
+    proc.stderr.on("data", (d: Buffer) => { fullLog += d.toString(); });
     proc.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`docker build failed (exit ${code}):\n${errOutput.slice(-2000)}`));
+      if (code === 0) resolve(fullLog);
+      else reject(Object.assign(new Error(`docker build failed (exit ${code})`), { buildLog: fullLog }));
     });
     proc.on("error", reject);
   });
+}
+
+export async function getContainerExitCode(containerId: string): Promise<number | null> {
+  try {
+    const { stdout } = await execAsync(
+      `docker inspect --format "{{.State.ExitCode}}" ${containerId}`,
+      { timeout: 5_000 }
+    );
+    const code = parseInt(stdout.trim(), 10);
+    return isNaN(code) ? null : code;
+  } catch {
+    return null;
+  }
+}
+
+export async function isContainerRunning(containerId: string): Promise<boolean> {
+  try {
+    const { stdout } = await execAsync(
+      `docker inspect --format "{{.State.Running}}" ${containerId}`,
+      { timeout: 5_000 }
+    );
+    return stdout.trim() === "true";
+  } catch {
+    return false;
+  }
 }
 
 // ── Container lifecycle ────────────────────────────────────────────────────────
@@ -62,8 +88,18 @@ export async function startContainer(opts: StartContainerOptions): Promise<strin
     args.push("-p", `${opts.hostPort}:3000`);
   }
 
-  for (const [k, v] of Object.entries(opts.envVars ?? {})) {
-    args.push("-e", `${k}=${v}`);
+  // Write env vars to a temp file to avoid shell interpretation of special chars
+  // (& in URLs, $, quotes, spaces, etc. all break when passed as -e KEY=VALUE strings)
+  let envFilePath: string | null = null;
+  const envVars = opts.envVars ?? {};
+  if (Object.keys(envVars).length > 0) {
+    const os = await import("os");
+    envFilePath = path.join(os.tmpdir(), `breachscope-env-${Date.now()}.env`);
+    const envFileContent = Object.entries(envVars)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n");
+    fs.writeFileSync(envFilePath, envFileContent, "utf-8");
+    args.push("--env-file", envFilePath);
   }
 
   args.push("--network", opts.networkMode ?? "bridge");
@@ -71,19 +107,34 @@ export async function startContainer(opts: StartContainerOptions): Promise<strin
   args.push("--cpus", "2.0");
 
   if (opts.attackMode) {
-    // Attack-arena mode: AI runs as root with full capability set
-    // Network caps so nmap/netcat/tcpdump work inside the container
     args.push("--cap-add", "NET_RAW");
     args.push("--cap-add", "NET_ADMIN");
-    // No privilege or security restrictions — AI owns this container
   } else {
     args.push("--security-opt", "no-new-privileges:true");
   }
 
   args.push(opts.image);
 
-  const { stdout } = await execAsync(`docker ${args.join(" ")}`, { timeout: 30_000 });
-  return stdout.trim();
+  // Use spawn with array args — no shell, no special char interpretation
+  return new Promise<string>((resolve, reject) => {
+    const proc = spawn("docker", args, { stdio: "pipe", timeout: 30_000 });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+    proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    proc.on("close", (code) => {
+      // Clean up temp env file
+      if (envFilePath) {
+        try { fs.unlinkSync(envFilePath); } catch { /* ignore */ }
+      }
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(`docker run failed (exit ${code}): ${stderr.slice(0, 500)}`));
+    });
+    proc.on("error", (e) => {
+      if (envFilePath) { try { fs.unlinkSync(envFilePath); } catch { /* ignore */ } }
+      reject(e);
+    });
+  });
 }
 
 export async function stopContainer(containerId: string): Promise<void> {
@@ -245,16 +296,33 @@ export function generateDockerfile(projectType: ProjectType, cwd: string): strin
           dependencies?: Record<string, string>;
         };
         const deps = Object.keys(pkg.dependencies ?? {});
-        if (deps.includes("next")) {
-          return `FROM node:20-alpine
+        const isNest = deps.includes("@nestjs/core") || deps.includes("@nestjs/common");
+        const isNext = deps.includes("next");
+        const hasTypeScript = fs.existsSync(path.join(cwd, "tsconfig.json"));
+        const hasBuildScript = !!pkg.scripts?.build;
+
+        if (isNext) {
+          return `FROM node:20
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 RUN npm run build 2>/dev/null || true
 EXPOSE 3000
-ENV NODE_ENV=production PORT=3000
+ENV NODE_ENV=development PORT=3000
 CMD ["npm", "start"]
+`;
+        }
+        if (isNest) {
+          return `FROM node:20
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build 2>/dev/null || true
+EXPOSE 3000
+ENV NODE_ENV=development PORT=3000
+CMD ["sh", "-c", "node dist/main.js 2>/dev/null || npm run start:dev 2>/dev/null || npm start"]
 `;
         }
         if (pkg.scripts?.start) {
@@ -268,14 +336,15 @@ CMD ["npm", "start"]
         } else if (fs.existsSync(path.join(cwd, "src/index.js"))) {
           startCmd = `["node", "src/index.js"]`;
         }
+        const buildStep = (hasTypeScript && hasBuildScript) ? "RUN npm run build 2>/dev/null || true\n" : "";
       } catch { /* use default */ }
-      return `FROM node:20-alpine
+      return `FROM node:20
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --production
+RUN npm install
 COPY . .
-EXPOSE 3000
-ENV NODE_ENV=production PORT=3000
+${(()=>{ try { const p=JSON.parse(fs.readFileSync(path.join(cwd,"package.json"),"utf-8")) as {scripts?:Record<string,string>}; return p.scripts?.build ? "RUN npm run build 2>/dev/null || true\n" : ""; } catch { return ""; } })()}EXPOSE 3000
+ENV NODE_ENV=development PORT=3000
 CMD ${startCmd}
 `;
     }

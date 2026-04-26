@@ -2,6 +2,7 @@ import path from "path";
 import { loadCredentials } from "./auth.js";
 import { logger } from "./logger.js";
 import type { Finding, ScanResult } from "./types.js";
+import type { AttackLogEntry } from "../agents/sandbox-agent.js";
 
 export interface ToolRiskEntry {
   name: string;
@@ -24,7 +25,7 @@ export interface ProbeData {
   services?: Array<{ id: string; name: string; category: string; steps: string[]; findingsCount: number; tokensUsed: number }>;
   sandbox?: {
     projectType: string;
-    attackLog: string[];
+    attackLog: AttackLogEntry[];
     attackChains: string[];
     findingsCount: number;
     tokensUsed: number;

@@ -21,8 +21,10 @@ import {
   detectProjectType,
   detectAppPort,
   generateDockerfile,
+  getContainerExitCode,
+  isContainerRunning,
 } from "../core/docker.js";
-import { scanBuildArtifacts } from "../scanners/sandbox/index.js";
+import { webSearch, crawlUrl } from "../core/crawler.js";
 import { runSandboxAgent } from "../agents/sandbox-agent.js";
 import type { SandboxAgentResult } from "../agents/sandbox-agent.js";
 import { renderConsoleReport } from "../reporters/console.js";
@@ -62,6 +64,369 @@ async function waitForApp(containerIP: string, port: number, timeoutMs: number):
     await new Promise((r) => setTimeout(r, 1500));
   }
   return false;
+}
+
+// ── Docker build log error extraction ────────────────────────────────────────
+
+function extractBuildError(fullLog: string): string {
+  const lines = fullLog.split("\n");
+
+  // Find the first line with an error keyword
+  const errorIdx = lines.findIndex((l) =>
+    /\b(error|Error|ERROR|failed|FAILED|fatal|cannot find|not found|no such file|permission denied|ModuleNotFoundError|ImportError|SyntaxError|ZodError|npm ERR!|pip.*error|go: |FAILURE)\b/.test(l)
+  );
+
+  if (errorIdx === -1) {
+    // No clear error — return the last 40 lines
+    return lines.slice(-40).join("\n");
+  }
+
+  // 8 lines before + 25 lines after the first error
+  const start = Math.max(0, errorIdx - 8);
+  const end = Math.min(lines.length, errorIdx + 25);
+  const context = lines.slice(start, end).join("\n");
+
+  // Also append last 15 lines in case the real failure is there
+  const tail = lines.slice(-15).join("\n");
+  const combined = context === tail ? context : `${context}\n...\n${tail}`;
+
+  return combined.slice(0, 4000);
+}
+
+// ── Dockerfile self-healing fix agent ────────────────────────────────────────
+// Takes the current Dockerfile + build or runtime error, searches the web for
+// solutions, and returns a fixed Dockerfile. Runs as a lean focused agent.
+
+async function runDockerfileFixAgent(
+  currentDockerfile: string,
+  errorLog: string,
+  projectType: string,
+  projectContext: string,
+  fixReason: "build" | "runtime",
+): Promise<string> {
+  const FIX_TOOLS: ChatCompletionTool[] = [
+    {
+      type: "function",
+      function: {
+        name: "web_search",
+        description: "Search Stack Overflow, GitHub Issues, and official docs to find the solution for this specific Docker build or runtime error. Be specific — include the exact error message and framework.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string" },
+          },
+          required: ["query"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "crawl_url",
+        description: "Fetch a Stack Overflow answer, GitHub issue, or official docs page to get the exact fix. Use for: stackoverflow.com questions, github.com issues, docs.nestjs.com, docs.python.org, hub.docker.com official image docs.",
+        parameters: {
+          type: "object",
+          properties: {
+            url: { type: "string" },
+          },
+          required: ["url"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "write_dockerfile",
+        description: "Output the fixed Dockerfile. Call this once you know the fix.",
+        parameters: {
+          type: "object",
+          properties: {
+            dockerfile: { type: "string", description: "The complete fixed Dockerfile content" },
+            explanation: { type: "string", description: "One sentence: what was wrong and what you changed" },
+          },
+          required: ["dockerfile", "explanation"],
+        },
+      },
+    },
+  ];
+
+  const LANGUAGE_EDGE_CASES: Record<string, string> = {
+    node: `Common Node.js Docker fixes:
+- bcrypt/sharp/canvas native modules → add: RUN apt-get install -y python3 make g++ build-essential
+- TypeScript not compiled → add: RUN npm run build
+- NestJS wrong CMD → use: CMD ["node", "dist/main.js"]
+- npm ERESOLVE peer deps → use: RUN npm install --legacy-peer-deps
+- Missing node_modules → ensure COPY package*.json ./ then RUN npm install BEFORE COPY . .
+- NODE_ENV=production skips dotenv → use NODE_ENV=development for sandbox or add dotenv to deps`,
+
+    python: `Common Python Docker fixes:
+- psycopg2 fails → add: RUN apt-get install -y python3-dev libpq-dev gcc
+- cryptography/OpenSSL → add: RUN apt-get install -y libssl-dev libffi-dev python3-dev gcc
+- Pillow/Imaging → add: RUN apt-get install -y libjpeg-dev libpng-dev
+- lxml → add: RUN apt-get install -y libxml2-dev libxslt-dev
+- Missing pip wheel → add: RUN pip install --upgrade pip wheel setuptools`,
+
+    java: `Common Java Docker fixes:
+- ./mvnw or ./gradlew not executable → add: RUN chmod +x ./mvnw ./gradlew
+- Gradle OOM → add ENV GRADLE_OPTS="-Xmx2g -Xms512m"
+- Maven heap → add ENV MAVEN_OPTS="-Xmx2g"
+- Can't find artifact → ensure pom.xml is COPY'd before dependency download`,
+
+    ruby: `Common Ruby Docker fixes:
+- Native gem compilation fails → add: RUN apt-get install -y build-essential libssl-dev
+- Platform mismatch → add: RUN bundle lock --add-platform linux/amd64
+- Bundler version mismatch → add: RUN gem install bundler -v X.X.X
+- Missing postgresql client → add: RUN apt-get install -y libpq-dev`,
+
+    go: `Common Go Docker fixes:
+- CGO with Alpine fails → add: RUN apk add --no-cache gcc g++ musl-dev OR set CGO_ENABLED=0
+- Module not found → ensure: COPY go.mod go.sum ./ then RUN go mod download before COPY . .
+- Wrong GOOS → use: RUN GOOS=linux GOARCH=amd64 go build`,
+
+    php: `Common PHP Docker fixes:
+- Missing PHP extensions → use: RUN apt-get install -y libpng-dev libzip-dev && docker-php-ext-install gd zip pdo pdo_mysql
+- Better: use https://github.com/mlocati/docker-php-extension-installer
+- Composer not found → add: COPY --from=composer:latest /usr/bin/composer /usr/bin/composer`,
+  };
+
+  const edgeCases = LANGUAGE_EDGE_CASES[projectType] ?? "";
+
+  const systemPrompt = `You are a Docker expert specializing in fixing broken Dockerfiles. Your ONLY job is to fix the specific error and output a corrected Dockerfile.
+
+RULES:
+1. Search the web FIRST for the specific error message to find the exact fix
+2. Keep the Dockerfile structure and intent intact — only fix what's broken
+3. Do NOT add multi-stage builds unless specifically needed
+4. Do NOT make unrelated changes
+5. Call write_dockerfile once you have the fix
+
+${edgeCases}`;
+
+  const errorType = fixReason === "build" ? "DOCKER BUILD FAILURE" : "CONTAINER STARTUP CRASH";
+  const userMessage = `${errorType}
+
+Project type: ${projectType}
+${projectContext ? `App context: ${projectContext.slice(0, 500)}` : ""}
+
+ERROR:
+${errorLog}
+
+CURRENT DOCKERFILE:
+${currentDockerfile}
+
+INSTRUCTIONS:
+1. web_search the specific error message: search for exact error text + "${projectType} docker"
+2. If a Stack Overflow question looks relevant, crawl_url it to get the accepted answer
+3. Apply the fix and call write_dockerfile with the corrected Dockerfile
+4. Be surgical — change only what's needed to fix this error`;
+
+  let fixedDockerfile = "";
+
+  try {
+    await agentLoop(
+      {
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMessage }],
+        tools: FIX_TOOLS,
+        temperature: 0.05,
+        maxTokens: 8192,
+        maxIterations: 12,
+      },
+      async (toolName, args) => {
+        if (toolName === "web_search") {
+          const q = String(args["query"] ?? "");
+          logger.debug(`[dockerfile-fix] search: ${q}`);
+          return webSearch(q, 8);
+        }
+        if (toolName === "crawl_url") {
+          const url = String(args["url"] ?? "");
+          logger.debug(`[dockerfile-fix] crawl: ${url}`);
+          return crawlUrl(url);
+        }
+        if (toolName === "write_dockerfile") {
+          const df = String(args["dockerfile"] ?? "");
+          const explanation = String(args["explanation"] ?? "");
+          if (df.includes("FROM ")) {
+            fixedDockerfile = df;
+            logger.debug(`[dockerfile-fix] Fixed: ${explanation}`);
+          }
+          return JSON.stringify({ success: true, explanation });
+        }
+        return "Unknown tool";
+      }
+    );
+  } catch (e) {
+    logger.debug(`[dockerfile-fix] Fix agent error: ${e}`);
+  }
+
+  return fixedDockerfile;
+}
+
+// ── Self-healing build loop ───────────────────────────────────────────────────
+// Tries to build, and if it fails the AI searches the web and fixes the Dockerfile.
+// Max 4 attempts (1 original + 3 fixes). Tracks error signatures to avoid loops.
+
+async function buildWithSelfHealing(
+  cwd: string,
+  imageName: string,
+  dockerfilePath: string,
+  projectType: string,
+  projectContext: string,
+  onAttempt: (attempt: number, status: "building" | "failed" | "fixing" | "success", msg?: string) => void,
+): Promise<void> {
+  const MAX_ATTEMPTS = 4;
+  const seenErrors = new Set<string>();
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    onAttempt(attempt, "building");
+    try {
+      await buildImage(cwd, imageName, dockerfilePath);
+      onAttempt(attempt, "success");
+      return;
+    } catch (e) {
+      const err = e as Error & { buildLog?: string };
+      const fullLog = err.buildLog ?? err.message ?? String(e);
+      const extracted = extractBuildError(fullLog);
+
+      // Error signature = first 200 chars of extracted error
+      const sig = extracted.slice(0, 200).replace(/\s+/g, " ");
+
+      onAttempt(attempt, "failed", extracted.slice(0, 120).replace(/\n/g, " "));
+
+      if (attempt >= MAX_ATTEMPTS) {
+        throw new Error(`Docker build failed after ${MAX_ATTEMPTS} attempts.\nLast error:\n${extracted}`);
+      }
+
+      if (seenErrors.has(sig)) {
+        throw new Error(`Docker build stuck — same error repeated.\n${extracted}`);
+      }
+      seenErrors.add(sig);
+
+      if (!process.env["OPENAI_API_KEY"]) {
+        throw new Error(`Docker build failed:\n${extracted}`);
+      }
+
+      onAttempt(attempt, "fixing", "Searching Stack Overflow and docs for fix...");
+
+      const currentDockerfile = fs.readFileSync(dockerfilePath, "utf-8");
+      const fixedDockerfile = await runDockerfileFixAgent(
+        currentDockerfile,
+        extracted,
+        projectType,
+        projectContext,
+        "build",
+      );
+
+      if (!fixedDockerfile || fixedDockerfile === currentDockerfile) {
+        throw new Error(`AI could not fix build error:\n${extracted}`);
+      }
+
+      fs.writeFileSync(dockerfilePath, fixedDockerfile, "utf-8");
+      logger.debug(`[sandbox] Dockerfile updated for attempt ${attempt + 1}`);
+    }
+  }
+}
+
+// ── Container startup crash detection & recovery ─────────────────────────────
+
+async function checkContainerCrashed(containerId: string, waitMs = 12_000): Promise<boolean> {
+  // Poll for up to waitMs to see if the container exits immediately
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    const running = await isContainerRunning(containerId);
+    if (!running) return true; // crashed
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return false;
+}
+
+async function fixStartupCrash(
+  containerId: string,
+  cwd: string,
+  imageName: string,
+  dockerfilePath: string,
+  projectType: string,
+  projectContext: string,
+  appPort: number,
+  projectEnvVars: Record<string, string>,
+  containerName: string,
+  onStatus: (msg: string) => void,
+): Promise<string | null> {
+  const MAX_RUNTIME_FIXES = 3;
+  const seenErrors = new Set<string>();
+
+  for (let attempt = 1; attempt <= MAX_RUNTIME_FIXES; attempt++) {
+    const crashLogs = await getContainerLogs(containerId, 100);
+    const extracted = extractBuildError(crashLogs);
+    const sig = extracted.slice(0, 200).replace(/\s+/g, " ");
+
+    onStatus(`Startup crash detected (attempt ${attempt}/${MAX_RUNTIME_FIXES}) — ${extracted.slice(0, 80).replace(/\n/g, " ")}`);
+
+    if (seenErrors.has(sig)) {
+      onStatus("Same crash repeating — giving up on startup fix");
+      return null;
+    }
+    seenErrors.add(sig);
+
+    if (!process.env["OPENAI_API_KEY"]) return null;
+
+    onStatus("AI fixing Dockerfile for runtime crash...");
+
+    const currentDockerfile = fs.readFileSync(dockerfilePath, "utf-8");
+    const fixedDockerfile = await runDockerfileFixAgent(
+      currentDockerfile,
+      extracted,
+      projectType,
+      projectContext,
+      "runtime",
+    );
+
+    if (!fixedDockerfile || fixedDockerfile === currentDockerfile) {
+      onStatus("AI could not determine runtime fix");
+      return null;
+    }
+
+    fs.writeFileSync(dockerfilePath, fixedDockerfile, "utf-8");
+
+    // Rebuild and restart
+    onStatus("Rebuilding with fix...");
+    try {
+      // Stop old container first
+      await stopContainer(containerId);
+      await removeImage(imageName);
+
+      const restoreIgnore = neutralizeDockerignore(cwd);
+      try {
+        await buildImage(cwd, imageName, dockerfilePath);
+      } finally {
+        restoreIgnore();
+      }
+
+      const newContainerId = await startContainer({
+        image: imageName,
+        name: containerName,
+        hostPort: appPort,
+        containerPort: appPort,
+        networkMode: "bridge",
+        attackMode: true,
+        envVars: projectEnvVars,
+      });
+
+      // Give it 12s to see if it crashes again
+      const crashed = await checkContainerCrashed(newContainerId, 12_000);
+      if (!crashed) {
+        onStatus(`Container stable after fix (attempt ${attempt})`);
+        return newContainerId;
+      }
+
+      containerId = newContainerId;
+    } catch (e) {
+      onStatus(`Rebuild failed: ${String(e).slice(0, 100)}`);
+      return null;
+    }
+  }
+
+  return null;
 }
 
 // ── Monorepo detection ────────────────────────────────────────────────────────
@@ -298,6 +663,47 @@ RULE 8 — CMD: use dev/debug start command for maximum verbose output and attac
 
 RULE 9 — NO MULTI-STAGE BUILDS. Everything in one stage. Source, deps, secrets, all of it.
 
+RULE 10 — NATIVE MODULE / COMPILATION DEPS (read this carefully, these cause most build failures):
+  Node.js with bcrypt, argon2, sharp, canvas, sqlite3, node-gyp based packages:
+    RUN apt-get install -y python3 make g++ build-essential
+  Node.js with sharp specifically:
+    RUN apt-get install -y libvips-dev  (or use sharp pre-built: npm install --ignore-scripts && npm rebuild sharp)
+  Python with psycopg2:
+    RUN apt-get install -y python3-dev libpq-dev gcc
+  Python with cryptography / pyOpenSSL:
+    RUN apt-get install -y libssl-dev libffi-dev python3-dev gcc
+  Python with Pillow/PIL:
+    RUN apt-get install -y libjpeg-dev libpng-dev zlib1g-dev
+  Python with lxml:
+    RUN apt-get install -y libxml2-dev libxslt1-dev
+  Go with CGO (uses cgo, sqlite, etc.):
+    RUN apt-get install -y gcc g++ libc6-dev  (or use CGO_ENABLED=0 if possible)
+  Ruby with native gems (nokogiri, pg, mysql2):
+    RUN apt-get install -y build-essential libssl-dev libreadline-dev zlib1g-dev libpq-dev
+  Java/Gradle — wrapper not executable:
+    RUN chmod +x ./gradlew ./mvnw 2>/dev/null || true
+  Java — heap issues:
+    ENV GRADLE_OPTS="-Xmx2g -Xms512m"
+    ENV MAVEN_OPTS="-Xmx2g"
+  PHP — missing extensions:
+    RUN apt-get install -y libpng-dev libzip-dev libjpeg-dev && docker-php-ext-install gd zip pdo pdo_mysql mbstring
+
+RULE 11 — NESTJS / TYPESCRIPT BUILD:
+  NestJS apps MUST have npm run build before starting:
+    RUN npm run build
+  NestJS CMD should be: CMD ["node", "dist/main.js"]
+  If nest-cli.json not found, try: CMD ["sh", "-c", "node dist/main.js 2>/dev/null || npm run start:prod 2>/dev/null || npm start"]
+  NODE_ENV should be "development" (not "production") in sandbox — "production" blocks dotenv in many frameworks.
+
+RULE 12 — PEER DEPENDENCY CONFLICTS:
+  npm ERESOLVE errors → use: RUN npm install --legacy-peer-deps
+  If package-lock.json exists with conflicts → RUN npm ci --legacy-peer-deps OR RUN rm -f package-lock.json && npm install
+
+RULE 13 — .ENV FILES:
+  The .env file IS in the build context (we ensured it). But many frameworks (NestJS, Next.js) don't auto-load .env in production.
+  Add to Dockerfile: ENV NODE_ENV=development
+  Or add dotenv loading: CMD ["sh", "-c", "node -r dotenv/config dist/main.js 2>/dev/null || node dist/main.js"]
+
 ═══════════════════════════════════════════════════════
 IMPORTANT: Read the existing Dockerfile or docker-compose.yml FIRST if present.
 The dev team already solved the startup problem — don't reinvent it, improve on it.
@@ -496,6 +902,47 @@ ${isMonorepoService ? `Remember: Dockerfile must COPY . . from root, then WORKDI
   return result;
 }
 
+// ── Read all .env* files from the project and return them as a flat key=value map ─
+// These are injected directly as container env vars so the app sees them regardless
+// of whether it uses dotenv, Zod ConfigModule, or any other config loader.
+
+function readProjectEnvVars(cwd: string): Record<string, string> {
+  const envFiles = [
+    ".env",
+    ".env.local",
+    ".env.development",
+    ".env.production",
+    ".env.example",
+  ];
+
+  const result: Record<string, string> = {};
+
+  for (const fileName of envFiles) {
+    const filePath = path.join(cwd, fileName);
+    if (!fs.existsSync(filePath)) continue;
+    try {
+      const lines = fs.readFileSync(filePath, "utf-8").split("\n");
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line || line.startsWith("#")) continue;
+        const eqIdx = line.indexOf("=");
+        if (eqIdx < 1) continue;
+        const key = line.slice(0, eqIdx).trim();
+        let value = line.slice(eqIdx + 1).trim();
+        // Strip surrounding quotes
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+        if (key && value && !result[key]) {
+          result[key] = value;
+        }
+      }
+    } catch { /* skip unreadable files */ }
+  }
+
+  return result;
+}
+
 // ── .dockerignore management — ensure .env and secrets are included in context ─
 
 function neutralizeDockerignore(cwd: string): (() => void) {
@@ -649,24 +1096,48 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
   // ── Neutralize .dockerignore so .env and secrets are copied into the image ─
   restoreDockerignore = neutralizeDockerignore(cwd);
 
-  // Dockerfile audit intentionally skipped — sandbox runs as root with full caps by design.
-
-  // ── Build image ───────────────────────────────────────────────────────────
-  const buildSpinner = ora(`Building Docker image — copying ALL files including .env and secrets...`).start();
+  // ── Build image (with self-healing retry loop) ────────────────────────────
+  const buildSpinner = ora("Building Docker image — copying ALL files including .env and secrets...").start();
+  let buildAttempts = 0;
   try {
-    await buildImage(cwd, imageName, dockerfilePath);
-    buildSpinner.succeed(`Image built: ${imageName}`);
+    await buildWithSelfHealing(
+      cwd,
+      imageName,
+      dockerfilePath,
+      projectType,
+      projectContext,
+      (attempt, status, msg) => {
+        buildAttempts = attempt;
+        if (status === "building" && attempt > 1) {
+          buildSpinner.text = `Build attempt ${attempt}/4 — applying AI fix...`;
+        } else if (status === "failed") {
+          buildSpinner.text = `Build failed (attempt ${attempt}) — ${msg ?? ""}`;
+        } else if (status === "fixing") {
+          buildSpinner.text = `AI searching for fix... ${msg ?? ""}`;
+        } else if (status === "success" && attempt > 1) {
+          buildSpinner.text = `Build succeeded on attempt ${attempt}`;
+        }
+      },
+    );
+    const fixNote = buildAttempts > 1 ? ` (fixed in ${buildAttempts} attempts)` : "";
+    buildSpinner.succeed(`Image built: ${imageName}${fixNote}`);
   } catch (e) {
-    buildSpinner.fail(`Docker build failed: ${String(e).slice(0, 200)}`);
+    buildSpinner.fail(`Docker build failed after ${buildAttempts} attempt(s): ${String(e).slice(0, 200)}`);
     await cleanup(null, imageName, generatedDockerfileCreated ? generatedDockerfilePath : null, restoreDockerignore);
     restoreDockerignore = null;
     process.exit(1);
   } finally {
-    // Restore .dockerignore immediately after build — don't leave it modified
     if (restoreDockerignore) {
       restoreDockerignore();
       restoreDockerignore = null;
     }
+  }
+
+  // ── Read .env files and inject as container env vars ─────────────────────
+  const projectEnvVars = readProjectEnvVars(cwd);
+  const envVarCount = Object.keys(projectEnvVars).length;
+  if (envVarCount > 0) {
+    logger.info(`Injecting ${envVarCount} env var(s) from .env files directly into container`);
   }
 
   // ── Start container ───────────────────────────────────────────────────────
@@ -679,6 +1150,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
       containerPort: appPort,
       networkMode: "bridge",
       attackMode: true,
+      envVars: projectEnvVars,
     });
     startSpinner.succeed(`Container started: ${containerId.slice(0, 12)}`);
   } catch (e) {
@@ -696,8 +1168,48 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
     } catch {
       containerIP = "127.0.0.1";
     }
+    // On Windows, Docker bridge IPs are inside a Linux VM and unreachable from the host.
+    // Port mapping always exposes the container on 127.0.0.1:<hostPort>.
+    if (process.platform === "win32") {
+      containerIP = "127.0.0.1";
+    }
 
-    // Container security config intentionally skipped — root + full caps is the attack arena design.
+    // ── Startup crash detection + self-healing ────────────────────────────
+    const crashSpinner = ora("Checking container startup (5s)...").start();
+    const crashed = await checkContainerCrashed(containerId, 5_000);
+
+    // Ensure we always have a mutable Dockerfile path for fixes.
+    // If using the project's own Dockerfile, copy it so we never modify the original.
+    if (dockerfilePath === path.join(cwd, "Dockerfile") && !generatedDockerfileCreated) {
+      fs.copyFileSync(dockerfilePath, generatedDockerfilePath);
+      generatedDockerfileCreated = true;
+      dockerfilePath = generatedDockerfilePath;
+    }
+
+    if (crashed) {
+      crashSpinner.warn("Container crashed on startup — AI reading logs and searching for fix...");
+      const fixedContainerId = await fixStartupCrash(
+        containerId,
+        cwd,
+        imageName,
+        dockerfilePath,
+        projectType,
+        projectContext,
+        appPort,
+        projectEnvVars,
+        containerName,
+        (msg) => { crashSpinner.text = msg; },
+      );
+      if (fixedContainerId) {
+        containerId = fixedContainerId;
+        crashSpinner.succeed("Container restarted successfully after startup fix");
+        try { containerIP = await getContainerIP(containerId); } catch { /* keep old IP */ }
+      } else {
+        crashSpinner.warn("Could not fix startup crash — AI will attack with static analysis");
+      }
+    } else {
+      crashSpinner.succeed("Container running");
+    }
 
     // ── Wait for app to be ready ────────────────────────────────────────────
     const startupTimeout = Math.min(opts.timeout ?? 90, 180) * 1000;
@@ -707,25 +1219,40 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
     const exec = (cmd: string[], timeoutMs?: number) => execInContainer(containerId!, cmd, timeoutMs);
 
     if (!isReady) {
-      healthSpinner.warn(`App did not respond on port ${appPort} within timeout`);
-      console.log(chalk.gray("  Continuing with static analysis only — AI will explore the container directly."));
-
-      logger.section("Build Artifact Scan (static only)");
-      const artifactFindings = await scanBuildArtifacts(exec);
-      findings.push(...artifactFindings);
+      // App is running but never responded — get logs and try to fix the startup command
+      const stillRunning = await isContainerRunning(containerId);
+      if (stillRunning && process.env["OPENAI_API_KEY"]) {
+        healthSpinner.warn(`App not responding on port ${appPort} — AI reading logs, searching for fix...`);
+        const fixedContainerId = await fixStartupCrash(
+          containerId,
+          cwd,
+          imageName,
+          dockerfilePath,
+          projectType,
+          projectContext,
+          appPort,
+          projectEnvVars,
+          containerName,
+          (msg) => { healthSpinner.text = msg; },
+        );
+        if (fixedContainerId) {
+          containerId = fixedContainerId;
+          // Give fixed container a chance to respond
+          const recheckReady = await waitForApp(containerIP, appPort, 30_000);
+          if (recheckReady) {
+            healthSpinner.succeed(`App is ready at http://${containerIP}:${appPort} (after fix)`);
+          } else {
+            healthSpinner.warn("App fixed but still not responding — AI will start it directly in container");
+          }
+          try { containerIP = await getContainerIP(containerId); } catch { /* keep old IP */ }
+        } else {
+          healthSpinner.warn("Could not fix startup — AI will start app directly in container");
+        }
+      } else {
+        healthSpinner.warn(`App did not respond on port ${appPort} within timeout — AI will start it and attack directly`);
+      }
     } else {
       healthSpinner.succeed(`App is ready at http://${containerIP}:${appPort}`);
-
-      // ── Build artifact scan ─────────────────────────────────────────────
-      logger.section("Build Artifact Scan");
-      const artifactSpinner = ora("Scanning container for secrets, SUID binaries, world-writable paths...").start();
-      try {
-        const artifactFindings = await scanBuildArtifacts(exec);
-        findings.push(...artifactFindings);
-        artifactSpinner.succeed(`Artifact scan — ${artifactFindings.length} issue(s)`);
-      } catch (e) {
-        artifactSpinner.fail(`Artifact scan failed: ${e}`);
-      }
     }
 
     // ── AI sandbox attack agent ─────────────────────────────────────────────
@@ -762,7 +1289,11 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
         }
 
         if (opts.verbose && agentResult.attackLog.length > 0) {
-          console.log(chalk.gray(`\n  Log: ${agentResult.attackLog.slice(0, 15).join("  │  ")}`));
+          console.log(chalk.gray(`\n  Attack log (${agentResult.attackLog.length} steps):`));
+          for (const entry of agentResult.attackLog.slice(0, 20)) {
+            const icon = entry.type === "finding" ? "🔴" : entry.type === "credential" ? "🔑" : entry.type === "chain" ? "⛓" : entry.type === "http" ? "→" : "$";
+            console.log(chalk.gray(`    ${icon} [${entry.step}] ${entry.tool}: ${entry.input.slice(0, 80)}`));
+          }
         }
 
         sandboxAgentResult = agentResult;
