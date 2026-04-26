@@ -339,15 +339,15 @@ breachscope login  # authenticate once — all future scans auto-upload
 - **Findings Tab** — Smart Groups view, Supply Chain grid, Raw list with severity/category filters
 - **Sandbox Tab** — full attack intelligence panel:
   - AI narrative (agent's running worldview)
-  - Discovered secrets with key=value display
+  - Discovered secrets — key names only (values never displayed in the UI)
   - Confirmed findings with CVSS scores and validator confidence badges
-  - PTT (Pentest Task Tree) with color-coded node statuses
+  - PTT (Pentest Task Tree) — expandable/collapsible, color-coded node statuses
   - Open ports and detected framework versions
   - Discovered endpoints
   - Structured attack log with per-entry type badges
 - **Report Tab** — export as JSON, Markdown, or real PDF (jsPDF)
 - **API Keys** — generate/revoke CLI tokens (SHA-256 hashed)
-- **Settings** — AES-256-GCM encrypted API keys, scan defaults, sandbox defaults (attack depth + companion agent mode)
+- **Settings** — AES-256-GCM encrypted API keys, scan defaults, sandbox defaults (attack depth + companion agent mode), danger zone (delete all scan data)
 
 ### Self-hosting
 

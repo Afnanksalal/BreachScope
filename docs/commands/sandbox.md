@@ -158,11 +158,11 @@ Results appear in the **Sandbox tab** of the scan detail page:
 - **Stats grid** — Findings, Chains, Secrets, Endpoints, Actions, Tokens
 - **AI Attack Narrative** — agent's running worldview summarizing discoveries
 - **Confirmed Attack Chains** — multi-step exploit chains (A → B → C)
-- **Discovered Secrets** — extracted key=value credentials
+- **Discovered Secrets** — extracted credential key names (values never shown in the UI)
 - **Sandbox Findings** — severity badge, CVSS score, validator confidence + score per finding
 - **Open Ports** — internal services detected during recon
 - **Framework Versions** — detected tech stack
-- **PTT Tree** — Pentest Task Tree with color-coded node statuses
+- **PTT Tree** — Pentest Task Tree, expandable/collapsible per node, with color-coded statuses
 - **Discovered Endpoints** — collapsible grid of mapped routes
 - **Structured Attack Log** — per-entry type badges: `exec` / `http` / `finding` / `chain` / `credential` / `search` / `crawl` / `info`
 

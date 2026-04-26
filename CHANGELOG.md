@@ -33,6 +33,31 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 - `buildUserMessage` now groups all detected packages by ecosystem and sends them to the agent; agent receives explicit instructions on which ecosystem parameter to pass per lookup
 - Tool handlers in `runDependencyAgent` pass `args["ecosystem"]` to all crawler functions
 
+**Dashboard — dependency tree ordering**
+- `buildDepTree()` performs DFS traversal of `ToolRiskEntry[]` — roots sorted by risk score, each node's children inserted immediately after it (also sorted by risk)
+- Proper `parent → child` indentation in the Supply Chain grid: `20px` margin per depth level with tree-line prefix (`│  └─`) so the hierarchy is visually clear
+
+**Dashboard — dedicated Sandbox Probe findings section**
+- New `"sandbox"` group in Smart Groups — highest priority, breach-purple color
+- New `SandboxFindingsView` component: confirmed exploits with evidence, attack chains, secret key names (no values), matched remediations from the full findings list
+- "Sandbox Probe" tab added to the view toggle — only shown when sandbox data is present
+
+**Dashboard — PTT expand/collapse**
+- PTT nodes are now individually clickable to expand/collapse
+- "Expand all / Collapse all" toggle above the tree
+- Grandchildren supported — full multi-level nesting rendered
+
+**Dashboard — Roadmap page** (`/roadmap`)
+- Three phases: v0.1–v0.3 Shipped (7 items), v0.4 Near Term (6 items), v0.5+ Long Term (7 items)
+- Status badges: `shipped` / `in-progress` / `planned` / `idea`
+- Stats bar: shipped/planned/ideas count
+- "Have an idea?" CTA linking to GitHub issues
+- Footer Roadmap link updated from dead anchor to `/roadmap`
+
+**Dashboard — "Delete All Scans"**
+- Two-step confirmation flow in Settings → Danger Zone
+- `DELETE /api/scans` endpoint deletes all findings (FK) then all scans for the authenticated user, then redirects to `/dashboard`
+
 ### Changed
 
 - `RemoteConfig` interface gains `sandboxScanMode: string` and `sandboxDeep: boolean`
@@ -41,10 +66,19 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 - `buildAgentContext` in sandbox gains `scanMode` parameter — passed through to all companion agents
 - `SettingsResponse` and `/api/settings` GET/PUT include sandbox fields
 - `/api/cli/config` GET/PATCH include sandbox fields
+- Sidebar: removed CLI login banner from the bottom (no longer shown)
+- Scan rows in dashboard Overview "Recent Scans" are now clickable — navigate to the full scan detail page
+- Discovered secrets in the Sandbox tab display key names only — values are never shown in the UI
 
 ### Fixed
 
 - `sandbox --deep` flag was accepted by the CLI but never forwarded to the sandbox agent's `maxIterations` — now correctly sets 120 iterations
+- **Critical CLI bug**: `target` was being overwritten with `remote.defaultScanMode` (`"breach"/"bug"/"all"`) — a completely different enum. When the dashboard scan mode was `"breach"`, no scanners ran at all. Fixed by removing the bad assignment and adding `remote?.defaultScanMode` as a fallback to `scanMode` only
+- PDF report showed `0,0,0,0` severity counts — null guard added on `f.severity` before `.toLowerCase()` (was crashing silently and skipping all rows)
+- PDF report listed only ~20 findings — table styling tightened (`fontSize: 6.5`, `cellPadding: 2`, `minCellHeight: 6`) so far more rows fit per page; full sandbox section added (AI narrative, attack chains, confirmed findings, redacted secret key names, ports, frameworks)
+- Raw list showed "Clean Scan" with 5000+ findings — added check: if `findings.length === 0 && total > 0`, shows an orange "Findings not loaded" warning instead
+- Settings save corrupted all settings state — `handleSave` was calling `setSettings({ok: true})` (the PUT response body). Fixed by re-fetching settings from the API after a successful save
+- Footer Contributing link used `/main/` branch — corrected to `/master/`
 
 ---
 
@@ -135,7 +169,7 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
   - **Stats grid** (6 tiles): Findings, Chains, Secrets, Endpoints, Actions, Tokens — each color-coded
   - **AI Attack Narrative** — agent's running worldview summarizing what it discovered
   - **Confirmed Attack Chains** — orange panel with numbered multi-step exploit chains
-  - **Discovered Secrets** — yellow `key = value` panel showing all extracted credentials
+  - **Discovered Secrets** — yellow panel listing extracted credential key names (values never shown in the UI)
   - **Sandbox Findings** — red panel with severity badge, CVSS score, validator confidence + score per finding
   - **Open Ports** — detected internal services as port badges
   - **Framework Versions** — detected tech stack from recon

@@ -4,8 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.3.x   | ✓ Current |
-| < 0.3   | ✗ Unsupported |
+| 0.3.1   | ✓ Current |
+| < 0.3.1 | ✗ Unsupported |
 
 ## Reporting a Vulnerability
 
@@ -52,4 +52,4 @@ BreachScope eats its own dog food. The repository is scanned on every push:
 - `breachscope scan --ci` runs in GitHub Actions
 - OpenSSF Scorecard is enabled on this repository
 - Dependabot is configured for automated dependency updates
-- Branch protection requires review on `main`
+- Branch protection requires review on `master`

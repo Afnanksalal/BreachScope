@@ -73,11 +73,10 @@ breachscope scan
 npx ts-node src/index.ts scan
 ```
 
-### Tests
+### Type check
 
 ```bash
-npm test           # run once
-npm run test:watch # watch mode
+npx tsc --noEmit
 ```
 
 ### Lint
@@ -243,10 +242,9 @@ Add to the `ENV_MAP` in `cli/src/detectors/index.ts`.
 
 1. **Fork** the repository
 2. **Create a branch**: `git checkout -b feat/your-feature` or `fix/your-fix`
-3. **Write tests** for new functionality
-4. **Run the full suite**: `npm test && npm run lint`
-5. **Self-scan**: `breachscope audit` should pass on your changes
-6. **Submit a PR** with:
+3. **Type check + lint**: `npx tsc --noEmit && npm run lint`
+4. **Self-scan**: `breachscope audit` should pass on your changes
+5. **Submit a PR** with:
    - What the change does
    - Why it's needed
    - How you tested it (include test codebases if relevant for pattern rules)

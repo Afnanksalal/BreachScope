@@ -146,7 +146,7 @@ Sandbox defaults (attack depth + companion agent focus) can also be set permanen
 6. OWASP ZAP active scan runs inside the container
 7. Validator agent independently re-confirms every critical/high finding with a confidence score
 
-Results appear in the dashboard Sandbox tab: AI narrative, discovered secrets, confirmed findings with CVSS + validator confidence, Pentest Task Tree, framework versions, full structured attack log.
+Results appear in the dashboard Sandbox tab: AI narrative, discovered secret key names (values never displayed), confirmed findings with CVSS + validator confidence, expandable Pentest Task Tree, framework versions, full structured attack log.
 
 ---
 
