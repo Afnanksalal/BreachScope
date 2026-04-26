@@ -135,6 +135,17 @@ export async function runSupervisor(
   discoveredEndpoints: string[],
   openPorts: number[],
 ): Promise<SupervisorPlan> {
+  // Early exit: supervisor needs at least some recon data to be useful
+  if (
+    Object.keys(discoveredCredentials).length === 0 &&
+    discoveredEndpoints.length === 0 &&
+    openPorts.length === 0 &&
+    reconSummary.length < 100
+  ) {
+    logger.debug("[supervisor] Insufficient recon data — skipping supervisor");
+    return { tasks: [], attack_narrative: "Recon yielded no data. Run env dump + port scan first.", highest_value_target: "unknown" };
+  }
+
   let plan: SupervisorPlan = {
     tasks: [],
     attack_narrative: "",
@@ -172,7 +183,7 @@ ANALYSIS INSTRUCTIONS:
 Call create_attack_plan with your analysis.`;
 
   try {
-    await agentLoop(
+    const loopResult = await agentLoop(
       {
         system: SUPERVISOR_SYSTEM,
         messages: [{ role: "user", content: userMessage }],
@@ -200,6 +211,10 @@ Call create_attack_plan with your analysis.`;
         return "Unknown tool";
       }
     );
+
+    if (plan.tasks.length === 0) {
+      logger.warn(`[supervisor] No attack tasks generated. Agent output: ${loopResult.content.slice(0, 300)}`);
+    }
   } catch (e) {
     logger.debug(`[supervisor] Error: ${e}`);
   }

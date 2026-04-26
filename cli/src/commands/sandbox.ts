@@ -1406,6 +1406,13 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
       findings.length = 0;
       findings.push(...deduped);
 
+      const allFailed = [sandboxResult, codeResult, depResult, blackboxResult].every((r) => r.status === "rejected");
+      if (allFailed) {
+        swarmSpinner.fail("All agents failed — check that OPENAI_API_KEY is valid and the model is accessible");
+        logger.debug(`Sandbox: ${(sandboxResult as PromiseRejectedResult).reason}`);
+        logger.debug(`Code: ${(codeResult as PromiseRejectedResult).reason}`);
+      }
+
       const breakdown = [
         sandboxResult.status === "fulfilled" ? `${sandboxResult.value.findings.length} dynamic` : "sandbox failed",
         codeResult.status === "fulfilled"    ? `${codeResult.value.findings.length} code`    : "code failed",

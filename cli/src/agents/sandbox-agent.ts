@@ -879,6 +879,9 @@ export async function runSandboxAgent(
 
   logger.debug(`[sandbox-agent] Attack journal: ${memPath}`);
 
+  // In-memory command frequency map — avoids TOCTOU with disk-based AttackMemory
+  const _cmdFrequency = new Map<string, number>();
+
   // ── Tool implementations ──────────────────────────────────────────────────
 
   function readMemory(): string {
@@ -936,9 +939,19 @@ export async function runSandboxAgent(
     };
     if (parent_finding_id) finding.parent_finding_id = parent_finding_id;
 
-    // Update PTT: add a leaf node for this finding
-    const severityMap: Record<string, string> = { critical: "ptt-inject", high: "ptt-auth", medium: "ptt-creds", low: "ptt-creds" };
-    const parentPTT = severityMap[severity] ?? "ptt-root";
+    // Update PTT: categorize by finding content, not severity
+    const titleLower = title.toLowerCase();
+    const descLower = description.toLowerCase();
+    let parentPTT = "ptt-root";
+    if (/credential|secret|key|token|password|api.key|env.var|hardcoded/.test(titleLower + descLower)) {
+      parentPTT = "ptt-creds";
+    } else if (/sql|inject|ssti|xxe|xss|command.inject|rce|deseri|prototype/.test(titleLower + descLower)) {
+      parentPTT = "ptt-inject";
+    } else if (/auth|jwt|bypass|idor|privilege|access.control|mass.assign|session/.test(titleLower + descLower)) {
+      parentPTT = "ptt-auth";
+    } else if (/redis|mongo|postgres|mysql|elastic|rabbit|memcache|internal.service/.test(titleLower + descLower)) {
+      parentPTT = "ptt-services";
+    }
     const pttNode: PTTNode = {
       id: `ptt-${id}`,
       title: `[${severity.toUpperCase()}] ${title}`,
@@ -1026,10 +1039,9 @@ export async function runSandboxAgent(
   async function execCmd(cmd: string[], timeoutSeconds = 60): Promise<string> {
     const cmdStr = cmd.join(" ");
 
-    // Rabbit hole prevention: block identical commands after 3 uses
+    // Rabbit hole prevention: in-memory frequency map (avoids TOCTOU with disk-based memory)
     {
-      const mem = loadMemory(memPath);
-      const freq = mem.command_frequency[cmdStr] ?? 0;
+      const freq = _cmdFrequency.get(cmdStr) ?? 0;
       if (freq >= 3) {
         return JSON.stringify({
           guardrail: true,
@@ -1038,8 +1050,7 @@ export async function runSandboxAgent(
           run_count: freq,
         });
       }
-      mem.command_frequency[cmdStr] = freq + 1;
-      saveMemory(memPath, mem);
+      _cmdFrequency.set(cmdStr, freq + 1);
     }
 
     const result = await execFn(cmd, timeoutSeconds * 1000);
@@ -1556,10 +1567,17 @@ Save with EXACT prompt sent, EXACT response showing injection success or data le
             }
           }
 
-          // Start ZAP daemon in background
+          // Start ZAP daemon — use find to locate the actual JAR (version may vary)
           await execFn(
-            ["sh", "-c", `nohup java -jar /opt/zap/zap-${"{2.15.0}"}.jar -daemon -port ${ZAP_CONTAINER_PORT} -config api.disablekey=true -config api.addrs.addr.name=.* -config api.addrs.addr.enabled=true > /tmp/zap.log 2>&1 &`],
-            10_000,
+            ["sh", "-c", [
+              `ZAP_JAR=$(find /opt/zap -name "zap-*.jar" 2>/dev/null | head -1)`,
+              `[ -z "$ZAP_JAR" ] && ZAP_JAR=$(find /usr -name "zap.jar" 2>/dev/null | head -1)`,
+              `[ -z "$ZAP_JAR" ] && echo "ZAP JAR not found" && exit 1`,
+              `echo "Starting ZAP from: $ZAP_JAR"`,
+              `nohup java -jar "$ZAP_JAR" -daemon -host 0.0.0.0 -port ${ZAP_CONTAINER_PORT} -config api.disablekey=true -config api.addrs.addr.name=.* -config api.addrs.addr.enabled=true > /tmp/zap.log 2>&1 &`,
+              `echo ZAP_STARTED`,
+            ].join(" && ")],
+            15_000,
           );
 
           // Wait up to 60s for ZAP to start

@@ -150,7 +150,7 @@ IMPORTANT: If the steps are vague or the evidence is just "command output" witho
 A CVSS 9.0 finding that can't be reproduced is a false positive — don't give it a high score.`;
 
   try {
-    await agentLoop(
+    const loopResult = await agentLoop(
       {
         system: VALIDATOR_SYSTEM,
         messages: [{ role: "user", content: userMessage }],
@@ -161,7 +161,8 @@ A CVSS 9.0 finding that can't be reproduced is a false positive — don't give i
       },
       async (toolName, args) => {
         const a = args as Record<string, unknown>;
-        result.attempts++;
+        // Count reproduction attempts (exec/http), not submit_validation itself
+        if (toolName === "exec_cmd" || toolName === "http_request") result.attempts++;
 
         if (toolName === "exec_cmd") {
           const cmd = a["cmd"] as string[];
@@ -228,8 +229,16 @@ A CVSS 9.0 finding that can't be reproduced is a false positive — don't give i
         return JSON.stringify({ error: `Unknown tool: ${toolName}` });
       }
     );
+    // If agent finished without calling submit_validation, flag it explicitly
+    if (result.validation_notes === "Validation did not complete.") {
+      result.validation_notes = `Validator agent ran ${result.attempts} tool call(s) but never called submit_validation. Agent output: ${loopResult.content.slice(0, 200)}`;
+      result.reproducibility_score = 50;
+      result.confidence = "uncertain";
+    }
   } catch (e) {
     logger.debug(`[validator] Error validating ${findingId}: ${e}`);
+    result.validation_notes = `Validator crashed: ${String(e).slice(0, 150)}`;
+    result.confidence = "uncertain";
   }
 
   return result;
