@@ -107,12 +107,29 @@ export interface AttackLogEntry {
   timestamp: string;
 }
 
+export interface SandboxMemorySnapshot {
+  worldview: string;
+  credentials: Record<string, string>;
+  discoveredEndpoints: string[];
+  discoveredServices: string[];
+  openPorts: number[];
+  frameworkVersions: Record<string, string>;
+  pttTree: PTTNode[];
+  confirmedFindings: Array<{
+    id: string; title: string; severity: string;
+    description: string; evidence: string;
+    cvss_score: number;
+    validation_score?: number; validation_confidence?: string;
+  }>;
+}
+
 export interface SandboxAgentResult {
   findings: Finding[];
   tokensUsed: number;
   attackLog: AttackLogEntry[];
   attackChains: string[];
   memoryPath: string;
+  memorySnapshot: SandboxMemorySnapshot;
 }
 
 type ExecFn = (cmd: string[], timeoutMs?: number) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
@@ -2010,11 +2027,29 @@ Begin immediately with STEP 1.`;
     `[sandbox-agent] Complete: ${allFindings.length} findings · ${mem.tried_attacks.length} attacks · ${mem.attack_chains.length} chains · ${tokensUsed.toLocaleString()} tokens`
   );
 
+  const memorySnapshot: SandboxMemorySnapshot = {
+    worldview: mem.worldview,
+    credentials: mem.credentials,
+    discoveredEndpoints: mem.discovered_endpoints.slice(0, 80),
+    discoveredServices: mem.discovered_services,
+    openPorts: mem.open_ports,
+    frameworkVersions: mem.framework_versions,
+    pttTree: mem.ptt_tree,
+    confirmedFindings: mem.confirmed_findings.map((f) => ({
+      id: f.id, title: f.title, severity: f.severity,
+      description: f.description, evidence: f.evidence.slice(0, 600),
+      cvss_score: f.cvss_score,
+      validation_score: f.validation_score,
+      validation_confidence: f.validation_confidence,
+    })),
+  };
+
   return {
     findings: allFindings,
     tokensUsed,
     attackLog,
     attackChains: mem.attack_chains,
     memoryPath: memPath,
+    memorySnapshot,
   };
 }

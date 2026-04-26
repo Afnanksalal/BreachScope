@@ -35,12 +35,49 @@ interface ServiceProbeActivity {
   steps: string[]; findingsCount: number; tokensUsed: number;
 }
 
+interface AttackLogEntry {
+  step: number;
+  type: "exec" | "http" | "search" | "crawl" | "finding" | "credential" | "chain" | "info";
+  tool: string;
+  input: string;
+  output: string;
+  exitCode?: number;
+  status?: number;
+  timestamp: string;
+}
+
+interface PTTNode {
+  id: string;
+  title: string;
+  status: "unexplored" | "in_progress" | "confirmed_vuln" | "not_vulnerable" | "needs_more_info";
+  children: string[];
+  finding_id?: string;
+  depth: number;
+}
+
+interface SandboxMemorySnapshot {
+  worldview: string;
+  credentials: Record<string, string>;
+  discoveredEndpoints: string[];
+  discoveredServices: string[];
+  openPorts: number[];
+  frameworkVersions: Record<string, string>;
+  pttTree: PTTNode[];
+  confirmedFindings: Array<{
+    id: string; title: string; severity: string;
+    description: string; evidence: string;
+    cvss_score: number;
+    validation_score?: number; validation_confidence?: string;
+  }>;
+}
+
 interface SandboxActivity {
   projectType: string;
-  attackLog: string[];
+  attackLog: AttackLogEntry[];
   attackChains: string[];
   findingsCount: number;
   tokensUsed: number;
+  memorySnapshot?: SandboxMemorySnapshot;
 }
 
 interface ProbeActivity {
@@ -461,7 +498,7 @@ function ServiceProbeCard({ svc }: { svc: ServiceProbeActivity }) {
         <div className="border-t border-white/[0.04] px-4 py-3">
           <p className="text-white/30 text-[10px] font-semibold uppercase tracking-wider mb-2.5">API Calls & Actions</p>
           <div className="space-y-1">
-            {svc.steps.map((step, i) => {
+            {svc.steps.filter((s): s is string => typeof s === "string").map((step, i) => {
               const isHttp = /^(GET|POST|PUT|PATCH|DELETE|OPTIONS)/.test(step);
               const isSearch = step.startsWith("web search");
               const isCrawl = step.startsWith("crawl");
@@ -493,175 +530,300 @@ function ServiceProbeCard({ svc }: { svc: ServiceProbeActivity }) {
 }
 
 
-// ─── Terminal line renderer ───────────────────────────────────────────────────
 
-interface TermLine {
-  type: "finding_critical" | "finding_high" | "finding_medium" | "finding_low"
-      | "chain" | "credential" | "attempt_success" | "attempt_partial" | "attempt_failed"
-      | "exec" | "http" | "info";
-  prefix: string;
-  text: string;
-}
+// ─── PTT status config ────────────────────────────────────────────────────────
 
-function parseTermLine(entry: string): TermLine {
-  if (/^FINDING \[CRITICAL\]/.test(entry)) return { type: "finding_critical", prefix: "● CRITICAL", text: entry.replace(/^FINDING \[CRITICAL\]:\s*/, "") };
-  if (/^FINDING \[HIGH\]/.test(entry))     return { type: "finding_high",     prefix: "● HIGH",     text: entry.replace(/^FINDING \[HIGH\]:\s*/, "") };
-  if (/^FINDING \[MEDIUM\]/.test(entry))   return { type: "finding_medium",   prefix: "● MEDIUM",   text: entry.replace(/^FINDING \[MEDIUM\]:\s*/, "") };
-  if (/^FINDING \[LOW\]/.test(entry))      return { type: "finding_low",      prefix: "● LOW",      text: entry.replace(/^FINDING \[LOW\]:\s*/, "") };
-  if (/^CHAIN:/.test(entry))               return { type: "chain",            prefix: "⛓ CHAIN",    text: entry.replace(/^CHAIN:\s*/, "") };
-  if (/^CREDENTIAL:/.test(entry))          return { type: "credential",       prefix: "🔑 CRED",    text: entry.replace(/^CREDENTIAL:\s*/, "") };
-  if (/^ATTEMPT \[SUCCESS\]/.test(entry))  return { type: "attempt_success",  prefix: "✓ SUCCESS",  text: entry.replace(/^ATTEMPT \[SUCCESS\]:\s*/, "") };
-  if (/^ATTEMPT \[PARTIAL\]/.test(entry))  return { type: "attempt_partial",  prefix: "~ PARTIAL",  text: entry.replace(/^ATTEMPT \[PARTIAL\]:\s*/, "") };
-  if (/^ATTEMPT \[FAILED\]/.test(entry))   return { type: "attempt_failed",   prefix: "✗ FAILED",   text: entry.replace(/^ATTEMPT \[FAILED\]:\s*/, "") };
-  if (/^exec:/.test(entry))                return { type: "exec",             prefix: "$",           text: entry.replace(/^exec:\s*/, "") };
-  if (/^HTTP /.test(entry))                return { type: "http",             prefix: "→",           text: entry };
-  return { type: "info", prefix: "·", text: entry };
-}
+const PTT_STATUS: Record<PTTNode["status"], { dot: string; label: string; text: string }> = {
+  unexplored:       { dot: "bg-white/20",      label: "–",    text: "text-white/25" },
+  in_progress:      { dot: "bg-yellow-400",     label: "…",    text: "text-yellow-300/80" },
+  confirmed_vuln:   { dot: "bg-red-500",        label: "VULN", text: "text-red-300" },
+  not_vulnerable:   { dot: "bg-green-500/60",   label: "OK",   text: "text-white/35" },
+  needs_more_info:  { dot: "bg-orange-400/70",  label: "?",    text: "text-orange-300/70" },
+};
 
-const TERM_LINE_STYLES: Record<TermLine["type"], { prefix: string; text: string }> = {
-  finding_critical: { prefix: "text-red-400 font-bold",    text: "text-red-300" },
-  finding_high:     { prefix: "text-orange-400 font-bold", text: "text-orange-300" },
-  finding_medium:   { prefix: "text-yellow-400 font-bold", text: "text-yellow-300" },
-  finding_low:      { prefix: "text-cyan-400 font-bold",   text: "text-cyan-300" },
-  chain:            { prefix: "text-orange-500 font-bold", text: "text-orange-200/80" },
-  credential:       { prefix: "text-yellow-500 font-bold", text: "text-yellow-200/80" },
-  attempt_success:  { prefix: "text-green-400 font-bold",  text: "text-green-300/80" },
-  attempt_partial:  { prefix: "text-yellow-600",           text: "text-yellow-500/60" },
-  attempt_failed:   { prefix: "text-white/20",             text: "text-white/20" },
-  exec:             { prefix: "text-green-500/60",         text: "text-white/50" },
-  http:             { prefix: "text-blue-400/70",          text: "text-blue-300/60" },
-  info:             { prefix: "text-white/25",             text: "text-white/35" },
+const LOG_TYPE_STYLE: Record<AttackLogEntry["type"], { badge: string; badgeText: string; line: string }> = {
+  finding:    { badge: "bg-red-500/20 border-red-500/40",    badgeText: "text-red-300",    line: "text-red-200/80" },
+  credential: { badge: "bg-yellow-500/20 border-yellow-500/40", badgeText: "text-yellow-300", line: "text-yellow-200/80" },
+  chain:      { badge: "bg-orange-500/20 border-orange-500/40", badgeText: "text-orange-300", line: "text-orange-200/80" },
+  exec:       { badge: "bg-white/[0.06] border-white/10",    badgeText: "text-white/35",   line: "text-white/50" },
+  http:       { badge: "bg-blue-500/10 border-blue-500/20",  badgeText: "text-blue-400/70",line: "text-blue-300/60" },
+  search:     { badge: "bg-purple-500/10 border-purple-500/20", badgeText: "text-purple-400/70", line: "text-white/40" },
+  crawl:      { badge: "bg-cyan-500/10 border-cyan-500/20",  badgeText: "text-cyan-400/70",line: "text-white/40" },
+  info:       { badge: "bg-white/[0.03] border-white/[0.06]",badgeText: "text-white/20",   line: "text-white/25" },
 };
 
 function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
-  const [expanded, setExpanded] = useState(true);
-  const [termExpanded, setTermExpanded] = useState(true);
+  const [logOpen, setLogOpen] = useState(false);
+  const [endpointsOpen, setEndpointsOpen] = useState(false);
 
-  const findings = sandbox.attackLog.filter((e) => e.startsWith("FINDING"));
-  const chains   = sandbox.attackLog.filter((e) => e.startsWith("CHAIN"));
-  const creds    = sandbox.attackLog.filter((e) => e.startsWith("CREDENTIAL"));
-  const successes = sandbox.attackLog.filter((e) => e.startsWith("ATTEMPT [SUCCESS]"));
+  const mem = sandbox.memorySnapshot;
+  const log = Array.isArray(sandbox.attackLog) ? sandbox.attackLog.filter((e) => e && typeof e === "object") as AttackLogEntry[] : [];
+  const chains = sandbox.attackChains.filter((c): c is string => typeof c === "string");
 
-  const stats = [
-    { label: "Findings",  value: sandbox.findingsCount, color: sandbox.findingsCount > 0 ? "text-red-400" : "text-green-400" },
-    { label: "Chains",    value: chains.length,    color: "text-orange-400" },
-    { label: "Creds",     value: creds.length,     color: "text-yellow-400" },
-    { label: "Bypasses",  value: successes.length, color: "text-green-400" },
-    { label: "Actions",   value: sandbox.attackLog.length, color: "text-white/40" },
-    { label: "Tokens",    value: sandbox.tokensUsed > 0 ? `${Math.round(sandbox.tokensUsed / 1000)}K` : "—", color: "text-white/25" },
-  ];
+  const credEntries = mem ? Object.entries(mem.credentials) : [];
+  const fwEntries   = mem ? Object.entries(mem.frameworkVersions) : [];
+
+  const pttVulnNodes  = mem?.pttTree.filter((n) => n.status === "confirmed_vuln") ?? [];
+  const pttRootNodes  = mem?.pttTree.filter((n) => n.depth === 0) ?? [];
+  const pttChildNodes = mem?.pttTree.filter((n) => n.depth > 0) ?? [];
+
+  const confirmedFindings = mem?.confirmedFindings ?? [];
+  const hasRichData = mem && (
+    credEntries.length > 0 ||
+    mem.discoveredEndpoints.length > 0 ||
+    mem.openPorts.length > 0 ||
+    confirmedFindings.length > 0 ||
+    pttVulnNodes.length > 0
+  );
 
   return (
-    <div className="rounded-xl border border-white/10 overflow-hidden bg-[#0a0a0a]">
-      {/* ── Header bar ── */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-[#111] border-b border-white/[0.06]">
-        {/* Traffic lights */}
-        <div className="flex gap-1.5 shrink-0">
-          <span className="w-3 h-3 rounded-full bg-red-500/70" />
-          <span className="w-3 h-3 rounded-full bg-yellow-500/70" />
-          <span className="w-3 h-3 rounded-full bg-green-500/70" />
-        </div>
-        <span className="text-white/30 text-xs font-mono flex-1 truncate">
-          breachscope-sandbox · {sandbox.projectType} · root@container
-        </span>
-        {/* Stats pills */}
-        <div className="flex items-center gap-2 shrink-0">
-          {stats.map((s) => (
-            <span key={s.label} className="hidden sm:flex items-center gap-1">
-              <span className={clsx("text-[10px] font-mono font-bold", s.color)}>{s.value}</span>
-              <span className="text-white/15 text-[9px]">{s.label}</span>
-            </span>
-          ))}
-        </div>
-        <button onClick={() => setExpanded(!expanded)} className="text-white/20 hover:text-white/50 transition-colors ml-1 shrink-0">
-          <svg className={clsx("w-3.5 h-3.5 transition-transform duration-150", expanded && "rotate-180")}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+    <div className="space-y-4">
+
+      {/* ── Stats bar ── */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        {[
+          { label: "Findings",  value: sandbox.findingsCount, color: sandbox.findingsCount > 0 ? "text-red-400" : "text-green-400", bg: sandbox.findingsCount > 0 ? "bg-red-500/[0.06] border-red-500/15" : "bg-green-500/[0.06] border-green-500/15" },
+          { label: "Chains",    value: chains.length,         color: chains.length > 0 ? "text-orange-400" : "text-white/25",      bg: chains.length > 0 ? "bg-orange-500/[0.06] border-orange-500/15" : "bg-white/[0.03] border-white/[0.06]" },
+          { label: "Secrets",   value: credEntries.length,    color: credEntries.length > 0 ? "text-yellow-400" : "text-white/25",  bg: credEntries.length > 0 ? "bg-yellow-500/[0.06] border-yellow-500/15" : "bg-white/[0.03] border-white/[0.06]" },
+          { label: "Endpoints", value: mem?.discoveredEndpoints.length ?? 0, color: "text-white/50", bg: "bg-white/[0.03] border-white/[0.06]" },
+          { label: "Actions",   value: log.length,            color: "text-white/35",  bg: "bg-white/[0.03] border-white/[0.06]" },
+          { label: "Tokens",    value: sandbox.tokensUsed > 0 ? `${Math.round(sandbox.tokensUsed / 1000)}K` : "—", color: "text-white/25", bg: "bg-white/[0.03] border-white/[0.06]" },
+        ].map((s) => (
+          <div key={s.label} className={clsx("rounded-xl border px-3 py-2.5 text-center", s.bg)}>
+            <p className={clsx("text-base font-mono font-bold tabular-nums", s.color)}>{s.value}</p>
+            <p className="text-white/25 text-[10px] mt-0.5">{s.label}</p>
+          </div>
+        ))}
       </div>
 
-      {expanded && (
-        <>
-          {/* ── Attack chains highlight ── */}
-          {sandbox.attackChains.length > 0 && (
-            <div className="px-4 pt-3 pb-2 border-b border-white/[0.04] space-y-1.5">
-              <p className="text-white/20 text-[9px] font-semibold uppercase tracking-widest mb-2">Confirmed Attack Chains</p>
-              {sandbox.attackChains.map((chain, i) => (
-                <div key={i} className="flex items-start gap-2 font-mono">
-                  <span className="text-orange-500/70 text-[10px] shrink-0 mt-0.5">⛓</span>
-                  <span className="text-orange-200/70 text-[10px] leading-relaxed break-all">{chain}</span>
+      {/* ── AI Worldview / Narrative ── */}
+      {mem?.worldview && mem.worldview !== "Session just started. No information gathered yet." && (
+        <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+          <p className="text-white/30 text-[10px] font-semibold uppercase tracking-wider mb-2">AI Attack Narrative</p>
+          <p className="text-white/60 text-sm leading-relaxed">{mem.worldview}</p>
+        </div>
+      )}
+
+      {/* ── Attack chains ── */}
+      {chains.length > 0 && (
+        <div className="rounded-xl border border-orange-500/20 bg-orange-500/[0.04] overflow-hidden">
+          <div className="px-4 py-3 border-b border-orange-500/10">
+            <p className="text-orange-300/70 text-[10px] font-semibold uppercase tracking-wider">Confirmed Attack Chains</p>
+          </div>
+          <div className="divide-y divide-orange-500/[0.08]">
+            {chains.map((chain, i) => (
+              <div key={i} className="flex items-start gap-3 px-4 py-3">
+                <span className="text-orange-500/60 text-xs shrink-0 font-mono mt-0.5">{i + 1}</span>
+                <p className="text-orange-200/75 text-sm leading-relaxed">{chain}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasRichData && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+          {/* ── Discovered Secrets ── */}
+          {credEntries.length > 0 && (
+            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/[0.04] overflow-hidden">
+              <div className="px-4 py-3 border-b border-yellow-500/10">
+                <p className="text-yellow-300/70 text-[10px] font-semibold uppercase tracking-wider">
+                  Discovered Secrets <span className="text-yellow-500/50 font-mono ml-1">{credEntries.length}</span>
+                </p>
+              </div>
+              <div className="divide-y divide-yellow-500/[0.06] max-h-60 overflow-y-auto">
+                {credEntries.map(([key, val]) => (
+                  <div key={key} className="px-4 py-2.5 flex items-start gap-2 min-w-0">
+                    <span className="text-yellow-300/60 text-xs font-mono shrink-0 truncate max-w-[40%]">{key}</span>
+                    <span className="text-white/20 text-xs shrink-0">=</span>
+                    <span className="text-yellow-200/50 text-xs font-mono truncate flex-1">{String(val).slice(0, 60)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Confirmed Findings ── */}
+          {confirmedFindings.length > 0 && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/[0.04] overflow-hidden">
+              <div className="px-4 py-3 border-b border-red-500/10">
+                <p className="text-red-300/70 text-[10px] font-semibold uppercase tracking-wider">
+                  Sandbox Findings <span className="text-red-500/50 font-mono ml-1">{confirmedFindings.length}</span>
+                </p>
+              </div>
+              <div className="divide-y divide-red-500/[0.06] max-h-60 overflow-y-auto">
+                {confirmedFindings.map((f) => {
+                  const sevColor = f.severity === "critical" ? "text-red-400 bg-red-500/15 border-red-500/30"
+                    : f.severity === "high" ? "text-orange-400 bg-orange-500/15 border-orange-500/30"
+                    : f.severity === "medium" ? "text-yellow-400 bg-yellow-500/15 border-yellow-500/30"
+                    : "text-cyan-400 bg-cyan-500/15 border-cyan-500/30";
+                  const valColor = f.validation_confidence === "confirmed" ? "text-green-400"
+                    : f.validation_confidence === "likely" ? "text-yellow-400"
+                    : f.validation_confidence === "false_positive" ? "text-white/25 line-through"
+                    : "text-white/30";
+                  return (
+                    <div key={f.id} className="px-4 py-2.5 flex items-start gap-2 min-w-0">
+                      <span className={clsx("shrink-0 px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase mt-0.5", sevColor)}>
+                        {f.severity[0]!.toUpperCase()}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white/70 text-xs truncate">{f.title}</p>
+                        {f.cvss_score > 0 && <span className="text-white/25 text-[10px] font-mono">CVSS {f.cvss_score}</span>}
+                        {f.validation_confidence && (
+                          <span className={clsx("ml-2 text-[10px] font-mono", valColor)}>
+                            {f.validation_confidence} {f.validation_score != null ? `(${f.validation_score}/100)` : ""}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Open Ports & Framework Versions ── */}
+          {(mem!.openPorts.length > 0 || fwEntries.length > 0) && (
+            <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 space-y-3">
+              {mem!.openPorts.length > 0 && (
+                <div>
+                  <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider mb-2">Open Ports</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {mem!.openPorts.map((p) => (
+                      <span key={p} className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-300/70 text-xs font-mono">{p}</span>
+                    ))}
+                  </div>
                 </div>
+              )}
+              {fwEntries.length > 0 && (
+                <div>
+                  <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider mb-2">Framework Versions</p>
+                  <div className="space-y-1">
+                    {fwEntries.map(([fw, ver]) => (
+                      <div key={fw} className="flex items-center gap-2">
+                        <span className="text-white/50 text-xs font-mono">{fw}</span>
+                        <span className="text-white/25 text-xs font-mono">{ver}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── PTT Tree ── */}
+          {(pttVulnNodes.length > 0 || pttChildNodes.length > 0) && (
+            <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+              <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider mb-3">Pentest Task Tree</p>
+              <div className="space-y-1">
+                {pttRootNodes.map((root) => {
+                  const cfg = PTT_STATUS[root.status];
+                  return (
+                    <div key={root.id}>
+                      <div className="flex items-center gap-2">
+                        <span className={clsx("w-2 h-2 rounded-full shrink-0", cfg.dot)} />
+                        <span className={clsx("text-xs font-medium", cfg.text)}>{root.title}</span>
+                        <span className={clsx("text-[9px] font-mono border px-1 rounded", cfg.text, "border-current opacity-50")}>{cfg.label}</span>
+                      </div>
+                      <div className="ml-4 mt-1 space-y-1">
+                        {pttChildNodes.filter((n) => root.children.includes(n.id)).map((child) => {
+                          const cc = PTT_STATUS[child.status];
+                          return (
+                            <div key={child.id} className="flex items-center gap-2">
+                              <span className="text-white/10 text-[10px] font-mono shrink-0">└─</span>
+                              <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", cc.dot)} />
+                              <span className={clsx("text-xs", cc.text)}>{child.title}</span>
+                              <span className={clsx("text-[9px] font-mono", cc.text, "opacity-50")}>{cc.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* ── Discovered Endpoints ── */}
+      {(mem?.discoveredEndpoints.length ?? 0) > 0 && (
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+          <button
+            onClick={() => setEndpointsOpen(!endpointsOpen)}
+            className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/[0.02] transition-colors"
+          >
+            <svg className={clsx("w-3 h-3 text-white/20 transition-transform", endpointsOpen && "rotate-90")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            <span className="text-white/30 text-[10px] font-semibold uppercase tracking-wider">
+              Discovered Endpoints — {mem!.discoveredEndpoints.length}
+            </span>
+          </button>
+          {endpointsOpen && (
+            <div className="border-t border-white/[0.04] px-4 py-3 max-h-48 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+              {mem!.discoveredEndpoints.map((ep, i) => (
+                <span key={i} className="text-white/40 text-xs font-mono truncate">{ep}</span>
               ))}
             </div>
           )}
+        </div>
+      )}
 
-          {/* ── Key findings summary ── */}
-          {findings.length > 0 && (
-            <div className="px-4 pt-3 pb-2 border-b border-white/[0.04] space-y-1">
-              <p className="text-white/20 text-[9px] font-semibold uppercase tracking-widest mb-2">Discoveries</p>
-              {findings.slice(0, 6).map((f, i) => {
-                const line = parseTermLine(f);
-                const s = TERM_LINE_STYLES[line.type];
+      {/* ── Full Attack Log Terminal ── */}
+      {log.length > 0 && (
+        <div className="rounded-xl border border-white/10 overflow-hidden bg-[#0a0a0a]">
+          <button
+            onClick={() => setLogOpen(!logOpen)}
+            className="w-full flex items-center gap-3 px-4 py-3 bg-[#111] hover:bg-[#141414] transition-colors border-b border-white/[0.06]"
+          >
+            <div className="flex gap-1.5 shrink-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
+              <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
+            </div>
+            <span className="text-white/30 text-xs font-mono flex-1 text-left truncate">
+              root@breachscope · {sandbox.projectType} · {log.length} operations
+            </span>
+            <svg className={clsx("w-3.5 h-3.5 text-white/20 shrink-0 transition-transform duration-150", logOpen && "rotate-180")}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {logOpen && (
+            <div className="max-h-[520px] overflow-y-auto font-mono text-[10px] leading-[1.7] px-4 py-3 space-y-px select-text">
+              {log.map((entry) => {
+                const s = LOG_TYPE_STYLE[entry.type] ?? LOG_TYPE_STYLE.info;
+                const isHighlight = entry.type === "finding" || entry.type === "credential" || entry.type === "chain";
                 return (
-                  <div key={i} className="flex items-center gap-2 font-mono">
-                    <span className={clsx("text-[9px] shrink-0 min-w-[60px]", s.prefix)}>{line.prefix}</span>
-                    <span className={clsx("text-[10px] truncate", s.text)}>{line.text}</span>
+                  <div
+                    key={entry.step}
+                    className={clsx(
+                      "flex items-start gap-2 py-0.5 px-1 rounded-sm -mx-1",
+                      isHighlight && "bg-white/[0.03]"
+                    )}
+                  >
+                    <span className="text-white/10 w-5 text-right shrink-0 select-none tabular-nums">{entry.step}</span>
+                    <span className={clsx("shrink-0 px-1.5 py-px rounded border text-[9px] uppercase font-bold min-w-[52px] text-center", s.badge, s.badgeText)}>
+                      {entry.tool.slice(0, 8)}
+                    </span>
+                    <span className="text-white/20 shrink-0 truncate max-w-[120px] hidden sm:block">{entry.input.slice(0, 40)}</span>
+                    <span className={clsx("flex-1 truncate", s.line)}>{entry.output.slice(0, 120)}</span>
                   </div>
                 );
               })}
-              {findings.length > 6 && (
-                <p className="text-white/15 text-[9px] font-mono pl-16">+ {findings.length - 6} more findings</p>
-              )}
+              <div className="flex items-center gap-2 pt-1">
+                <span className="w-5 shrink-0" />
+                <span className="text-green-500/50 min-w-[52px] text-center font-mono">$</span>
+                <span className="inline-block w-2 h-3 bg-green-500/40 animate-pulse" />
+              </div>
             </div>
           )}
-
-          {/* ── Full attack terminal ── */}
-          {sandbox.attackLog.length > 0 && (
-            <div className="px-0">
-              <button
-                onClick={() => setTermExpanded(!termExpanded)}
-                className="w-full flex items-center gap-2 px-4 py-2.5 text-white/20 hover:text-white/40 hover:bg-white/[0.02] transition-colors border-b border-white/[0.04]"
-              >
-                <svg className={clsx("w-3 h-3 transition-transform", termExpanded && "rotate-90")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-                <span className="text-[9px] font-mono font-semibold uppercase tracking-widest">
-                  Full Session Log — {sandbox.attackLog.length} operations
-                </span>
-              </button>
-
-              {termExpanded && (
-                <div className="max-h-[480px] overflow-y-auto font-mono text-[10px] leading-[1.65] px-4 py-3 space-y-px select-text">
-                  {sandbox.attackLog.map((entry, i) => {
-                    const line = parseTermLine(entry);
-                    const s = TERM_LINE_STYLES[line.type];
-                    const isHighlight = ["finding_critical","finding_high","finding_medium","chain","credential","attempt_success"].includes(line.type);
-                    return (
-                      <div
-                        key={i}
-                        className={clsx(
-                          "flex items-start gap-2 py-px px-1 rounded-sm -mx-1",
-                          isHighlight && "bg-white/[0.025]"
-                        )}
-                      >
-                        <span className="text-white/10 w-6 text-right shrink-0 select-none tabular-nums">{i + 1}</span>
-                        <span className={clsx("shrink-0 min-w-[70px] text-right pr-2", s.prefix)}>{line.prefix}</span>
-                        <span className={clsx("break-all", s.text)}>{line.text}</span>
-                      </div>
-                    );
-                  })}
-                  {/* Blinking cursor at end */}
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="w-6 shrink-0" />
-                    <span className="text-green-500/50 min-w-[70px] text-right pr-2">$</span>
-                    <span className="inline-block w-2 h-3 bg-green-500/40 animate-pulse" />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </>
+        </div>
       )}
     </div>
   );
@@ -686,7 +848,7 @@ function generateMarkdown(
 
   const grouped: Record<string, Finding[]> = {};
   for (const f of findings) {
-    const s = f.severity.toUpperCase();
+    const s = typeof f.severity === "string" ? f.severity.toUpperCase() : "UNKNOWN";
     (grouped[s] ??= []).push(f);
   }
 
@@ -875,7 +1037,7 @@ async function generatePdf(
       margin: { left: MARGIN, right: MARGIN },
       head: [["Severity","Category","Title","File","Remediation"]],
       body: sorted.map((f) => [
-        f.severity.toUpperCase(),
+        typeof f.severity === "string" ? f.severity.toUpperCase() : "",
         f.category,
         f.title,
         f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : "—",
@@ -1592,7 +1754,8 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
 
   // Filtered findings
   const filteredFindings = findings.filter((f) => {
-    const sevOk = sevFilter === "ALL" || f.severity.toUpperCase() === sevFilter;
+    const sev = typeof f.severity === "string" ? f.severity.toUpperCase() : "";
+    const sevOk = sevFilter === "ALL" || sev === sevFilter;
     const catOk = catFilter === "ALL" || f.category === catFilter;
     return sevOk && catOk;
   });
@@ -1601,7 +1764,7 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
 
   const grouped: Record<"CRITICAL" | "HIGH" | "MEDIUM" | "LOW", Finding[]> = { CRITICAL: [], HIGH: [], MEDIUM: [], LOW: [] };
   for (const f of filteredFindings) {
-    const s = f.severity.toUpperCase() as keyof typeof grouped;
+    const s = (typeof f.severity === "string" ? f.severity.toUpperCase() : "LOW") as keyof typeof grouped;
     (grouped[s] ?? grouped.LOW).push(f);
   }
 
@@ -1764,7 +1927,7 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
               <div className="flex flex-wrap gap-2">
                 <Chip label="All" count={findings.length} active={sevFilter === "ALL" && catFilter === "ALL"} onClick={() => { setSev("ALL"); setCat("ALL"); }} />
                 {(["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const).map((s) => {
-                  const count = findings.filter((f) => f.severity.toUpperCase() === s).length;
+                  const count = findings.filter((f) => typeof f.severity === "string" && f.severity.toUpperCase() === s).length;
                   if (!count) return null;
                   return <Chip key={s} label={SEV[s].label} count={count} active={sevFilter === s} onClick={() => { setSev(s); setCat("ALL"); }} />;
                 })}

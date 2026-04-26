@@ -2,7 +2,7 @@ import path from "path";
 import { loadCredentials } from "./auth.js";
 import { logger } from "./logger.js";
 import type { Finding, ScanResult } from "./types.js";
-import type { AttackLogEntry } from "../agents/sandbox-agent.js";
+import type { AttackLogEntry, SandboxMemorySnapshot } from "../agents/sandbox-agent.js";
 
 export interface ToolRiskEntry {
   name: string;
@@ -29,6 +29,7 @@ export interface ProbeData {
     attackChains: string[];
     findingsCount: number;
     tokensUsed: number;
+    memorySnapshot?: SandboxMemorySnapshot;
   };
 }
 

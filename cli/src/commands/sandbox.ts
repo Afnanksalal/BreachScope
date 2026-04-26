@@ -1522,6 +1522,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
           attackChains: sandboxAgentResult.attackChains,
           findingsCount: sandboxAgentResult.findings.length,
           tokensUsed: sandboxAgentResult.tokensUsed,
+          memorySnapshot: sandboxAgentResult.memorySnapshot,
         },
       } : undefined;
 
