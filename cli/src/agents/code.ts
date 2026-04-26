@@ -1,7 +1,7 @@
 import { agentLoop } from "../core/ai.js";
 import { webSearch, crawlUrl } from "../core/crawler.js";
 import { logger } from "../core/logger.js";
-import type { AgentContext, AgentResult } from "../core/types.js";
+import type { AgentContext, AgentResult, Finding } from "../core/types.js";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { parseFindings } from "./dependency.js";
 
@@ -80,6 +80,51 @@ Use web_search to verify key formats, look up breach history for identified toke
 Return ONLY a JSON array of Finding objects: id, title, severity, category ("code"), description, remediation, references, file, line, detail.
 No markdown fences. Every finding must be actionable.`;
 
+interface PendingFinding {
+  id: string;
+  title: string;
+  severity: string;
+  description: string;
+  evidence: string;
+  remediation: string;
+  file?: string;
+  line?: number;
+}
+
+function makeCodeFeedbackStore() {
+  const findings: PendingFinding[] = [];
+  let counter = 0;
+
+  return {
+    findings,
+    save(title: string, severity: string, description: string, evidence: string, remediation: string, file?: string, line?: number): string {
+      const id = `code-${++counter}`;
+      findings.push({ id, title, severity, description, evidence, remediation, file, line });
+      return JSON.stringify({ success: true, id, total: findings.length });
+    },
+    get(): string {
+      if (findings.length === 0) return JSON.stringify({ findings: [], note: "No findings saved yet." });
+      return JSON.stringify({
+        total: findings.length,
+        findings: findings.map((f) => ({
+          id: f.id,
+          severity: f.severity,
+          title: f.title,
+          file: f.file,
+          has_evidence: f.evidence.length > 10,
+        })),
+        instruction: "Review each finding. Use remove_finding(id) for any finding without concrete evidence or that is a false positive.",
+      });
+    },
+    remove(id: string): string {
+      const idx = findings.findIndex((f) => f.id === id);
+      if (idx === -1) return JSON.stringify({ success: false, reason: "Not found" });
+      const removed = findings.splice(idx, 1)[0]!;
+      return JSON.stringify({ success: true, removed: removed.title, remaining: findings.length });
+    },
+  };
+}
+
 const TOOLS: ChatCompletionTool[] = [
   {
     type: "function",
@@ -92,6 +137,48 @@ const TOOLS: ChatCompletionTool[] = [
           path: { type: "string", description: "Relative file path (e.g. src/auth/login.ts)" },
         },
         required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "save_finding",
+      description: "Submit a confirmed vulnerability finding. ONLY call this when you have read the actual code and have concrete evidence — exact file, exact line, exact vulnerable pattern. Do NOT call for speculative or pattern-matched findings without reading the code.",
+      parameters: {
+        type: "object",
+        properties: {
+          title:       { type: "string" },
+          severity:    { type: "string", enum: ["critical", "high", "medium", "low"] },
+          description: { type: "string", description: "Attack path: how an attacker triggers this, what they gain. Include exact line/pattern from the code." },
+          evidence:    { type: "string", description: "The exact vulnerable code snippet or value from the file you read." },
+          remediation: { type: "string" },
+          file:        { type: "string", description: "Relative file path" },
+          line:        { type: "number", description: "Line number" },
+        },
+        required: ["title", "severity", "description", "evidence", "remediation"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_findings",
+      description: "Review all findings you have saved so far. Call this periodically to check your progress and verify quality. Use remove_finding() on any finding that lacks concrete evidence or might be a false positive.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "remove_finding",
+      description: "Remove a finding that turns out to be a false positive, speculative, or lacks concrete evidence. Better to remove a weak finding than report it.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Finding ID from get_findings()" },
+        },
+        required: ["id"],
       },
     },
   },
@@ -131,6 +218,7 @@ const PRELOAD_CHARS = 24_000;
 export async function runCodeAgent(ctx: AgentContext): Promise<AgentResult> {
   const scanMode = ctx.scanMode ?? "all";
   const sourcesCrawled: string[] = [];
+  const store = makeCodeFeedbackStore();
 
   const system = scanMode === "full"
     ? `${SYSTEM_BUG}\n\n---\n\nADDITIONALLY — this is a FULL scan. After finding code bugs, also hunt for:\n${SYSTEM_BREACH}`
@@ -174,7 +262,15 @@ export async function runCodeAgent(ctx: AgentContext): Promise<AgentResult> {
 
   const userMessage = `${modeHint}
 
-You have access to read_file — USE IT. Read the actual source files and find real bugs in the code. Do not rely on pattern descriptions — audit the actual implementation.
+WORKFLOW:
+1. Read files using read_file — start with pre-loaded files below, then request more
+2. For every confirmed vulnerability: call save_finding() with the exact code snippet as evidence
+3. Every 5-6 tool calls: call get_findings() to review your progress
+4. Use remove_finding() on any finding that is speculative or lacks a real code snippet
+5. At the end: call get_findings() one final time and remove any weak findings before finishing
+
+FEEDBACK LOOP: save_finding → get_findings → remove_finding is your quality gate.
+Only findings with concrete evidence (exact vulnerable code) should survive to the end.
 
 Pre-loaded files (highest security priority):
 ${preloaded}
@@ -185,7 +281,8 @@ ${remaining || "(none)"}
 Already found by static scanner (skip these, use for context only):
 ${ctx.existingFindings.filter((f) => f.category === "code").slice(0, 8).map((f) => `- [${f.severity}] ${f.title}${f.file ? ` (${f.file})` : ""}`).join("\n") || "(none)"}
 
-Strategy: review the pre-loaded files first. Then read_file any file that looks like it handles auth, payments, file uploads, database queries, user input, or sessions. Find bugs the static scanner missed.`;
+Strategy: review pre-loaded files first. Then read_file anything that handles auth, payments, file uploads, DB queries, user input, sessions, or external HTTP calls. Find bugs the static scanner missed.
+When done reviewing, output any remaining findings as a JSON array (fallback for anything not submitted via save_finding).`;
 
   const { content, tokensUsed } = await agentLoop(
     {
@@ -193,17 +290,16 @@ Strategy: review the pre-loaded files first. Then read_file any file that looks 
       messages: [{ role: "user", content: userMessage }],
       tools: TOOLS,
       temperature: 0.1,
-      maxTokens: 4096,
+      maxTokens: 8192,
+      maxIterations: 35,
     },
     async (toolName, args) => {
       if (toolName === "read_file") {
         const reqPath = String(args["path"] ?? "").replace(/\\/g, "/");
-        // Exact match
         if (ctx.files[reqPath]) {
           sourcesCrawled.push(`file:${reqPath}`);
           return `=== ${reqPath} ===\n${ctx.files[reqPath]}`;
         }
-        // Suffix match (in case GPT omits leading dir)
         const match = Object.entries(ctx.files).find(
           ([p]) => p.replace(/\\/g, "/").endsWith(reqPath) || reqPath.endsWith(p.replace(/\\/g, "/"))
         );
@@ -213,7 +309,18 @@ Strategy: review the pre-loaded files first. Then read_file any file that looks 
         }
         return `File not found: ${reqPath}\nAvailable:\n${Object.keys(ctx.files).join("\n")}`;
       }
-
+      if (toolName === "save_finding") {
+        const a = args as Record<string, unknown>;
+        return store.save(
+          String(a["title"] ?? ""), String(a["severity"] ?? "low"),
+          String(a["description"] ?? ""), String(a["evidence"] ?? ""),
+          String(a["remediation"] ?? ""),
+          a["file"] ? String(a["file"]) : undefined,
+          a["line"] ? Number(a["line"]) : undefined,
+        );
+      }
+      if (toolName === "get_findings") return store.get();
+      if (toolName === "remove_finding") return store.remove(String(args["id"] ?? ""));
       if (toolName === "web_search") {
         const query = String(args["query"] ?? "");
         sourcesCrawled.push(`web:${query}`);
@@ -228,8 +335,26 @@ Strategy: review the pre-loaded files first. Then read_file any file that looks 
     }
   );
 
-  const findings = parseFindings(content, "code");
-  logger.debug(`[code-agent] ${findings.length} findings, ${sourcesCrawled.length} files/searches`);
+  // Primary: findings submitted via save_finding tool
+  const toolFindings: Finding[] = store.findings.map((f) => ({
+    id: f.id,
+    title: f.title,
+    severity: f.severity as Finding["severity"],
+    category: "code" as const,
+    description: f.description,
+    remediation: f.remediation,
+    references: [],
+    file: f.file,
+    line: f.line,
+    detail: f.evidence.slice(0, 500),
+  }));
+
+  // Fallback: parse JSON from final text output (deduped)
+  const toolTitles = new Set(toolFindings.map((f) => f.title.toLowerCase()));
+  const textFindings = parseFindings(content, "code").filter((f) => !toolTitles.has(f.title.toLowerCase()));
+
+  const findings = [...toolFindings, ...textFindings];
+  logger.debug(`[code-agent] ${findings.length} findings (${toolFindings.length} via tool, ${textFindings.length} from text), ${sourcesCrawled.length} sources`);
 
   return { agent: "code", findings, reasoning: content, sourcesCrawled, tokensUsed };
 }

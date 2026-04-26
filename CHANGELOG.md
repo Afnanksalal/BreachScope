@@ -6,7 +6,37 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased]
+## [0.2.0] — 2026-04-26
+
+### Added
+
+**AI-first sandbox flow**
+- Phase 0 codebase understanding: before any Docker work, an AI agent reads every source file, `.env`, config, and secret to build a full security picture — real credentials, auth mechanism, database, all endpoints
+- AI-generated Dockerfile: no templates — the AI writes a purpose-built Dockerfile from what it learned about the app (correct base image, start command, port, all deps)
+- `.env` and all secrets are guaranteed to land in the container: `.dockerignore` is temporarily neutralized (backed up and restored after build) so no secret file is excluded from the image
+- `projectContext` string (full security summary from Phase 0) passed to the attack agent — it attacks known targets with precision instead of blind fuzzing
+- Phase 1 initial message now includes: test suite execution, env file discovery, route mapping, and credential extraction before attacking
+
+**Aggressive Firecrawl / web research in all agents**
+- `web_search` and `crawl_url` tools added to sandbox agent — looks up HackTricks, PayloadsAllTheThings, Exploit-DB, NVD CVE pages, and GitHub PoC repos before every attack
+- `crawl_url` tool added to code agent, dependency agent, and blackbox agent
+- `web_search` description changed from "use sparingly" to aggressive usage across all agents
+- All agents instructed to research every identified framework version, library, and CVE immediately
+- `webSearch` default result limit raised from 5 → 10
+- `web_search` limits: sandbox 10, code 8, dependency 10, blackbox 8
+
+**Sandbox reliability**
+- Remote config (`fetchRemoteConfig`) now called at sandbox startup — API keys stored in dashboard settings are applied automatically, same as `scan` command
+- Unknown project type no longer exits — generates a full Ubuntu 22.04 container with `nmap`, `sqlmap`, `nikto`, `curl`, `python3`, `nodejs`, `postgresql-client`, `redis-tools` pre-installed, auto-detects and starts whatever app it finds
+- `detectProjectType` now scans one level of subdirectories — running from a monorepo root correctly identifies the project type
+
+### Changed
+- Sandbox startup timeout raised from 60 → 90 seconds (max 180s) to accommodate slower builds
+- AI attack agent log display raised from 10 → 15 entries in verbose mode
+
+---
+
+## [0.1.0] — 2026-04-25
 
 ### Added
 
@@ -21,101 +51,46 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 - `exec_cmd` tool accepts `timeout_seconds` parameter (up to 300s) for long-running installs
 - Language-specific attack hints injected into system prompt per project type
 
-**10-language sandbox support**
-- Node.js / Bun, Python, Go, Rust, Ruby — existing
-- Java (Maven/Gradle → Spring Boot, Quarkus), PHP (Laravel/Symfony/plain), .NET (ASP.NET Core), Elixir (Phoenix), Dart (Shelf/Dart Frog) — new
-
-**Sandbox Terminal in dashboard**
-- Full terminal replay component (`SandboxTerminal`) showing every step the agent took
-- 11 event types with color coding: `finding_critical/high/medium/low`, `chain`, `credential`, `attempt_success/partial/failed`, `exec`, `http`, `info`
-- Traffic light dots, monospace `#0a0a0a` background, attack chain highlight, line numbers, blinking cursor
-
-**Free threat intelligence (no API key required)**
-- `webSearch()` falls back to free public APIs when `FIRECRAWL_API_KEY` is not set
-- OSV.dev POST API — comprehensive open vulnerability database
-- npm advisory bulk API — security advisories with affected version ranges
-- NVD CVE keyword search — NIST national vulnerability database
-- Firecrawl used as enhancement when available, not a hard requirement
-
-**AI always-on**
-- AI analysis runs automatically when `OPENAI_API_KEY` is set — no `--ai` flag needed
-- Remote API keys pulled from dashboard settings unconditionally (no flag gate)
-- `--ai` flag removed; `--browser` flag removed
-
-### Changed
-- **Active pentest** moved from Playwright `--browser` agent into Docker sandbox — all active exploitation now inside an isolated container
-- **Smart project detection** — when running `breachscope scan --url <url>` with no local project manifest, static scanners are automatically skipped
-- `ProbeActivity.attack` → `ProbeActivity.sandbox` in dashboard type contract
-- `deduplicatedFindings` removed from `ReportSynthesis` interface (was declared but never populated; fallback always executed)
-- Orphaned files deleted: `agents/attack-probe.ts`, `agents/browser-probe.ts`
-
-### Fixed
-- `TS2532` in `sandbox-agent.ts`: `toolMatch[1]` optional chaining added
-- `opts.ai` gate in `scan.ts` removed — remote API keys now always applied when available
-
----
-
-## [0.1.0] — 2026-04-25
-
-### Added
-
-**Multi-language dependency scanning**
+**10-language dependency scanning**
 - Python: `requirements.txt`, `requirements-dev.txt`, `requirements/base.txt`, `pyproject.toml` (PEP 621, Poetry, uv/rye), `Pipfile`, `setup.py`
 - Go: `go.mod` (single-line and block `require` syntax)
 - Rust: `Cargo.toml` + `Cargo.lock` (`[[package]]` block parsing; lockfile preferred for exact versions)
 - Ruby: `Gemfile.lock` (GEM section) and `Gemfile`
-- All ecosystems query OSV.dev with correct tags: `PyPI`, `Go`, `crates.io`, `RubyGems`
-- Auto-detection runs all applicable language scanners in parallel
-- PyPI metadata API: GitHub repo, weekly downloads, maintainer count, `requires_dist` dependencies
-- `PYTHON_KNOWN`, `GO_KNOWN`, `RUST_KNOWN` maps (30+ packages each with GitHub slugs)
-- Cross-ecosystem collision prevention: detection map keyed as `${ecosystem}:${name}`
-- Lockfile-exact version resolution: reads `package-lock.json` (v1/v2/v3) so OSV gets exact installed versions, not range specifiers
+- Java, PHP, .NET, Elixir, Dart — added
+- All ecosystems query OSV.dev with correct ecosystem tags
 
 **Scan modes**
 - `--breach`: 36 credential/infra patterns + aggressive supply chain CVE hunting
 - `--bug`: 43 code vulnerability patterns + deep code AI agent
 - `--breach --bug` (full): 66 total patterns, all scanners, both AI personalities
-- Mode label in CLI banner: BREACH (red), BUG (yellow), FULL (purple)
 
 **Static code patterns (66 total in full mode)**
 - Base (13): hardcoded secrets, `eval()`, SQL concat, weak crypto, CORS wildcard, prototype pollution, path traversal, SSL verify disabled, error stack exposure
-- Bug (+30): Python `pickle.loads`, `yaml.load` without SafeLoader, `subprocess shell=True`, `os.system` with variable; Go `fmt.Sprintf` SQL, `unsafe.Pointer`; Rust unsafe blocks; SSRF, open redirect, mass assignment, NoSQL injection, `dangerouslySetInnerHTML`, JWT `alg:none`, ReDoS, template injection, zip-slip, timing attack, XXE, LDAP injection
-- Breach (+23): GitHub PAT, Stripe/OpenAI/Anthropic/Slack/Supabase/SendGrid/Twilio/AWS keys, Firebase private key, DB connection strings with credentials, debug endpoints, admin routes, DigitalOcean/Cloudflare/Heroku/Vercel tokens, npm token, base64 SSH key
+- Bug (+30): Python `pickle.loads`, `yaml.load`, `subprocess shell=True`; Go `fmt.Sprintf` SQL, `unsafe.Pointer`; Rust unsafe blocks; SSRF, open redirect, mass assignment, NoSQL injection, `dangerouslySetInnerHTML`, JWT `alg:none`, ReDoS, template injection, zip-slip, timing attack, XXE, LDAP injection
+- Breach (+23): GitHub PAT, Stripe/OpenAI/Anthropic/Slack/Supabase/SendGrid/Twilio/AWS keys, Firebase private key, DB connection strings, debug endpoints, admin routes, cloud tokens
 
-**Live service probing**
-- Discovers SaaS services from codebase and prompts for credentials interactively when `OPENAI_API_KEY` is set
-- Step-by-step action logging: HTTP, search, crawl operations with method badges
+**Free threat intelligence (no API key required)**
+- OSV.dev POST API — comprehensive open vulnerability database
+- npm advisory bulk API — security advisories with affected version ranges
+- NVD CVE keyword search — NIST national vulnerability database
 
-**AI agents**
-- Mode-aware orchestrator: breach favors dependency+toolchain, bug favors code, full runs all
-- Code agent: three system prompts (`SYSTEM_ALL`, `SYSTEM_BUG`, `SYSTEM_BREACH`) selected at runtime; uses `read_file` tool to strategically audit actual source files
-- Dependency agent: three system prompts with mode-appropriate CVE/advisory research
-- Shared dependency deduplication: packages required by multiple parents are audited once; `sharedPackages` map shows which parents share each dep
-- Report agent: compact finding summaries sent to GPT (not full objects), returns executive summary + attack chains only — no token truncation
-
-**Scorecard improvements**
-- CI/CD practice checks (`Pinned-Dependencies`, `Token-Permissions`, `Code-Review`, `SAST`) reclassified as `[Maintainer Practice]` with `low`/`info` severity — these describe the package dev team's workflow, not vulnerabilities in the package itself
-- `Vulnerabilities` check cross-referenced with OSV: downgraded to `info` when OSV confirms 0 CVEs for the installed version (historical repo count, not version-specific)
+**AI always-on**
+- AI analysis runs automatically when `OPENAI_API_KEY` is set — no `--ai` flag
+- Remote API keys pulled from dashboard settings unconditionally
+- `--ai` and `--browser` flags removed
 
 **Web dashboard**
-- AI synthesis section: executive summary, top priority, attack chains rendered at top of Overview tab
-- Tool cards: per-tool findings inline, GitHub link, installed version display, CVE version label
-- `aiReport` column in scans table stores executive summary/attack chains as JSON
-- Probe Activity tab: `ServiceProbeCard` (step log with HTTP/search/crawl badges)
-- Real PDF export: jsPDF + jspdf-autotable — dark header, severity boxes, full findings table, dependency risk table (top 40), probe log, page numbers
-- Findings: `detail` column in DB stores matched code snippet; shown as "Matched Code" block in FindingCard
-- Scan mode badge in list: red (breach), yellow (bug), purple (full)
+- AI synthesis section: executive summary, top priority, attack chains
+- Sandbox Terminal: full terminal replay — every command, HTTP request, credential found, attack chain
+- Real PDF export: jsPDF + jspdf-autotable
+- AES-256-GCM encrypted stored API keys
 
-**CLI**
-- `push-scan.ts` sends `aiReport`, `github`, `version` per-tool, and `detail` per-finding
-- Sub-toolchain scan returns `sharedPackages` record; shared deps shown in CLI dashboard
-
-### Changed
-- OSS pipeline is fully ecosystem-aware: PyPI uses `fetchPypiMeta`, Go infers GitHub from module path
-- Sub-toolchain `fetchSubDependencies` caps PyPI sub-deps at 20; Go/Rust/Ruby return `[]`
-- `mergedFindings` built from raw static findings + net-new AI findings — GPT's curated subset never truncates the count sent to the dashboard
-- Dashboard main metrics: removed "Bugs Found" and "Breach Issues" stat cards (always showed 0)
+### Fixed
+- `opts.ai` gate in `scan.ts` removed — remote API keys always applied
+- `deduplicatedFindings` removed from `ReportSynthesis` (was declared, never populated)
+- Orphaned files deleted: `agents/attack-probe.ts`, `agents/browser-probe.ts`
 
 ---
 
+[0.2.0]: https://github.com/Afnanksalal/BreachScope/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Afnanksalal/BreachScope/releases/tag/v0.1.0

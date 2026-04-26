@@ -56,6 +56,27 @@ export async function promptConfirm(question: string): Promise<boolean> {
   return answer === "" || /^y(es)?$/i.test(answer);
 }
 
+/** Numbered list selection — returns the chosen item */
+export async function promptSelect<T extends { label: string }>(
+  question: string,
+  choices: T[]
+): Promise<T> {
+  process.stdout.write(`\n${question}\n\n`);
+  choices.forEach((c, i) => {
+    process.stdout.write(`  [${i + 1}] ${c.label}\n`);
+  });
+  process.stdout.write("\n");
+
+  while (true) {
+    const answer = await promptText(`  Enter number [1]: `);
+    const n = answer === "" ? 1 : parseInt(answer, 10);
+    if (!isNaN(n) && n >= 1 && n <= choices.length) {
+      return choices[n - 1]!;
+    }
+    process.stdout.write(`  Invalid choice. Enter 1–${choices.length}.\n`);
+  }
+}
+
 /**
  * Holds credentials in memory with a destroy() method that zeros all values.
  * JavaScript strings are immutable so true zeroing isn't possible, but we clear

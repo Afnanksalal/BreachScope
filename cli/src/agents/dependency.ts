@@ -60,7 +60,89 @@ Use web_search and crawl_url to look up exact CVE details, NVD CVSS scores, and 
 Return ONLY a JSON array of Finding objects with: id, title, severity, category ("dependency"), description, remediation, references, tool.
 No markdown fences.`;
 
+interface PendingFinding {
+  id: string;
+  title: string;
+  severity: string;
+  description: string;
+  evidence: string;
+  remediation: string;
+  references: string[];
+}
+
+function makeFeedbackStore() {
+  const findings: PendingFinding[] = [];
+  let counter = 0;
+
+  return {
+    findings,
+    save(title: string, severity: string, description: string, evidence: string, remediation: string, references: string[]): string {
+      const id = `dep-${++counter}`;
+      findings.push({ id, title, severity, description, evidence, remediation, references });
+      return JSON.stringify({ success: true, id, total: findings.length });
+    },
+    get(): string {
+      if (findings.length === 0) return JSON.stringify({ findings: [], note: "No findings saved yet." });
+      return JSON.stringify({
+        total: findings.length,
+        findings: findings.map((f) => ({
+          id: f.id, severity: f.severity, title: f.title,
+          has_evidence: f.evidence.length > 10,
+        })),
+        instruction: "Review each finding. Use remove_finding(id) on any finding that is speculative, lacks a confirmed CVE/incident, or where the installed version is actually patched.",
+      });
+    },
+    remove(id: string): string {
+      const idx = findings.findIndex((f) => f.id === id);
+      if (idx === -1) return JSON.stringify({ success: false, reason: "Not found" });
+      const removed = findings.splice(idx, 1)[0]!;
+      return JSON.stringify({ success: true, removed: removed.title, remaining: findings.length });
+    },
+  };
+}
+
 const TOOLS: ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "save_finding",
+      description: "Submit a confirmed dependency vulnerability. ONLY call with concrete evidence: a confirmed CVE with matching version range, a confirmed supply chain incident, or a verified malicious package. Do NOT speculate.",
+      parameters: {
+        type: "object",
+        properties: {
+          title:       { type: "string" },
+          severity:    { type: "string", enum: ["critical", "high", "medium", "low"] },
+          description: { type: "string", description: "Exact package name, installed version, vulnerable version range, CVE ID or incident reference, and attack impact." },
+          evidence:    { type: "string", description: "CVE ID, advisory URL, or direct quote from the advisory confirming the vulnerability." },
+          remediation: { type: "string", description: "Exact fix version or action." },
+          references:  { type: "array", items: { type: "string" }, description: "Advisory URLs" },
+        },
+        required: ["title", "severity", "description", "evidence", "remediation"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_findings",
+      description: "Review all findings saved so far. Call periodically to check quality — remove any speculative finding that lacks a real CVE or confirmed incident.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "remove_finding",
+      description: "Remove a finding that is speculative, lacks evidence, or where the installed version is not actually in the vulnerable range.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+        },
+        required: ["id"],
+      },
+    },
+  },
   {
     type: "function",
     function: {
@@ -136,8 +218,9 @@ const TOOLS: ChatCompletionTool[] = [
 export async function runDependencyAgent(ctx: AgentContext): Promise<AgentResult> {
   const scanMode = ctx.scanMode ?? "all";
   const sourcesCrawled: string[] = [];
+  const store = makeFeedbackStore();
 
-  const system = scanMode === "full" ? SYSTEM_BREACH  // full mode: use aggressive breach hunting for deps
+  const system = scanMode === "full" ? SYSTEM_BREACH
     : scanMode === "breach" ? SYSTEM_BREACH
     : scanMode === "bug" ? SYSTEM_BUG
     : SYSTEM_ALL;
@@ -150,12 +233,24 @@ export async function runDependencyAgent(ctx: AgentContext): Promise<AgentResult
       messages: [{ role: "user", content: userMessage }],
       tools: TOOLS,
       temperature: 0.15,
-      maxTokens: 4096,
+      maxTokens: 8192,
+      maxIterations: 30,
     },
     async (toolName, args) => {
       const pkg = String(args["package_name"] ?? "");
       const query = String(args["query"] ?? "");
 
+      if (toolName === "save_finding") {
+        const a = args as Record<string, unknown>;
+        return store.save(
+          String(a["title"] ?? ""), String(a["severity"] ?? "low"),
+          String(a["description"] ?? ""), String(a["evidence"] ?? ""),
+          String(a["remediation"] ?? ""),
+          Array.isArray(a["references"]) ? (a["references"] as string[]) : [],
+        );
+      }
+      if (toolName === "get_findings") return store.get();
+      if (toolName === "remove_finding") return store.remove(String(args["id"] ?? ""));
       if (toolName === "search_vulnerabilities") {
         sourcesCrawled.push(`npm-advisories:${pkg}`);
         return fetchNpmAdvisories(pkg);
@@ -181,8 +276,25 @@ export async function runDependencyAgent(ctx: AgentContext): Promise<AgentResult
     }
   );
 
-  const findings = parseFindings(content, "dependency");
-  logger.debug(`[dependency-agent] ${findings.length} findings parsed`);
+  // Primary: tool-submitted findings
+  const toolFindings: Finding[] = store.findings.map((f) => ({
+    id: f.id,
+    title: f.title,
+    severity: f.severity as Finding["severity"],
+    category: "dependency" as const,
+    description: f.description,
+    remediation: f.remediation,
+    references: f.references,
+    tool: "ai",
+    detail: f.evidence.slice(0, 400),
+  }));
+
+  // Fallback: JSON from final text (deduped)
+  const toolTitles = new Set(toolFindings.map((f) => f.title.toLowerCase()));
+  const textFindings = parseFindings(content, "dependency").filter((f) => !toolTitles.has(f.title.toLowerCase()));
+
+  const findings = [...toolFindings, ...textFindings];
+  logger.debug(`[dependency-agent] ${findings.length} findings (${toolFindings.length} via tool, ${textFindings.length} from text)`);
 
   return {
     agent: "dependency",
@@ -210,13 +322,24 @@ function buildUserMessage(ctx: AgentContext, scanMode: string): string {
 
   return `${modeInstruction}
 
+WORKFLOW:
+1. Research packages using search_vulnerabilities, fetch_osv_data, fetch_github_advisory, web_search, crawl_url
+2. For each confirmed vulnerability: call save_finding() with CVE ID or advisory URL as evidence
+3. Every 5-6 researched packages: call get_findings() to review quality
+4. Use remove_finding() on any finding where the installed version is not in the vulnerable range, or you can't confirm a real CVE/incident
+5. Final pass: call get_findings() and remove any speculative findings before finishing
+
+FEEDBACK LOOP: save_finding → get_findings → remove_finding is your quality gate.
+Only findings with a confirmed CVE or documented incident should survive.
+
 package.json dependencies:
 ${JSON.stringify(deps, null, 2)}
 
 Total unique packages: ${ctx.dependencies.length}
 All package names: ${ctx.dependencies.join(", ")}
 
-Use your tools to research the riskiest packages. Be thorough — prioritize by impact.`;
+Research the riskiest packages first. Be thorough — prioritize packages used in auth, HTTP handling, parsing, and file operations.
+When done, output remaining findings as a JSON array (fallback for anything not submitted via save_finding).`;
 }
 
 function parseFindings(content: string, category: Finding["category"]): Finding[] {

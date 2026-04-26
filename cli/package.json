@@ -1,6 +1,6 @@
 {
   "name": "breachscope",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Supply chain & toolchain breach scanner — audit your stack before it audits you.",
   "bin": {
     "breachscope": "./dist/index.js",

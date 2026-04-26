@@ -165,26 +165,44 @@ export type ProjectType =
   | "unknown";
 
 export function detectProjectType(cwd: string): ProjectType {
-  if (fs.existsSync(path.join(cwd, "package.json"))) return "node";
+  const type = _detectInDir(cwd);
+  if (type !== "unknown") return type;
+
+  // Scan one level of subdirectories (monorepo root support)
+  try {
+    const entries = fs.readdirSync(cwd, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const sub = path.join(cwd, entry.name);
+      const subType = _detectInDir(sub);
+      if (subType !== "unknown") return subType;
+    }
+  } catch { /* ignore */ }
+
+  return "unknown";
+}
+
+function _detectInDir(dir: string): ProjectType {
+  if (fs.existsSync(path.join(dir, "package.json"))) return "node";
   if (
-    fs.existsSync(path.join(cwd, "requirements.txt")) ||
-    fs.existsSync(path.join(cwd, "pyproject.toml")) ||
-    fs.existsSync(path.join(cwd, "setup.py"))
+    fs.existsSync(path.join(dir, "requirements.txt")) ||
+    fs.existsSync(path.join(dir, "pyproject.toml")) ||
+    fs.existsSync(path.join(dir, "setup.py"))
   ) return "python";
-  if (fs.existsSync(path.join(cwd, "go.mod"))) return "go";
-  if (fs.existsSync(path.join(cwd, "Cargo.toml"))) return "rust";
-  if (fs.existsSync(path.join(cwd, "Gemfile"))) return "ruby";
+  if (fs.existsSync(path.join(dir, "go.mod"))) return "go";
+  if (fs.existsSync(path.join(dir, "Cargo.toml"))) return "rust";
+  if (fs.existsSync(path.join(dir, "Gemfile"))) return "ruby";
   if (
-    fs.existsSync(path.join(cwd, "pom.xml")) ||
-    fs.existsSync(path.join(cwd, "build.gradle")) ||
-    fs.existsSync(path.join(cwd, "build.gradle.kts"))
+    fs.existsSync(path.join(dir, "pom.xml")) ||
+    fs.existsSync(path.join(dir, "build.gradle")) ||
+    fs.existsSync(path.join(dir, "build.gradle.kts"))
   ) return "java";
-  if (fs.existsSync(path.join(cwd, "composer.json"))) return "php";
-  if (
-    fs.readdirSync(cwd).some((f) => f.endsWith(".csproj") || f.endsWith(".sln"))
-  ) return "dotnet";
-  if (fs.existsSync(path.join(cwd, "mix.exs"))) return "elixir";
-  if (fs.existsSync(path.join(cwd, "pubspec.yaml"))) return "dart";
+  if (fs.existsSync(path.join(dir, "composer.json"))) return "php";
+  try {
+    if (fs.readdirSync(dir).some((f) => f.endsWith(".csproj") || f.endsWith(".sln"))) return "dotnet";
+  } catch { /* ignore */ }
+  if (fs.existsSync(path.join(dir, "mix.exs"))) return "elixir";
+  if (fs.existsSync(path.join(dir, "pubspec.yaml"))) return "dart";
   return "unknown";
 }
 
@@ -477,11 +495,26 @@ CMD ["./server"]
     }
 
     default:
-      return `FROM alpine:3.20
+      // Unknown project type — build a generic attack container with the code mounted.
+      // Installs common runtimes and recon tools, then tries to auto-detect and start whatever is here.
+      return `FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y \\
+    curl wget netcat-openbsd nmap sqlmap nikto \\
+    python3 python3-pip nodejs npm \\
+    postgresql-client redis-tools jq git \\
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . .
-EXPOSE 3000
-CMD ["sh", "-c", "echo 'Unknown project type' && sleep 3600"]
+EXPOSE 3000 8000 8080
+CMD ["sh", "-c", "\\
+  echo '=== BreachScope sandbox: auto-detecting project ===' && \\
+  if [ -f package.json ]; then npm install --silent 2>/dev/null; node $(node -e \"try{const p=require('./package.json');console.log(p.main||'index.js')}catch(e){console.log('index.js')}\") 2>/dev/null || npm start 2>/dev/null; \\
+  elif [ -f requirements.txt ]; then pip install -q -r requirements.txt 2>/dev/null; python3 -m flask run --host=0.0.0.0 --port=8000 2>/dev/null || python3 -m http.server 8000; \\
+  elif [ -f manage.py ]; then python3 manage.py runserver 0.0.0.0:8000 2>/dev/null; \\
+  elif [ -f app.py ] || [ -f main.py ]; then python3 app.py 2>/dev/null || python3 main.py 2>/dev/null || python3 -m http.server 8000; \\
+  else python3 -m http.server 8000; \\
+  fi"]
 `;
   }
 }

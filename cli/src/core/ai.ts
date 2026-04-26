@@ -17,7 +17,7 @@ export function getOpenAI(apiKey?: string): OpenAI {
   return _client;
 }
 
-export const AI_MODEL = "gpt-4o";
+export const AI_MODEL = "gpt-4.1";
 
 export interface CompletionOptions {
   system: string;
@@ -70,7 +70,26 @@ export async function complete(opts: CompletionOptions): Promise<CompletionResul
   };
 }
 
-/** Run an agentic loop: call → execute tools → call again until no tool calls remain. */
+/** Prune tool result messages from the middle to recover from context overflow.
+ *  Keeps the original user message and the most recent exchanges intact. */
+function pruneToolResults(messages: ChatCompletionMessageParam[], keepTail = 6): ChatCompletionMessageParam[] {
+  const first = messages[0]!; // original user message
+  const tail = messages.slice(-keepTail);
+  // Make sure we don't duplicate the first message
+  const tailHasFirst = tail.some((m) => m === first);
+  return tailHasFirst ? tail : [first, ...tail];
+}
+
+function isContextLengthError(e: unknown): boolean {
+  if (e instanceof Error) {
+    const msg = e.message.toLowerCase();
+    return msg.includes("context_length_exceeded") || msg.includes("maximum context length") || msg.includes("reduce the length");
+  }
+  return false;
+}
+
+/** Run an agentic loop: call → execute tools → call again until no tool calls remain.
+ *  On context overflow: prune old tool results and retry rather than crashing. */
 export async function agentLoop(
   opts: CompletionOptions,
   executeTool: (name: string, args: Record<string, unknown>) => Promise<string>
@@ -82,7 +101,35 @@ export async function agentLoop(
   const maxIterations = opts.maxIterations ?? 10;
   while (iterations < maxIterations) {
     iterations++;
-    const result = await complete({ ...opts, messages });
+
+    let result;
+    try {
+      result = await complete({ ...opts, messages });
+    } catch (e) {
+      if (isContextLengthError(e)) {
+        // Drop old tool results, keep first user message + recent tail, then retry once
+        logger.debug(`[ai] Context overflow — pruning history (${messages.length} → pruned) and retrying`);
+        const pruned = pruneToolResults(messages, 8);
+        try {
+          result = await complete({ ...opts, messages: pruned });
+          // If recovery worked, replace our working messages with pruned
+          messages.splice(0, messages.length, ...pruned);
+        } catch (e2) {
+          if (isContextLengthError(e2)) {
+            // One final attempt with only the original user message
+            logger.debug(`[ai] Context still too large — retrying with minimal history`);
+            const minimal = [messages[0]!];
+            result = await complete({ ...opts, messages: minimal });
+            messages.splice(0, messages.length, ...minimal);
+          } else {
+            throw e2;
+          }
+        }
+      } else {
+        throw e;
+      }
+    }
+
     totalTokens += result.tokensUsed;
 
     if (result.toolCalls.length === 0) {

@@ -5,9 +5,9 @@
 **Full-stack security scanner — supply chain, code, Docker attack arena, AI agents.**  
 Catches what linters and conventional scanners miss, across every language.
 
+[![npm](https://img.shields.io/npm/v/breachscope?color=red)](https://www.npmjs.com/package/breachscope)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js ≥18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Afnanksalal/BreachScope/badge)](https://scorecard.dev/viewer/?uri=github.com/Afnanksalal/BreachScope)
 
 </div>
 
@@ -180,26 +180,33 @@ Shorthand: bs scan, bs sandbox, bs login, bs deps, etc.
 
 ## Docker Attack Arena (`sandbox`)
 
-Spins up an isolated Docker container, deploys your app, and unleashes an AI agent as root to find vulnerabilities through active exploitation — not pattern matching.
+The most complete part of BreachScope. Reads your entire codebase first, generates a purpose-built Dockerfile, deploys your app with all secrets intact, then unleashes an AI agent as root to actively exploit it.
 
 ```bash
-# From your project root — auto-detects language and builds the right Dockerfile
+# From your project root
 breachscope sandbox
 
-# Extended attack mode
-breachscope sandbox --deep
-
-# Keep container alive for manual inspection after scan
+# Keep container alive after scan for manual inspection
 breachscope sandbox --no-cleanup
 ```
 
-**What the AI agent does:**
-- Runs as root, installs any tool it needs (nmap, sqlmap, nikto, custom exploits)
-- Extracts all environment variables and flags sensitive credentials
-- Tests JWT `alg:none` bypass, weak secrets, missing auth on admin routes
-- Probes for SSTI in all template engines (Jinja2, Pug, EJS, Handlebars, Twig)
-- Tests SSRF via internal metadata endpoints and private IP ranges
-- Path traversal, command injection, SQL injection, prototype pollution
+**How it runs:**
+
+1. **Phase 0 — AI codebase understanding**: Reads every source file, `.env`, config, and secret before touching Docker. Builds a full security picture: tech stack, real credentials, auth mechanisms, database, all endpoints.
+2. **Dockerfile generation**: AI writes a purpose-built Dockerfile based on what it learned — not a template. No multi-stage builds; all source code, `.env` files, and secrets are copied into the image.
+3. **`.env` included**: The `.dockerignore` is temporarily neutralized so every secret file lands in the container. The AI has full access.
+4. **App tested**: Agent runs the test suite, maps all routes, reads every env file, confirms the app is working before attacking.
+5. **Full attack**: AI agent as root with no restrictions — installs nmap/sqlmap/nikto, extracts DB credentials and connects, forges JWT tokens, exploits SSTI/SSRF/SQLi/path traversal, pivots from one finding to the next.
+
+**What the AI agent attacks:**
+- Extracts all environment variables and credentials — connects to every DB it finds
+- JWT `alg:none` bypass, weak secret brute force, admin token forge
+- SSTI in all template engines (Jinja2, Pug, EJS, Handlebars, Twig, Mako)
+- SSRF — probes AWS/GCP metadata endpoints, internal services
+- Path traversal, command injection, SQL injection, prototype pollution, XXE
+- Spring Boot Actuator endpoints — heapdump, env, mappings
+- Log4Shell detection, deserialization gadget chains
+- Network scan inside container — finds hidden services, default creds
 
 **Supported project types:**
 
@@ -236,7 +243,7 @@ breachscope scan --mode major
 - npm advisory bulk API — security advisories with affected version ranges
 - NVD CVE search — NIST national vulnerability database
 
-Firecrawl enhances this with full web search when available, but real CVE data works out of the box.
+When `FIRECRAWL_API_KEY` is set, all agents use it aggressively — searching HackTricks, PayloadsAllTheThings, Exploit-DB, NVD CVE pages, and GitHub PoC repos to find exact payloads and confirm exploitability before reporting.
 
 | Agent | Role | Mode Awareness |
 |-------|------|---------------|

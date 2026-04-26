@@ -1,7 +1,7 @@
 import { agentLoop } from "../core/ai.js";
 import { webSearch, crawlUrl } from "../core/crawler.js";
 import { logger } from "../core/logger.js";
-import type { AgentContext, AgentResult } from "../core/types.js";
+import type { AgentContext, AgentResult, Finding } from "../core/types.js";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { parseFindings } from "./dependency.js";
 import axios from "axios";
@@ -36,7 +36,87 @@ Use web_search aggressively when you identify a framework, server version, or vu
 
 Return ONLY a JSON array of Finding objects: id, title, severity, category ("blackbox"), description, remediation, references, detail.`;
 
+interface PendingFinding {
+  id: string;
+  title: string;
+  severity: string;
+  description: string;
+  evidence: string;
+  remediation: string;
+}
+
+function makeBlackboxFeedbackStore() {
+  const findings: PendingFinding[] = [];
+  let counter = 0;
+
+  return {
+    findings,
+    save(title: string, severity: string, description: string, evidence: string, remediation: string): string {
+      const id = `bb-${++counter}`;
+      findings.push({ id, title, severity, description, evidence, remediation });
+      return JSON.stringify({ success: true, id, total: findings.length });
+    },
+    get(): string {
+      if (findings.length === 0) return JSON.stringify({ findings: [], note: "No findings saved yet." });
+      return JSON.stringify({
+        total: findings.length,
+        findings: findings.map((f) => ({
+          id: f.id, severity: f.severity, title: f.title,
+          has_evidence: f.evidence.length > 10,
+        })),
+        instruction: "Review each finding. Use remove_finding(id) on any finding that is speculative, based only on a missing header, or that doesn't have a concrete attack path with HTTP response evidence.",
+      });
+    },
+    remove(id: string): string {
+      const idx = findings.findIndex((f) => f.id === id);
+      if (idx === -1) return JSON.stringify({ success: false, reason: "Not found" });
+      const removed = findings.splice(idx, 1)[0]!;
+      return JSON.stringify({ success: true, removed: removed.title, remaining: findings.length });
+    },
+  };
+}
+
 const TOOLS: ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "save_finding",
+      description: "Submit a confirmed HTTP-level vulnerability. ONLY call when you have an HTTP response proving exploitability — a real CORS bypass, a real auth bypass response, a real info leak in response body. NOT for missing headers alone.",
+      parameters: {
+        type: "object",
+        properties: {
+          title:       { type: "string" },
+          severity:    { type: "string", enum: ["critical", "high", "medium", "low"] },
+          description: { type: "string", description: "Exact HTTP request sent, exact response received, concrete attack scenario with impact." },
+          evidence:    { type: "string", description: "The actual HTTP response or header that proves the vulnerability." },
+          remediation: { type: "string" },
+        },
+        required: ["title", "severity", "description", "evidence", "remediation"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_findings",
+      description: "Review all findings saved so far. Call after every 4-5 probes to verify quality. Remove findings that lack real HTTP evidence.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "remove_finding",
+      description: "Remove a speculative finding or one that only flags a missing header without a proven attack path.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+        },
+        required: ["id"],
+      },
+    },
+  },
   {
     type: "function",
     function: {
@@ -90,6 +170,7 @@ export async function runBlackboxAgent(ctx: AgentContext): Promise<AgentResult> 
   }
 
   const sourcesCrawled: string[] = [];
+  const store = makeBlackboxFeedbackStore();
   const baseUrl = ctx.url.replace(/\/$/, "");
 
   // Pre-collect some basic info for the agent to start with
@@ -111,18 +192,40 @@ ${optionsProbe}
 Prior static probe findings (for context):
 ${JSON.stringify(ctx.existingFindings.filter((f) => f.category === "blackbox").slice(0, 10), null, 2)}
 
-Use http_probe to test specific attack paths. Use web_search to research identified tech stack versions.
-Think like an attacker — what can you chain together?`;
+WORKFLOW:
+1. Use http_probe to test attack paths — don't just read headers, actively probe
+2. For every confirmed vulnerability: call save_finding() with the actual HTTP response as evidence
+3. Every 4-5 probes: call get_findings() to review quality
+4. Use remove_finding() on any finding based only on a missing header without a proven attack path
+5. Final pass: call get_findings() and clean up before finishing
+
+FEEDBACK LOOP: save_finding → get_findings → remove_finding is your quality gate.
+"Missing X-Frame-Options" is not a finding without a proven clickjacking attack path.
+A real CORS bypass with evidence IS a finding. A real auth bypass response IS a finding.
+
+Think like an attacker — what can you chain together? Use web_search for any tech stack version you identify.
+When done, output remaining findings as a JSON array (fallback for anything not submitted via save_finding).`;
 
   const { content, tokensUsed } = await agentLoop(
     {
       system: SYSTEM,
       messages: [{ role: "user", content: userMessage }],
       tools: TOOLS,
-      temperature: 0.2,
-      maxTokens: 4096,
+      temperature: 0.15,
+      maxTokens: 8192,
+      maxIterations: 25,
     },
     async (toolName, args) => {
+      if (toolName === "save_finding") {
+        const a = args as Record<string, unknown>;
+        return store.save(
+          String(a["title"] ?? ""), String(a["severity"] ?? "low"),
+          String(a["description"] ?? ""), String(a["evidence"] ?? ""),
+          String(a["remediation"] ?? ""),
+        );
+      }
+      if (toolName === "get_findings") return store.get();
+      if (toolName === "remove_finding") return store.remove(String(args["id"] ?? ""));
       if (toolName === "http_probe") {
         const path = String(args["path"] ?? "/");
         const method = String(args["method"] ?? "GET");
@@ -145,8 +248,24 @@ Think like an attacker — what can you chain together?`;
     }
   );
 
-  const findings = parseFindings(content, "blackbox");
-  logger.debug(`[blackbox-agent] ${findings.length} findings parsed`);
+  // Primary: tool-submitted findings
+  const toolFindings: Finding[] = store.findings.map((f) => ({
+    id: f.id,
+    title: f.title,
+    severity: f.severity as Finding["severity"],
+    category: "blackbox" as const,
+    description: f.description,
+    remediation: f.remediation,
+    references: [],
+    detail: f.evidence.slice(0, 500),
+  }));
+
+  // Fallback: JSON from final text (deduped)
+  const toolTitles = new Set(toolFindings.map((f) => f.title.toLowerCase()));
+  const textFindings = parseFindings(content, "blackbox").filter((f) => !toolTitles.has(f.title.toLowerCase()));
+
+  const findings = [...toolFindings, ...textFindings];
+  logger.debug(`[blackbox-agent] ${findings.length} findings (${toolFindings.length} via tool, ${textFindings.length} from text)`);
 
   return { agent: "blackbox", findings, reasoning: content, sourcesCrawled, tokensUsed };
 }
