@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { scans, findings } from "@/lib/schema";
+import { scans } from "@/lib/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { TopBar } from "@/components/dashboard/TopBar";
@@ -19,11 +19,6 @@ export default async function ScanDetailPage({ params }: { params: Promise<{ id:
 
   if (!scan) notFound();
 
-  const scanFindings = await db
-    .select()
-    .from(findings)
-    .where(eq(findings.scanId, scan.id));
-
   return (
     <>
       <TopBar
@@ -35,7 +30,7 @@ export default async function ScanDetailPage({ params }: { params: Promise<{ id:
         back="/dashboard/scans"
       />
       <div className="flex-1 p-8">
-        <ScanDetail scan={scan} findings={scanFindings} />
+        <ScanDetail scan={scan} />
       </div>
     </>
   );

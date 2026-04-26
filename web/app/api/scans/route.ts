@@ -107,21 +107,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (rawFindings.length > 0) {
-    await db.insert(findingsTable).values(
-      rawFindings.slice(0, 1000).map((f) => ({
-        scanId:      scan.id,
-        title:       f.title       ?? "Untitled",
-        severity:    f.severity,
-        category:    f.category,
-        description: f.description ?? "",
-        detail:      f.detail      ?? null,
-        remediation: f.remediation ?? null,
-        tool:        f.tool        ?? null,
-        file:        f.file        ?? null,
-        line:        f.line        ?? null,
-        references:  f.references  ? JSON.stringify(f.references) : null,
-      }))
-    );
+    const CHUNK = 2000;
+    for (let i = 0; i < rawFindings.length; i += CHUNK) {
+      await db.insert(findingsTable).values(
+        rawFindings.slice(i, i + CHUNK).map((f) => ({
+          scanId:      scan.id,
+          title:       f.title       ?? "Untitled",
+          severity:    f.severity,
+          category:    f.category,
+          description: f.description ?? "",
+          detail:      f.detail      ?? null,
+          remediation: f.remediation ?? null,
+          tool:        f.tool        ?? null,
+          file:        f.file        ?? null,
+          line:        f.line        ?? null,
+          references:  f.references  ? JSON.stringify(f.references) : null,
+        }))
+      );
+    }
   }
 
   return NextResponse.json({ id: scan.id, ok: true }, { status: 201 });

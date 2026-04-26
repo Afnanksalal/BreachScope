@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { clsx } from "clsx";
 import type { Scan, Finding } from "@/lib/schema";
 
@@ -906,8 +906,8 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
                     <span className={clsx("shrink-0 px-1.5 py-px rounded border text-[9px] uppercase font-bold min-w-[52px] text-center", s.badge, s.badgeText)}>
                       {entry.tool.slice(0, 8)}
                     </span>
-                    <span className="text-white/20 shrink-0 truncate max-w-[120px] hidden sm:block">{entry.input.slice(0, 40)}</span>
-                    <span className={clsx("flex-1 truncate", s.line)}>{entry.output.slice(0, 120)}</span>
+                    <span className="text-white/20 shrink-0 break-all hidden sm:block max-w-[200px]">{entry.input}</span>
+                    <span className={clsx("flex-1 break-all whitespace-pre-wrap", s.line)}>{entry.output}</span>
                   </div>
                 );
               })}
@@ -1085,18 +1085,12 @@ async function generatePdf(
   doc.text("Executive Summary", MARGIN, y);
   y += 7;
 
-  const sevCounts = { critical: 0, high: 0, medium: 0, low: 0 };
-  for (const f of findings) {
-    const rawSev = typeof f.severity === "string" ? f.severity.toLowerCase() : "";
-    const s = rawSev as keyof typeof sevCounts;
-    if (s in sevCounts) sevCounts[s]++;
-  }
-
+  // Use scan metadata for accurate totals — these are computed from ALL findings at push time
   const summaryColors: [string, number, [number,number,number]][] = [
-    ["Critical", sevCounts.critical, [239,68,68]],
-    ["High",     sevCounts.high,     [249,115,22]],
-    ["Medium",   sevCounts.medium,   [234,179,8]],
-    ["Low",      sevCounts.low,      [6,182,212]],
+    ["Critical", scan.findingsCritical ?? 0, [239,68,68]],
+    ["High",     scan.findingsHigh     ?? 0, [249,115,22]],
+    ["Medium",   scan.findingsMedium   ?? 0, [234,179,8]],
+    ["Low",      scan.findingsLow      ?? 0, [6,182,212]],
   ];
   const boxW = (W - MARGIN * 2 - 9) / 4;
   let bx = MARGIN;
@@ -1118,7 +1112,8 @@ async function generatePdf(
     doc.line(MARGIN, y, W - MARGIN, y);
     y += 6;
     doc.setFontSize(12); doc.setFont("helvetica","bold"); doc.setTextColor(30,30,30);
-    doc.text(`Findings (${findings.length})`, MARGIN, y);
+    const totalFindings = scan.findingsTotal ?? findings.length;
+    doc.text(`Findings (${totalFindings.toLocaleString()}${findings.length < totalFindings ? ` · showing ${findings.length.toLocaleString()}` : ""})`, MARGIN, y);
     y += 4;
 
     const sevOrder: Record<string,number> = { critical:0, high:1, medium:2, low:3, info:4 };
@@ -1135,9 +1130,9 @@ async function generatePdf(
       body: sorted.map((f) => [
         typeof f.severity === "string" ? f.severity.toUpperCase() : "?",
         f.category ?? "—",
-        (f.title ?? "").slice(0, 55),
-        f.file ? `${f.file.slice(0, 20)}${f.line ? `:${f.line}` : ""}` : "—",
-        f.remediation ? f.remediation.slice(0, 70) + (f.remediation.length > 70 ? "…" : "") : "—",
+        f.title ?? "",
+        f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : "—",
+        f.remediation ?? "—",
       ]),
       styles: { fontSize: 6.5, cellPadding: 2, overflow: "linebreak", minCellHeight: 6, lineColor: [45,45,45], lineWidth: 0.1 },
       headStyles: { fillColor: [20,20,24], textColor: [200,200,200], fontStyle: "bold", fontSize: 7, cellPadding: 3 },
@@ -1227,10 +1222,13 @@ async function generatePdf(
         doc.text(`${svc.name} (${svc.category}) — ${svc.findingsCount} finding(s), ${svc.tokensUsed.toLocaleString()} tokens`, MARGIN, y);
         y += 5;
         doc.setFontSize(7.5); doc.setFont("helvetica","normal"); doc.setTextColor(100,100,100);
-        for (const step of svc.steps.slice(0, 15)) {
+        for (const step of svc.steps) {
           checkY(5);
-          doc.text(`  • ${step}`, MARGIN + 2, y);
-          y += 4;
+          const stepLines = doc.splitTextToSize(`  • ${step}`, W - MARGIN * 2 - 4);
+          for (const line of stepLines) {
+            checkY(4);
+            doc.text(line as string, MARGIN + 2, y); y += 4;
+          }
         }
         y += 2;
       }
@@ -1258,8 +1256,8 @@ async function generatePdf(
         doc.text("AI Attack Narrative:", MARGIN, y);
         y += 4;
         doc.setFont("helvetica","normal"); doc.setTextColor(90,90,90);
-        const wvLines = doc.splitTextToSize(mem.worldview.slice(0, 400), W - MARGIN * 2 - 4);
-        for (const line of wvLines.slice(0, 6)) {
+        const wvLines = doc.splitTextToSize(mem.worldview, W - MARGIN * 2 - 4);
+        for (const line of wvLines) {
           checkY(4);
           doc.text(line as string, MARGIN + 2, y); y += 3.8;
         }
@@ -1274,10 +1272,13 @@ async function generatePdf(
         doc.text(`Confirmed Attack Chains (${chains.length}):`, MARGIN, y);
         y += 4;
         doc.setFont("helvetica","normal"); doc.setTextColor(100,100,100);
-        for (const chain of chains.slice(0, 10)) {
+        for (const chain of chains) {
           checkY(5);
-          const truncated = chain.length > 110 ? chain.slice(0, 110) + "…" : chain;
-          doc.text(`  → ${truncated}`, MARGIN + 2, y); y += 4;
+          const wrapped = doc.splitTextToSize(`  → ${chain}`, W - MARGIN * 2 - 4);
+          for (const line of wrapped) {
+            checkY(4);
+            doc.text(line as string, MARGIN + 2, y); y += 4;
+          }
         }
         y += 2;
       }
@@ -1292,13 +1293,13 @@ async function generatePdf(
         autoTable(doc, {
           startY: y,
           margin: { left: MARGIN, right: MARGIN },
-          head: [["Sev","Title","CVSS","Validation","Evidence (excerpt)"]],
+          head: [["Sev","Title","CVSS","Validation","Evidence"]],
           body: confirmed.map((f) => [
             (f.severity ?? "").toUpperCase(),
-            (f.title ?? "").slice(0, 45),
+            f.title ?? "",
             f.cvss_score > 0 ? String(f.cvss_score) : "—",
             f.validation_confidence ? `${f.validation_confidence} (${f.validation_score ?? "?"}%)` : "—",
-            (f.evidence ?? f.description ?? "").slice(0, 60),
+            f.evidence ?? f.description ?? "",
           ]),
           styles: { fontSize: 6.5, cellPadding: 2, overflow: "linebreak", minCellHeight: 6 },
           headStyles: { fillColor: [60,20,20], textColor: [220,180,180], fontStyle: "bold", fontSize: 7 },
@@ -1484,12 +1485,15 @@ function ReportTab({
 
 // ─── Sandbox Findings View ───────────────────────────────────────────────────
 
+const SANDBOX_TOOLS = new Set(["sandbox-agent", "sandbox", "sandbox_agent", "attack-agent", "pentest-agent"]);
+
 function SandboxFindingsView({ sandbox, allFindings }: { sandbox: SandboxActivity; allFindings: Finding[] }) {
   const mem = sandbox.memorySnapshot;
   const confirmed = mem?.confirmedFindings ?? [];
   const chains = sandbox.attackChains.filter((c): c is string => typeof c === "string");
+  const sandboxFindings = allFindings.filter((f) => f.tool && SANDBOX_TOOLS.has(f.tool));
 
-  if (confirmed.length === 0 && chains.length === 0) {
+  if (confirmed.length === 0 && chains.length === 0 && sandboxFindings.length === 0) {
     return (
       <div className="py-16 text-center">
         <p className="text-white/30 text-sm">No confirmed sandbox findings.</p>
@@ -1577,7 +1581,7 @@ function SandboxFindingsView({ sandbox, allFindings }: { sandbox: SandboxActivit
                   {cf.evidence && cf.evidence !== cf.description && (
                     <div className="p-3 rounded-lg bg-black/30 border border-white/[0.06]">
                       <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider mb-1.5">Evidence</p>
-                      <pre className="text-red-300/70 text-xs font-mono whitespace-pre-wrap break-all leading-relaxed">{cf.evidence.slice(0, 600)}</pre>
+                      <pre className="text-red-300/70 text-xs font-mono whitespace-pre-wrap break-all leading-relaxed">{cf.evidence}</pre>
                     </div>
                   )}
                   {matchedFinding?.remediation && (
@@ -1611,6 +1615,16 @@ function SandboxFindingsView({ sandbox, allFindings }: { sandbox: SandboxActivit
           </div>
         </div>
       )}
+
+      {/* Fallback: sandbox-tagged findings from the regular findings list */}
+      {sandboxFindings.length > 0 && confirmed.length === 0 && (
+        <div className="space-y-3">
+          <p className="text-white/30 text-xs font-semibold uppercase tracking-wider">
+            Sandbox Findings <span className="text-white/20 font-normal normal-case ml-1">from scan results</span>
+          </p>
+          {sandboxFindings.map((f) => <FindingCard key={f.id} finding={f} />)}
+        </div>
+      )}
     </div>
   );
 }
@@ -1633,7 +1647,7 @@ function SeverityPills({ findings }: { findings: Finding[] }) {
   );
 }
 
-function SmartGroupView({ findings }: { findings: Finding[] }) {
+function SmartGroupView({ findings, total }: { findings: Finding[]; total: number }) {
   const [expanded, setExpanded] = useState<Set<SmartGroupKey>>(() => {
     const autoExpand = new Set<SmartGroupKey>();
     for (const f of findings) {
@@ -1666,7 +1680,21 @@ function SmartGroupView({ findings }: { findings: Finding[] }) {
   const activeGroups = SMART_GROUPS.filter((g) => (grouped.get(g.key)?.length ?? 0) > 0);
 
   if (activeGroups.length === 0) {
-    return <div className="py-12 text-center text-white/25 text-sm">No findings to display.</div>;
+    if (total > 0) {
+      return (
+        <div className="py-16 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+          </div>
+          <p className="text-orange-400 text-sm font-medium">Findings not stored</p>
+          <p className="text-white/30 text-xs mt-1">Scan recorded {total.toLocaleString()} finding(s) but none were saved to the database.</p>
+          <p className="text-white/20 text-xs mt-0.5">Re-run the scan to capture results.</p>
+        </div>
+      );
+    }
+    return <div className="py-12 text-center text-white/25 text-sm">No findings — clean scan.</div>;
   }
 
   return (
@@ -2066,11 +2094,23 @@ type Tab = "overview" | "findings" | "probes" | "report";
 
 type FindingsViewMode = "smart" | "grid" | "raw" | "sandbox";
 
-export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[] }) {
+export function ScanDetail({ scan }: { scan: Scan }) {
   const [tab, setTab]             = useState<Tab>("overview");
   const [sevFilter, setSev]       = useState<string>("ALL");
   const [catFilter, setCat]       = useState<string>("ALL");
   const [findingsView, setFindingsView] = useState<FindingsViewMode>("smart");
+  const [findings, setFindings]   = useState<Finding[]>([]);
+  const [findingsLoading, setFindingsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/scans/${scan.id}/findings`)
+      .then((r) => r.json())
+      .then((data: Finding[]) => {
+        setFindings(Array.isArray(data) ? data : []);
+        setFindingsLoading(false);
+      })
+      .catch(() => setFindingsLoading(false));
+  }, [scan.id]);
 
   const total    = scan.findingsTotal    ?? 0;
   const critical = scan.findingsCritical ?? 0;
@@ -2278,19 +2318,28 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
             )}
           </div>
 
+          {/* ── Loading skeleton ── */}
+          {findingsLoading && (
+            <div className="space-y-2 py-4">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="h-14 rounded-xl bg-white/[0.03] border border-white/[0.05] animate-pulse" />
+              ))}
+            </div>
+          )}
+
           {/* ── Smart Groups view ── */}
-          {findingsView === "smart" && <SmartGroupView findings={findings} />}
+          {!findingsLoading && findingsView === "smart" && <SmartGroupView findings={findings} total={total} />}
 
           {/* ── Supply Chain Grid view ── */}
-          {findingsView === "grid" && <SupplyChainGrid tools={toolRiskData} findings={findings} />}
+          {!findingsLoading && findingsView === "grid" && <SupplyChainGrid tools={toolRiskData} findings={findings} />}
 
           {/* ── Sandbox Probe view ── */}
-          {findingsView === "sandbox" && probeActivity?.sandbox && (
+          {!findingsLoading && findingsView === "sandbox" && probeActivity?.sandbox && (
             <SandboxFindingsView sandbox={probeActivity.sandbox} allFindings={findings} />
           )}
 
           {/* ── Raw List view ── */}
-          {findingsView === "raw" && (
+          {!findingsLoading && findingsView === "raw" && (
             <>
           {findings.length === 0 ? (
             total > 0 ? (
@@ -2300,8 +2349,8 @@ export function ScanDetail({ scan, findings }: { scan: Scan; findings: Finding[]
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                   </svg>
                 </div>
-                <p className="text-orange-400 text-sm font-medium">Findings not loaded</p>
-                <p className="text-white/30 text-xs mt-1">Scan recorded {total.toLocaleString()} finding(s) but the data was not stored.</p>
+                <p className="text-orange-400 text-sm font-medium">Findings not stored</p>
+                <p className="text-white/30 text-xs mt-1">Scan recorded {total.toLocaleString()} finding(s) but none were stored in the database.</p>
                 <p className="text-white/20 text-xs mt-0.5">Re-run the scan to capture results.</p>
               </div>
             ) : (
