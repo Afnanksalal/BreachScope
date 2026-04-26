@@ -75,7 +75,7 @@ toolchain:
   github:
     token: ""        # or set GITHUB_TOKEN env var
 
-# AI multi-agent mode (breachscope scan --ai)
+# AI multi-agent mode — runs automatically when OPENAI_API_KEY is set
 # Keys can also be set as environment variables
 ai:
   openaiApiKey: ""     # or set OPENAI_API_KEY env var

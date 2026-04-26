@@ -64,12 +64,12 @@ export default function DocsPage() {
               <Step n={3} label="Probe a live URL (no local project needed)">
                 <CodeBlock code="breachscope scan --url https://yourapp.com" />
               </Step>
-              <Step n={4} label="Full coverage — deep mode, all scanners, AI agents, browser pentest">
-                <CodeBlock code="breachscope scan --mode deep --breach --bug --ai --browser --url https://yourapp.com" />
+              <Step n={4} label="Launch AI attack arena — Docker sandbox with full autonomy">
+                <CodeBlock code="breachscope sandbox --url https://yourapp.com --deep" />
               </Step>
             </div>
             <Callout type="note">
-              When <code className="font-mono text-white/65">--url</code> is the only input and no project manifest is found in the current directory, static scanners (deps, code, toolchain) are automatically skipped — the scan goes straight to blackbox and smoke probing.
+              When <code className="font-mono text-white/65">--url</code> is the only input and no project manifest is found, static scanners are skipped — the scan goes straight to blackbox and smoke probing. For full active exploitation use <code className="font-mono text-white/65">breachscope sandbox</code>.
             </Callout>
           </Section>
 
@@ -132,7 +132,7 @@ thresholds:
               options={[
                 ["-m, --mode", "basic", "Scan depth: basic | major | deep"],
                 ["-t, --target", "all", "Scope: all | dependency | toolchain | code | blackbox | smoke"],
-                ["-u, --url", "—", "Target URL for blackbox, smoke, and browser pentest"],
+                ["-u, --url", "—", "Target URL for blackbox and smoke probing"],
                 ["--breach", "—", "Breach mode: CVE hunting, leaked credentials, supply chain"],
                 ["--bug", "—", "Bug mode: code audit, injection, deserialization, auth bypasses"],
                 ["--breach --bug", "—", "Full mode: 66 patterns, all scanners, both AI personalities"],
@@ -140,8 +140,6 @@ thresholds:
                 ["-f, --file", "—", "Write output to file"],
                 ["-c, --config", "—", "Path to breachscope.yaml"],
                 ["--ci", "—", "Exit code 1 if findings exceed severity threshold"],
-                ["--ai", "—", "Enable AI multi-agent pipeline + live service probing"],
-                ["--browser", "—", "Playwright authenticated pentest (requires --url and --ai)"],
                 ["-v, --verbose", "—", "Debug output"],
               ]}
             />
@@ -200,6 +198,61 @@ thresholds:
             <CodeBlock code="breachscope smoke https://myapp.com" />
           </Section>
 
+          <Section id="sandbox" title="breachscope sandbox">
+            <p className="text-white/45 mb-5 leading-relaxed">
+              Spins up a Docker container, deploys your app inside it, and unleashes an AI agent as root to find vulnerabilities through active exploitation — not pattern matching.
+            </p>
+            <CodeBlock code="breachscope sandbox [options]" />
+            <OptionTable
+              options={[
+                ["-p, --port", "auto", "App port inside the container (auto-detected from project)"],
+                ["-i, --image", "auto", "Custom base Docker image (default: auto-detected by language)"],
+                ["-t, --timeout", "60", "Seconds to wait for the app to start"],
+                ["--deep", "—", "Extended attack sequences — more iterations"],
+                ["--no-cleanup", "—", "Keep container running after scan for manual inspection"],
+                ["-u, --url", "—", "Target URL context for dashboard reporting"],
+                ["-o, --output", "console", "Output format: console | json"],
+                ["-f, --file", "—", "Write results to file"],
+                ["-v, --verbose", "—", "Debug output"],
+              ]}
+            />
+            <Callout type="note">
+              Requires Docker to be installed and running. The AI agent runs as root inside the container and installs any tool it needs (nmap, sqlmap, nikto, etc.). Results are pushed to the dashboard and displayed as a live terminal replay.
+            </Callout>
+            <div className="mt-6">
+              <p className="text-xs font-semibold text-white/25 uppercase tracking-widest mb-3">Supported languages</p>
+              <OptionTable
+                options={[
+                  ["Node.js / Bun", "package.json", "Express, Fastify, Hono, NestJS"],
+                  ["Python", "requirements.txt, pyproject.toml", "Flask, FastAPI, Django"],
+                  ["Go", "go.mod", "net/http, Gin, Fiber"],
+                  ["Rust", "Cargo.toml", "Actix, Axum"],
+                  ["Ruby", "Gemfile", "Rails, Sinatra"],
+                  ["Java", "pom.xml, build.gradle", "Spring Boot, Quarkus"],
+                  ["PHP", "composer.json", "Laravel, Symfony, plain PHP"],
+                  [".NET", "*.csproj", "ASP.NET Core"],
+                  ["Elixir", "mix.exs", "Phoenix"],
+                  ["Dart", "pubspec.yaml", "Shelf, Dart Frog"],
+                ]}
+              />
+            </div>
+            <div className="mt-6">
+              <p className="text-xs font-semibold text-white/25 uppercase tracking-widest mb-3">Attack surface covered</p>
+              <OptionTable
+                options={[
+                  ["Env / secrets", "—", "Extracts all env vars, flags sensitive API keys and credentials"],
+                  ["Auth bypass", "—", "JWT alg:none, weak secrets, missing auth on protected routes"],
+                  ["SSTI", "—", "Template injection in Jinja2, Pug, EJS, Handlebars, Twig"],
+                  ["SSRF", "—", "Probes internal metadata endpoints and private IP ranges"],
+                  ["Path traversal", "—", "Directory escape, symlink abuse, arbitrary file read"],
+                  ["Command injection", "—", "Shell metacharacter injection in all input vectors"],
+                  ["Prototype pollution", "—", "Merge/extend functions, JSON body parsing edge cases"],
+                  ["SQL injection", "—", "Raw query construction, ORM misuse, blind injection"],
+                ]}
+              />
+            </div>
+          </Section>
+
           <Section id="deps" title="breachscope deps">
             <p className="text-white/45 mb-5 leading-relaxed">
               Dependency and lockfile supply chain scan across all supported languages. Queries OSV.dev with exact installed versions.
@@ -207,11 +260,16 @@ thresholds:
             <CodeBlock code="breachscope deps [-m mode] [-v] [-o format]" />
             <OptionTable
               options={[
-                ["npm / yarn / pnpm", "package.json, lockfiles", "npm ecosystem"],
+                ["npm / yarn / pnpm / bun", "package.json, lockfiles", "npm ecosystem"],
                 ["Python", "requirements.txt, pyproject.toml, Pipfile", "PyPI"],
                 ["Go", "go.mod", "Go"],
                 ["Rust", "Cargo.toml, Cargo.lock", "crates.io"],
                 ["Ruby", "Gemfile, Gemfile.lock", "RubyGems"],
+                ["Java", "pom.xml, build.gradle", "Maven Central"],
+                ["PHP", "composer.json, composer.lock", "Packagist"],
+                [".NET", "*.csproj, packages.lock.json", "NuGet"],
+                ["Elixir", "mix.exs, mix.lock", "Hex.pm"],
+                ["Dart", "pubspec.yaml, pubspec.lock", "pub.dev"],
               ]}
             />
           </Section>
@@ -235,7 +293,7 @@ thresholds:
               {[
                 { title: "Scan History", desc: "Filter by mode, depth, and date. Search by project name or URL." },
                 { title: "Findings", desc: "Collapsible cards with severity, file:line, matched code, and remediation." },
-                { title: "Probe Activity", desc: "Step-by-step logs for live service probes and browser attack probes." },
+                { title: "Sandbox Terminal", desc: "Full terminal replay of the AI agent's Docker attack session — every command, HTTP request, credential found, and attack chain." },
                 { title: "PDF Export", desc: "Structured report with severity breakdown, findings table, and probe log." },
               ].map((f) => (
                 <div key={f.title} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3.5">
@@ -290,7 +348,7 @@ thresholds:
                 </div>
               </div>
               <div className="rounded-xl border border-breach-500/20 bg-breach-500/[0.03] px-4 py-4">
-                <p className="text-sm font-semibold text-white/70 mb-1">Live Service Probes <span className="text-xs font-normal text-white/30 ml-1">--ai</span></p>
+                <p className="text-sm font-semibold text-white/70 mb-1">Live Service Probes <span className="text-xs font-normal text-white/30 ml-1">runs when OPENAI_API_KEY is set</span></p>
                 <p className="text-xs text-white/35 leading-relaxed mb-3">AI agent makes real API calls to your live services using credentials you supply interactively. Finds over-privileged keys, misconfigs, and exposed data.</p>
                 <div className="flex flex-wrap gap-1.5">
                   {["Firebase","AWS","Stripe","Clerk","Auth0","Cloudflare","Resend","SendGrid","Twilio","OpenAI","Anthropic","Pinecone","Sentry","Datadog","Neon","Upstash","PlanetScale"].map(s => <ServiceBadge key={s} name={s} />)}
@@ -301,7 +359,7 @@ thresholds:
 
           <Section id="toolchain-scanners" label="Toolchain Scanners" title="Supabase, Vercel &amp; GitHub">
             <p className="text-white/45 mb-5 leading-relaxed">
-              These run as part of every scan automatically when credentials are present. No <code className="font-mono text-white/65">--ai</code> flag needed.
+              These run as part of every scan automatically when credentials are present.
             </p>
 
             <div className="space-y-6">
@@ -355,10 +413,10 @@ thresholds:
 
           <Section id="live-probes" label="Live Service Probes" title="AI-powered service probing">
             <p className="text-white/45 mb-2 leading-relaxed">
-              With <code className="font-mono text-white/65">--ai</code>, BreachScope detects which services your codebase uses, prompts you for credentials interactively, then dispatches an AI agent to probe the live APIs for real misconfigurations — over-privileged keys, exposed data, insecure defaults.
+              When <code className="font-mono text-white/65">OPENAI_API_KEY</code> is set, BreachScope automatically detects which services your codebase uses, prompts you for credentials interactively, then dispatches an AI agent to probe the live APIs for real misconfigurations — over-privileged keys, exposed data, insecure defaults.
             </p>
-            <p className="text-white/35 text-sm mb-5">Detection uses package imports, env var prefixes, and config file presence. You only get prompted for services actually found in your project.</p>
-            <CodeBlock code="breachscope scan --ai" />
+            <p className="text-white/35 text-sm mb-5">No flag needed — AI is on by default. Detection uses package imports, env var prefixes, and config file presence. You only get prompted for services actually found in your project.</p>
+            <CodeBlock code="OPENAI_API_KEY=sk-... breachscope scan" />
             <Callout type="note">
               Credentials are used in-memory only and destroyed after the probe. They are never stored or uploaded.
             </Callout>
@@ -455,8 +513,8 @@ jobs:
           VERCEL_TOKEN: \${{ secrets.VERCEL_TOKEN }}
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
 
-      - name: AI code audit
-        run: breachscope scan --mode deep --bug --ai --ci
+      - name: AI code audit (auto-enabled when key is set)
+        run: breachscope scan --mode deep --bug --ci
         env:
           OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}
           FIRECRAWL_API_KEY: \${{ secrets.FIRECRAWL_API_KEY }}`}

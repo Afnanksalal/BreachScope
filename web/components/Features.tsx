@@ -5,6 +5,24 @@ import { motion } from "framer-motion";
 const FEATURES = [
   {
     num: "01",
+    title: "Docker Attack Arena",
+    description:
+      "Spins up an isolated Docker container, runs an AI agent as root with full tool installation rights — nmap, sqlmap, nikto, custom exploits — and attacks your app from the inside.",
+    tags: ["Docker", "AI agent", "Root access", "10 languages"],
+    icon: DockerIcon,
+    accent: "breach",
+  },
+  {
+    num: "02",
+    title: "Autonomous AI Intelligence",
+    description:
+      "AI runs by default whenever OPENAI_API_KEY is set. No flags required. The agent evolves its attack strategy each iteration using a Pentest Task Tree and persistent attack memory.",
+    tags: ["GPT-4o", "Auto-enabled", "Attack chains"],
+    icon: BrainIcon,
+    accent: "scope",
+  },
+  {
+    num: "03",
     title: "Supply Chain Scanner",
     description:
       "Audits your dependency graph and lockfiles against known-compromised packages, insecure registries, wildcard versions, and missing integrity hashes.",
@@ -13,7 +31,7 @@ const FEATURES = [
     accent: "breach",
   },
   {
-    num: "02",
+    num: "04",
     title: "Toolchain Breach Detector",
     description:
       "Probes live toolchain APIs — Supabase RLS misconfigs, exposed storage, Vercel preview secrets, GitHub unprotected branches, overprivileged tokens.",
@@ -22,34 +40,34 @@ const FEATURES = [
     accent: "breach",
   },
   {
-    num: "03",
+    num: "05",
     title: "Static Code Audit",
     description:
       "Scans source files for hardcoded secrets, eval() abuse, SQL injection, weak crypto, prototype pollution, path traversal, and insecure deserialization.",
-    tags: ["TypeScript", "Python", "Go", "Rust"],
+    tags: ["JS/TS", "Python", "Go", "Rust", "Java", "PHP", ".NET"],
     icon: CodeIcon,
     accent: "breach",
   },
   {
-    num: "04",
-    title: "Blackbox Probing",
+    num: "06",
+    title: "Free Threat Intelligence",
     description:
-      "Fires adversarial requests at your live URL — checks security headers, CORS misconfigs, exposed paths like /.env and /.git, HTTP method abuse.",
-    tags: ["Headers", "CORS", "Exposure"],
+      "Queries OSV.dev, npm advisory bulk API, and NVD CVE search with no API key required. Firecrawl gives full web search when available — but you get real CVE data out of the box.",
+    tags: ["OSV.dev", "NVD", "npm advisories"],
     icon: RadarIcon,
     accent: "scope",
   },
   {
-    num: "05",
-    title: "Smoke Testing",
+    num: "07",
+    title: "Blackbox & Smoke Probing",
     description:
-      "Verifies app hygiene — error message leakage, payload size abuse, unauthenticated admin route access, and internal state exposure in responses.",
-    tags: ["Auth bypass", "Error leakage"],
+      "Fires adversarial requests at your live URL — security headers, CORS misconfigs, exposed paths, error leakage, auth bypass attempts, and unauthenticated admin access.",
+    tags: ["Headers", "CORS", "Auth bypass"],
     icon: SmokeIcon,
     accent: "scope",
   },
   {
-    num: "06",
+    num: "08",
     title: "CI-Ready Reports",
     description:
       "Console tables, JSON, or SARIF output. Fail CI on severity thresholds. Pipe into GitHub Advanced Security, Defect Dojo, or any SAST pipeline.",
@@ -93,10 +111,10 @@ export function Features() {
             What BreachScope catches
           </p>
           <h2 className="text-4xl md:text-[3.25rem] font-serif italic text-white tracking-tight mb-5 leading-[1.05]">
-            Six scanners, one command.
+            Full-stack attack, one command.
           </h2>
           <p className="text-white/55 text-lg max-w-lg mx-auto font-light leading-relaxed">
-            Every attack surface in your stack — from package.json to production infra.
+            From Docker container pentesting to supply chain CVEs — every attack surface, autonomous AI.
           </p>
         </motion.div>
 
@@ -149,6 +167,22 @@ export function Features() {
 }
 
 // ─── SVG Icons ─────────────────────────────────────────────────────────────────
+
+function DockerIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+    </svg>
+  );
+}
+
+function BrainIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+    </svg>
+  );
+}
 
 function ChainIcon({ className }: { className?: string }) {
   return (

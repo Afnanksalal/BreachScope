@@ -8,8 +8,50 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+**Docker Attack Arena (`breachscope sandbox`)**
+- New `sandbox` command spins up a Docker container, deploys your app inside it, and runs an AI agent as root
+- AI agent uses PentestGPT / HackingBuddyGPT architecture — evolving attack strategy per iteration via Pentest Task Tree and persistent `AttackMemory`
+- Agent installs any tool it needs freely (nmap, sqlmap, nikto, etc.) — no permission prompts
+- `attackMode` container config: NET_RAW, NET_ADMIN capabilities, 2 GB RAM, no `no-new-privileges`
+- 60 attack iterations per session; `--deep` doubles the sequences
+- Auto-detects and extracts credentials from `env` output; flags sensitive API keys
+- `attackChains` returned and displayed as colored attack path summary in console
+- `exec_cmd` tool accepts `timeout_seconds` parameter (up to 300s) for long-running installs
+- Language-specific attack hints injected into system prompt per project type
+
+**10-language sandbox support**
+- Node.js / Bun, Python, Go, Rust, Ruby — existing
+- Java (Maven/Gradle → Spring Boot, Quarkus), PHP (Laravel/Symfony/plain), .NET (ASP.NET Core), Elixir (Phoenix), Dart (Shelf/Dart Frog) — new
+
+**Sandbox Terminal in dashboard**
+- Full terminal replay component (`SandboxTerminal`) showing every step the agent took
+- 11 event types with color coding: `finding_critical/high/medium/low`, `chain`, `credential`, `attempt_success/partial/failed`, `exec`, `http`, `info`
+- Traffic light dots, monospace `#0a0a0a` background, attack chain highlight, line numbers, blinking cursor
+
+**Free threat intelligence (no API key required)**
+- `webSearch()` falls back to free public APIs when `FIRECRAWL_API_KEY` is not set
+- OSV.dev POST API — comprehensive open vulnerability database
+- npm advisory bulk API — security advisories with affected version ranges
+- NVD CVE keyword search — NIST national vulnerability database
+- Firecrawl used as enhancement when available, not a hard requirement
+
+**AI always-on**
+- AI analysis runs automatically when `OPENAI_API_KEY` is set — no `--ai` flag needed
+- Remote API keys pulled from dashboard settings unconditionally (no flag gate)
+- `--ai` flag removed; `--browser` flag removed
+
 ### Changed
-- **Smart project detection** — when running `breachscope scan --url <url>` from a directory with no project manifest (`package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, `Gemfile`, `pyproject.toml`), the dependency, code, toolchain, and sub-toolchain scanners are automatically skipped. URL-targeted scans go straight to blackbox + smoke. Scanners still run in full when a codebase is present alongside a URL.
+- **Active pentest** moved from Playwright `--browser` agent into Docker sandbox — all active exploitation now inside an isolated container
+- **Smart project detection** — when running `breachscope scan --url <url>` with no local project manifest, static scanners are automatically skipped
+- `ProbeActivity.attack` → `ProbeActivity.sandbox` in dashboard type contract
+- `deduplicatedFindings` removed from `ReportSynthesis` interface (was declared but never populated; fallback always executed)
+- Orphaned files deleted: `agents/attack-probe.ts`, `agents/browser-probe.ts`
+
+### Fixed
+- `TS2532` in `sandbox-agent.ts`: `toolMatch[1]` optional chaining added
+- `opts.ai` gate in `scan.ts` removed — remote API keys now always applied when available
 
 ---
 
@@ -40,13 +82,8 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 - Bug (+30): Python `pickle.loads`, `yaml.load` without SafeLoader, `subprocess shell=True`, `os.system` with variable; Go `fmt.Sprintf` SQL, `unsafe.Pointer`; Rust unsafe blocks; SSRF, open redirect, mass assignment, NoSQL injection, `dangerouslySetInnerHTML`, JWT `alg:none`, ReDoS, template injection, zip-slip, timing attack, XXE, LDAP injection
 - Breach (+23): GitHub PAT, Stripe/OpenAI/Anthropic/Slack/Supabase/SendGrid/Twilio/AWS keys, Firebase private key, DB connection strings with credentials, debug endpoints, admin routes, DigitalOcean/Cloudflare/Heroku/Vercel tokens, npm token, base64 SSH key
 
-**Active penetration testing (`--browser`)**
-- Playwright-powered authenticated browser pentest agent
-- SQLi (union, blind, time-based, error-based), XSS with DOM reflection, JWT `alg:none` + admin claim injection + kid SQLi, IDOR enumeration, CORS evil.com reflection, rate limit bypass, 30+ sensitive path enumeration
-- Session cookie auto-tracking; results stored and shown in dashboard Probe Activity tab
-
-**Live service probing (`--ai`)**
-- Discovers SaaS services from codebase and prompts for credentials interactively
+**Live service probing**
+- Discovers SaaS services from codebase and prompts for credentials interactively when `OPENAI_API_KEY` is set
 - Step-by-step action logging: HTTP, search, crawl operations with method badges
 
 **AI agents**
@@ -64,7 +101,7 @@ BreachScope follows [Semantic Versioning](https://semver.org/).
 - AI synthesis section: executive summary, top priority, attack chains rendered at top of Overview tab
 - Tool cards: per-tool findings inline, GitHub link, installed version display, CVE version label
 - `aiReport` column in scans table stores executive summary/attack chains as JSON
-- Probe Activity tab: `ServiceProbeCard` (step log with HTTP/search/crawl badges) + `AttackProbeCard` (attack grid with result icons)
+- Probe Activity tab: `ServiceProbeCard` (step log with HTTP/search/crawl badges)
 - Real PDF export: jsPDF + jspdf-autotable — dark header, severity boxes, full findings table, dependency risk table (top 40), probe log, page numbers
 - Findings: `detail` column in DB stores matched code snippet; shown as "Matched Code" block in FindingCard
 - Scan mode badge in list: red (breach), yellow (bug), purple (full)

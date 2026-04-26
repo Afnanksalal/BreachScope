@@ -9,8 +9,8 @@ const LINKS = {
   ],
   Resources: [
     { label: "Documentation", href: "/docs" },
-    { label: "Releases",      href: "https://github.com/breachscope/breachscope/releases", external: true },
-    { label: "Contributing",  href: "https://github.com/breachscope/breachscope/blob/main/CONTRIBUTING.md", external: true },
+    { label: "Releases",      href: "https://github.com/Afnanksalal/BreachScope/releases", external: true },
+    { label: "Contributing",  href: "https://github.com/Afnanksalal/BreachScope/blob/main/CONTRIBUTING.md", external: true },
   ],
   Legal: [
     { label: "MIT License",   href: "/docs#license" },

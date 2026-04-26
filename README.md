@@ -2,7 +2,7 @@
 
 # BreachScope
 
-**Full-stack security scanner — supply chain, code, active pentest, AI agents.**  
+**Full-stack security scanner — supply chain, code, Docker attack arena, AI agents.**  
 Catches what linters and conventional scanners miss, across every language.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -15,7 +15,7 @@ Catches what linters and conventional scanners miss, across every language.
 
 ## What is BreachScope?
 
-BreachScope is an open-source CLI that audits the full depth of your stack — not just your code, but every package you depend on across **every language**, every tool *those tools* depend on, your live SaaS services, and your running application.
+BreachScope is an open-source CLI that audits the full depth of your stack — not just your code, but every package you depend on across **10 languages**, every tool *those tools* depend on, your live SaaS services, and your running application. An AI agent runs autonomously inside a Docker container, installs whatever tools it needs, and actively exploits your app to find vulnerabilities.
 
 It was built because incidents like the [ua-parser-js hijack](https://github.com/advisories/GHSA-pjwm-rvh2-c424), [node-ipc sabotage](https://github.com/advisories/GHSA-97m3-w2cp-4xx6), and countless credential-leak breaches aren't caught by linters or conventional scanners. They require understanding the *entire supply chain* — the GitHub security posture of your libraries, the configuration of your hosted services, and the transitive dependencies you've never thought about.
 
@@ -48,11 +48,11 @@ npm install -g breachscope
 # Scan a local project — auto-detects language, runs everything
 breachscope scan
 
-# Probe a live URL only — skips static scanners automatically (no project detected)
-breachscope scan --url https://yourapp.com
+# Launch Docker attack arena — AI agent attacks your running app
+breachscope sandbox
 
-# Maximum coverage — deep, all modes, AI agents, active pentest
-breachscope scan --mode deep --breach --bug --ai --browser --url https://yourapp.com -v
+# Full coverage — deep mode, all scan patterns
+breachscope scan --mode deep --breach --bug --url https://yourapp.com
 ```
 
 Both `breachscope` and `bs` (shorthand) are available after install.
@@ -66,10 +66,15 @@ BreachScope auto-detects your stack and scans the correct manifests for each lan
 | Language | Files Scanned | OSV Ecosystem |
 |----------|--------------|---------------|
 | JavaScript / TypeScript | `package.json`, lockfiles | `npm` |
-| Python | `requirements.txt`, `requirements-dev.txt`, `requirements/*.txt`, `pyproject.toml` (PEP 621 + Poetry + uv/rye), `Pipfile`, `setup.py` | `PyPI` |
+| Python | `requirements.txt`, `requirements-dev.txt`, `pyproject.toml`, `Pipfile`, `setup.py` | `PyPI` |
 | Go | `go.mod` | `Go` |
 | Rust | `Cargo.toml`, `Cargo.lock` | `crates.io` |
 | Ruby | `Gemfile`, `Gemfile.lock` | `RubyGems` |
+| Java | `pom.xml`, `build.gradle` | Maven Central |
+| PHP | `composer.json`, `composer.lock` | Packagist |
+| .NET | `*.csproj`, `packages.lock.json` | NuGet |
+| Elixir | `mix.exs`, `mix.lock` | Hex.pm |
+| Dart | `pubspec.yaml`, `pubspec.lock` | pub.dev |
 
 All ecosystems query [OSV.dev](https://osv.dev) with the correct ecosystem tag for accurate CVE data.
 
@@ -78,40 +83,33 @@ All ecosystems query [OSV.dev](https://osv.dev) with the correct ecosystem tag f
 ## How It Works
 
 ```
-Your Codebase (any language)
+Your Codebase (any of 10 languages)
           │
           ▼
   [Multi-Signal Detector]
   package.json · go.mod · Cargo.toml · requirements.txt
-  pyproject.toml · Gemfile · imports · .env · config files
-          │
-          ▼
-  [Tool Classifier]  ← static toolmap (150+ known packages) or GPT-4o
-          │
-     ┌────┴────┐
-    OSS       SaaS
-     │         │
-  Scorecard  Firecrawl
-  OSV.dev    GPT-4o research
-  deps.dev   Changelog crawling
-  Registry
+  pyproject.toml · Gemfile · pom.xml · composer.json
+  *.csproj · mix.exs · pubspec.yaml
           │
           ▼
   [Static Scanners]
-  66 code patterns (base + bug + breach) · Toolchain probe · Blackbox · Smoke tests
+  66 code patterns · Toolchain probe · Blackbox · Smoke tests
+  Free threat intel: OSV.dev · NVD CVE · npm advisories
           │
           ▼
-  [AI Multi-Agent Layer]  ← --ai
+  [AI Multi-Agent Layer]  ← auto when OPENAI_API_KEY is set
   Orchestrator → Dependency → Code → Toolchain → Blackbox → Report
-  (mode-aware: breach/bug/full agents get different system prompts + focus)
+  (mode-aware: breach/bug/full agents get different system prompts)
           │
           ▼
-  [Active Pentest]  ← --browser
-  Playwright · SQLi · XSS · JWT attacks · CORS · Rate limit · Sensitive paths
+  [Docker Attack Arena]  ← breachscope sandbox
+  AI agent runs as root · installs nmap/sqlmap/nikto freely
+  JWT attacks · SSTI · SSRF · path traversal · cmd injection
+  Prototype pollution · SQL injection · env secret extraction
           │
           ▼
   [Web Dashboard]  breachscoope.vercel.app
-  Scan history · Findings · Probe activity tab · PDF export
+  Scan history · Findings · Sandbox terminal replay · PDF export
 ```
 
 ---
@@ -132,7 +130,7 @@ bun add -g breachscope
 npx breachscope scan
 ```
 
-Requires **Node.js 18+**.
+Requires **Node.js 18+**. Docker is required for `breachscope sandbox`.
 
 ---
 
@@ -140,15 +138,16 @@ Requires **Node.js 18+**.
 
 ```
 breachscope scan [options]     Full scan — all engines
+breachscope sandbox [options]  Docker attack arena — AI agent as root
 breachscope audit              Static code audit only
 breachscope probe <url>        Blackbox HTTP probe
 breachscope smoke <url>        Smoke tests against live URL
 breachscope deps               Dependency + lockfile scan (all languages)
 breachscope toolchain          Sub-toolchain risk dashboard
-breachscope login              Authenticate CLI with breachscoope.vercel.app
+breachscope login              Authenticate CLI with dashboard
 breachscope init               Create breachscope.yaml config
 
-Shorthand: bs scan, bs login, bs deps, etc.
+Shorthand: bs scan, bs sandbox, bs login, bs deps, etc.
 ```
 
 ### `scan` options
@@ -160,85 +159,110 @@ Shorthand: bs scan, bs login, bs deps, etc.
 | `--bug` | — | Bug mode: deep code audit, injection, deserialization, auth |
 | `--breach --bug` | — | Full mode: both combined — 66 patterns, all scanners |
 | `-t, --target` | `all` | Scope: `all` \| `dependency` \| `toolchain` \| `code` \| `blackbox` \| `smoke` |
-| `-u, --url` | — | Target URL for blackbox, smoke, and browser pentest. Static scanners auto-skip when no local project is detected. |
+| `-u, --url` | — | Target URL for blackbox and smoke probing |
 | `-o, --output` | `console` | Output: `console` \| `json` \| `sarif` |
 | `-f, --file` | — | Write output to file |
 | `--ci` | — | Exit 1 if findings exceed severity threshold |
-| `--ai` | — | Enable AI multi-agent analysis + live service probing |
-| `--browser` | — | Launch authenticated Playwright pentest (requires `--url`) |
 | `-v, --verbose` | — | Debug output |
 
+### `sandbox` options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-p, --port` | auto | App port inside the container |
+| `-i, --image` | auto | Custom base Docker image |
+| `-t, --timeout` | `60` | Seconds to wait for app start |
+| `--deep` | — | Extended attack sequences |
+| `--no-cleanup` | — | Keep container running after scan |
+| `-u, --url` | — | Target URL context for dashboard reporting |
+
 ---
 
-## Scan Modes
+## Docker Attack Arena (`sandbox`)
 
-### `--breach` — Credential & Supply Chain Mode
-
-Focused on finding what an attacker could exploit right now.
-
-- Runs: dependency scan (all languages), supply chain graph, toolchain misconfig probe, code audit with **36 breach patterns**
-- Breach patterns target: GitHub PATs, Stripe/OpenAI/Anthropic/Slack/Supabase JWTs, AWS keys, DB connection strings with creds, Firebase service accounts, DigitalOcean/Cloudflare/Vercel tokens, npm tokens, debug endpoints, admin routes without auth
-- AI agents: aggressive CVE/hijack hunting across 20+ packages, credential-focused code review, supply chain incident research
-
-### `--bug` — Code Vulnerability Mode
-
-Focused on exploitable bugs in the code itself.
-
-- Runs: deep code audit with **43 patterns**, dependency scan for known-vulnerable versions
-- Skips: toolchain scan, sub-toolchain graph (not relevant to code bugs)
-- Bug patterns target: Python `pickle.loads`, `yaml.load` without SafeLoader, `subprocess` with `shell=True`, `os.system` with f-strings; Go SQL via `fmt.Sprintf`, `unsafe.Pointer`; Rust unsafe blocks; SSRF, open redirect, mass assignment (`...req.body`), NoSQL injection, `dangerouslySetInnerHTML`, JWT none algorithm, XXE, LDAP injection, zip-slip, timing attacks, ReDoS, template injection
-- AI agents: deep logic bug hunting — race conditions, second-order vulns, IDOR, auth bypass, insecure deserialization
-
-### `--breach --bug` — Full Mode
-
-No scanner is skipped. All 66 patterns run. Both AI agent personalities activate.
+Spins up an isolated Docker container, deploys your app, and unleashes an AI agent as root to find vulnerabilities through active exploitation — not pattern matching.
 
 ```bash
-breachscope scan --mode deep --breach --bug --ai --browser --url https://yourapp.com -v
+# From your project root — auto-detects language and builds the right Dockerfile
+breachscope sandbox
+
+# Extended attack mode
+breachscope sandbox --deep
+
+# Keep container alive for manual inspection after scan
+breachscope sandbox --no-cleanup
 ```
 
+**What the AI agent does:**
+- Runs as root, installs any tool it needs (nmap, sqlmap, nikto, custom exploits)
+- Extracts all environment variables and flags sensitive credentials
+- Tests JWT `alg:none` bypass, weak secrets, missing auth on admin routes
+- Probes for SSTI in all template engines (Jinja2, Pug, EJS, Handlebars, Twig)
+- Tests SSRF via internal metadata endpoints and private IP ranges
+- Path traversal, command injection, SQL injection, prototype pollution
+
+**Supported project types:**
+
+| Language | Detection | Base Image |
+|----------|-----------|------------|
+| Node.js / Bun | `package.json` | node:20-slim |
+| Python | `requirements.txt`, `pyproject.toml` | python:3.12-slim |
+| Go | `go.mod` | golang:1.22-alpine |
+| Rust | `Cargo.toml` | rust:1.78-slim |
+| Ruby | `Gemfile` | ruby:3.3-slim |
+| Java | `pom.xml`, `build.gradle` | eclipse-temurin:21-jdk |
+| PHP | `composer.json` | php:8.3-cli |
+| .NET | `*.csproj` | mcr.microsoft.com/dotnet/sdk:8.0 |
+| Elixir | `mix.exs` | elixir:1.16-slim |
+| Dart | `pubspec.yaml` | dart:3.3 |
+
+Results appear as a **live terminal replay** in the dashboard's Sandbox tab.
+
 ---
 
-## Active Penetration Testing (`--browser`)
+## AI Intelligence
 
-Launches an authenticated Playwright browser that actively attacks your running application:
+AI analysis runs automatically when `OPENAI_API_KEY` is set — no flags required.
 
 ```bash
-# From any directory — no project needed, goes straight to the attack
-breachscope scan --browser --url https://yourapp.com --ai
-# Prompts for: login URL, username, password
+export OPENAI_API_KEY=sk-...
+export FIRECRAWL_API_KEY=fc-...   # optional — enables full web search
 
-# From your project root — also scans local code + dependencies
-cd my-project && breachscope scan --browser --url https://yourapp.com --ai
+breachscope scan --mode major
 ```
 
-**Attacks executed:**
-- SQL injection — URL params and forms (union, blind, time-based, error-based)
-- XSS — payload injection with DOM reflection + `alert()` detection
-- JWT attacks — `alg:none`, admin claim injection, ID tampering, kid parameter SQLi
-- IDOR — ID enumeration on REST endpoints
-- CORS — evil.com origin reflection testing
-- Rate limiting — concurrent request flooding to detect missing limits
-- Sensitive path enumeration — 30+ paths (`.env`, `/.git`, `/admin`, `/graphql`, `/metrics`, etc.)
-- Cookie security flag inspection
-- Security header analysis
+**Free threat intel (no API key needed):**
+- [OSV.dev](https://osv.dev) — comprehensive open vulnerability database (POST API)
+- npm advisory bulk API — security advisories with affected version ranges
+- NVD CVE search — NIST national vulnerability database
 
-Results appear in the **Probe Activity** tab of the dashboard.
+Firecrawl enhances this with full web search when available, but real CVE data works out of the box.
+
+| Agent | Role | Mode Awareness |
+|-------|------|---------------|
+| **Orchestrator** | Plans agent dispatch based on project profile + scan mode | Biases selection by mode |
+| **Dependency** | CVE/advisory research with live web tools | Breach: 20+ packages; Bug: reachable CVEs |
+| **Code** | Deep source analysis | Breach: credential hunt; Bug: logic bugs; Full: both |
+| **Toolchain** | Live changelog/security page crawling | Breach + full only |
+| **Blackbox** | Adaptive HTTP probing | When URL provided |
+| **Report** | Attack chain synthesis, executive summary | Always |
+
+Token usage: ~20,000–60,000 tokens per scan (~$0.05–$0.15 at GPT-4o pricing).
 
 ---
 
-## Live Service Probing (`--ai`)
+## Live Service Probing
 
-With `--ai`, BreachScope discovers SaaS services in your codebase and probes them interactively:
+When `OPENAI_API_KEY` is set and running interactively, BreachScope discovers SaaS services in your codebase and probes them for real misconfigurations:
 
 ```bash
-breachscope scan --ai
+breachscope scan
 # Discovers: Supabase, GitHub, Stripe, Vercel, OpenAI, etc.
 # Prompts for credentials per service
 # Probes live APIs for misconfigurations and permission issues
 ```
 
-Every API call is logged step-by-step in the dashboard's Probe Activity tab, with HTTP method badges, search queries, and crawl steps.
+Every API call is logged step-by-step in the dashboard's Probe Activity tab.
 
 ---
 
@@ -279,22 +303,12 @@ breachscope login  # authenticate once — all future scans auto-upload
 ### Features
 
 - **Scan History** — search, filter by scan mode (all/breach/bug/full) and depth (basic/major/deep)
-- **Overview Tab** — severity bars, scan mode label (colored: red=breach, yellow=bug, purple=full), duration, tools scanned
-- **Findings Tab** — collapsible cards: severity badge, category, file:line, **matched code snippet**, remediation, references
-- **Probe Activity Tab** — service probe step logs (HTTP/search/crawl badges) + attack probe grid
-- **Report Tab** — export as JSON, Markdown, or **real PDF** (jsPDF — structured, not a print screenshot)
+- **Overview Tab** — severity bars, scan mode label, duration, tools scanned, AI executive summary
+- **Findings Tab** — collapsible cards: severity badge, category, file:line, matched code snippet, remediation, references
+- **Sandbox Tab** — full terminal replay of the Docker AI agent session — every command, HTTP request, credential found, and attack chain
+- **Report Tab** — export as JSON, Markdown, or real PDF (jsPDF)
 - **API Keys** — generate/revoke CLI tokens (SHA-256 hashed)
 - **Settings** — AES-256-GCM encrypted API keys, scan defaults
-
-### PDF Report
-
-The generated PDF includes:
-- Dark header bar with project name and generation date
-- Color-coded severity summary boxes
-- Full findings table with severity color coding
-- Dependency risk table (top 40 by risk score with color-coded scores)
-- Probe activity log
-- Page numbers on every page
 
 ### Self-hosting
 
@@ -340,8 +354,8 @@ toolchain:
     repo: "owner/repo"
 
 ai:
-  openaiApiKey: ""       # or OPENAI_API_KEY
-  firecrawlApiKey: ""    # or FIRECRAWL_API_KEY
+  openaiApiKey: ""       # or OPENAI_API_KEY — AI runs automatically when set
+  firecrawlApiKey: ""    # or FIRECRAWL_API_KEY — optional, enables full web search
   model: gpt-4o
 
 output:
@@ -351,28 +365,6 @@ output:
 thresholds:
   failOn: high           # critical | high | medium | low
 ```
-
----
-
-## AI Mode
-
-```bash
-export OPENAI_API_KEY=sk-...
-export FIRECRAWL_API_KEY=fc-...
-
-breachscope scan --ai --mode major --url https://yourapp.com
-```
-
-| Agent | Role | Mode Awareness |
-|-------|------|---------------|
-| **Orchestrator** | Plans agent dispatch based on project profile + scan mode | Biases selection by mode |
-| **Dependency** | CVE/advisory research with live web tools | Breach: 20+ packages; Bug: reachable CVEs |
-| **Code** | Deep source analysis | Breach: credential hunt; Bug: logic bugs; Full: both |
-| **Toolchain** | Live changelog/security page crawling | Breach + full only |
-| **Blackbox** | Adaptive HTTP probing | When URL provided |
-| **Report** | Deduplication, attack chain synthesis, executive summary | Always |
-
-Token usage: ~20,000–60,000 tokens per scan (~$0.05–$0.15 at GPT-4o pricing).
 
 ---
 
@@ -404,8 +396,8 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Bug scan (AI-powered code audit)
-        run: breachscope scan --mode deep --bug --ai --ci
+      - name: AI code audit
+        run: breachscope scan --mode deep --bug --ci
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
@@ -426,13 +418,14 @@ breachscope/
 │       ├── pipelines/           # OSS pipeline (multi-ecosystem), SaaS pipeline, router
 │       ├── engine/              # Recursive sub-toolchain engine + dependency graph
 │       ├── scanners/
-│       │   ├── dependency/      # index.ts + python.ts, go.ts, rust.ts, ruby.ts
+│       │   ├── dependency/      # JS, Python, Go, Rust, Ruby, Java, PHP, .NET, Elixir, Dart
 │       │   ├── code/            # patterns.ts (66 rules: base + bug + breach), index.ts
 │       │   ├── toolchain/       # Supabase, Vercel, GitHub scanners
 │       │   ├── blackbox/        # HTTP security header + path probe
 │       │   └── smoke/           # Live app behavior tests
 │       ├── agents/              # Orchestrator, dependency, code, toolchain, blackbox, report
-│       │   └── attack-probe.ts  # Playwright active pentest (SQLi, XSS, JWT, CORS, rate limit)
+│       │   ├── sandbox-agent.ts # Docker attack arena AI agent (PentestGPT architecture)
+│       │   └── live-probe.ts    # Interactive SaaS service probing
 │       └── reporters/           # Console, JSON, risk dashboard, AI console
 ├── web/                         # Next.js 15 dashboard (breachscoope.vercel.app)
 │   ├── app/
@@ -442,11 +435,6 @@ breachscope/
 │   │   ├── schema.ts            # DB: users, scans, findings (with detail col), api_keys, settings
 │   │   └── crypto.ts            # AES-256-GCM for stored API keys
 │   └── scripts/                 # seed.ts, migrate.ts
-├── docs/
-│   ├── getting-started.md
-│   ├── ai-agents.md
-│   ├── commands/scan.md
-│   └── integrations/            # supabase.md, vercel.md
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 └── SECURITY.md

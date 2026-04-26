@@ -22,7 +22,13 @@ export interface ToolRiskEntry {
 
 export interface ProbeData {
   services?: Array<{ id: string; name: string; category: string; steps: string[]; findingsCount: number; tokensUsed: number }>;
-  attack?: { url: string; attacks: string[]; pagesVisited: string[]; findingsCount: number; tokensUsed: number };
+  sandbox?: {
+    projectType: string;
+    attackLog: string[];
+    attackChains: string[];
+    findingsCount: number;
+    tokensUsed: number;
+  };
 }
 
 export async function pushScanToDashboard(

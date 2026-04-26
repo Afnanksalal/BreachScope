@@ -15,6 +15,7 @@ const SECTIONS = [
     title: "Commands",
     items: [
       { label: "scan", anchor: "scan" },
+      { label: "sandbox", anchor: "sandbox" },
       { label: "login", anchor: "login" },
       { label: "audit", anchor: "audit" },
       { label: "probe", anchor: "probe" },

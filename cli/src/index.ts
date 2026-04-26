@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { runScan } from "./commands/scan.js";
+import { runSandbox } from "./commands/sandbox.js";
 import { generateConfig } from "./core/config.js";
 import { logger } from "./core/logger.js";
 import { makeLoginCommand, makeLogoutCommand, makeWhoamiCommand } from "./commands/login.js";
@@ -29,8 +30,6 @@ program
   .option("-f, --file <path>", "write output to a file")
   .option("-c, --config <path>", "path to breachscope.yaml config file")
   .option("--ci", "exit code 1 if findings exceed severity threshold (for CI pipelines)")
-  .option("--ai", "enable AI multi-agent analysis (requires OPENAI_API_KEY + FIRECRAWL_API_KEY)")
-  .option("--browser", "launch authenticated browser probe — logs in and runs passive security checks (requires --url and --ai)")
   .option("--breach", "focus on CVE, supply chain, and SaaS incident intelligence")
   .option("--bug", "focus on code audit, static analysis, and vulnerability testing")
   .option("-v, --verbose", "verbose debug output")
@@ -89,10 +88,26 @@ program
   .description("Detect and audit every tool in the codebase — OSS + SaaS pipelines")
   .option("-m, --mode <mode>", "scan depth: basic | major | deep", "basic")
   .option("-o, --output <format>", "output format: console | json", "console")
-  .option("--ai", "enable AI synthesis (requires OPENAI_API_KEY)")
   .option("-v, --verbose")
   .action(async (opts) => {
     await runScan({ ...opts, target: "all" });
+  });
+
+// ─── sandbox ─────────────────────────────────────────────────────────────────
+program
+  .command("sandbox")
+  .description("Spin up a Docker sandbox, run the app inside it, and attack it with server-side techniques: env secrets, internal ports, command injection, SSTI, path traversal, prototype pollution, SSRF, JWT attacks")
+  .option("-p, --port <number>", "app port inside the container (auto-detected from project)", parseInt)
+  .option("-i, --image <name>", "custom base Docker image to use (default: auto-detected)")
+  .option("-t, --timeout <seconds>", "max seconds to wait for the app to start (default: 60)", parseInt)
+  .option("--deep", "run extended attack sequences (more iterations)")
+  .option("--no-cleanup", "keep the container running after the scan (for manual inspection)")
+  .option("-u, --url <url>", "target URL context (for dashboard reporting)")
+  .option("-o, --output <format>", "output format: console | json", "console")
+  .option("-f, --file <path>", "write results to a file")
+  .option("-v, --verbose", "verbose debug output")
+  .action(async (opts) => {
+    await runSandbox(opts);
   });
 
 // ─── auth ─────────────────────────────────────────────────────────────────────

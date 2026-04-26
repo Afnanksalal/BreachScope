@@ -34,9 +34,7 @@ export function renderAIReport(results: AgentResult[], synthesis: ReportSynthesi
     }
   }
 
-  // CLI display uses the AI-curated deduplication list (concise executive view).
-  // The full findings set is tracked separately and pushed to the dashboard.
-  const displayFindings = synthesis?.deduplicatedFindings ?? results.flatMap((r) => r.findings);
+  const displayFindings = results.flatMap((r) => r.findings);
   const totalCount = allFindings?.length ?? displayFindings.length;
 
   if (displayFindings.length === 0 && totalCount === 0) {

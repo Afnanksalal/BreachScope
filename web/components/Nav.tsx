@@ -5,6 +5,28 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { clsx } from "clsx";
 
+const GITHUB_REPO = "Afnanksalal/BreachScope";
+
+function useGitHubStars() {
+  const [stars, setStars] = useState<number | null>(null);
+  useEffect(() => {
+    fetch(`https://api.github.com/repos/${GITHUB_REPO}`, {
+      headers: { Accept: "application/vnd.github+json" },
+    })
+      .then((r) => r.json())
+      .then((d: { stargazers_count?: number }) => {
+        if (typeof d.stargazers_count === "number") setStars(d.stargazers_count);
+      })
+      .catch(() => {});
+  }, []);
+  return stars;
+}
+
+function formatStars(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
 const NAV_LINKS: Array<{ label: string; href: string; external?: boolean }> = [
   { label: "Features",     href: "#features" },
   { label: "How It Works", href: "#install" },
@@ -16,6 +38,7 @@ export function Nav() {
   const isLoggedIn = status === "authenticated" && !!session?.user;
   const isLoading  = status === "loading";
   const [open, setOpen] = useState(false);
+  const stars = useGitHubStars();
 
   // Close on route change / escape
   useEffect(() => {
@@ -62,13 +85,18 @@ export function Nav() {
           {/* Desktop right side */}
           <div className="hidden md:flex items-center gap-2.5">
             <a
-              href="https://github.com/breachscope/breachscope"
+              href={`https://github.com/${GITHUB_REPO}`}
               target="_blank"
               rel="noopener noreferrer"
               aria-label="GitHub"
-              className="w-8 h-8 flex items-center justify-center rounded-lg text-white/40 hover:text-white/75 hover:bg-white/[0.06] transition-all duration-150"
+              className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-white/40 hover:text-white/75 hover:bg-white/[0.06] transition-all duration-150"
             >
               <GitHubIcon />
+              {stars !== null && (
+                <span className="text-[0.7rem] font-mono text-white/35 tabular-nums">
+                  {formatStars(stars)}
+                </span>
+              )}
             </a>
             <div className="w-px h-4 bg-white/[0.08]" />
             {isLoading ? (
@@ -134,7 +162,7 @@ export function Nav() {
 
         <div className="px-5 pb-5 pt-2 border-t border-white/[0.06] flex flex-col gap-2">
           <a
-            href="https://github.com/breachscope/breachscope"
+            href={`https://github.com/${GITHUB_REPO}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-white/60 hover:text-white hover:bg-white/[0.06] transition-all"
@@ -142,6 +170,9 @@ export function Nav() {
           >
             <GitHubIcon />
             GitHub
+            {stars !== null && (
+              <span className="ml-auto text-[0.7rem] font-mono text-white/30">{formatStars(stars)}</span>
+            )}
           </a>
           {isLoggedIn ? (
             <Link

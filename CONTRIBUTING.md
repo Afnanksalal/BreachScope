@@ -118,9 +118,11 @@ cli/src/
 │   ├── orchestrator.ts  # Mode-aware dispatch planner
 │   ├── code.ts          # SYSTEM_ALL, SYSTEM_BUG, SYSTEM_BREACH — selected at runtime
 │   ├── dependency.ts    # SYSTEM_ALL, SYSTEM_BUG, SYSTEM_BREACH — selected at runtime
-│   └── attack-probe.ts  # Playwright pentest (SQLi, XSS, JWT, CORS, rate limit)
+│   ├── sandbox-agent.ts # Docker attack arena AI agent (PentestGPT architecture)
+│   └── live-probe.ts    # Interactive SaaS service probing
 └── commands/
-    └── scan.ts          # Main scan orchestrator — gates scanners by scanMode
+    ├── scan.ts          # Main scan orchestrator — gates scanners by scanMode
+    └── sandbox.ts       # Docker attack arena entry point
 ```
 
 ---

@@ -225,8 +225,6 @@ export interface ScanOptions {
   tool?: string;
   url?: string;
   ci?: boolean;
-  ai?: boolean;
-  browser?: boolean;
 }
 
 // ─── AI / Agent layer ─────────────────────────────────────────────────────────

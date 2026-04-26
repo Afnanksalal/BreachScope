@@ -4,6 +4,7 @@
 
 - Node.js 18 or higher
 - npm, pnpm, yarn, or bun
+- Docker (required for `breachscope sandbox`)
 
 ## Installation
 
@@ -30,11 +31,14 @@ cd my-project
 # Initialize a config (optional but recommended)
 breachscope init
 
-# Run a full scan — auto-detects JS, Python, Go, Rust, Ruby
+# Run a full scan — auto-detects language, runs everything
 breachscope scan
 
 # Include a live URL for blackbox + smoke testing
 breachscope scan --url https://myapp.com
+
+# Launch Docker attack arena — AI agent attacks your running app
+breachscope sandbox
 ```
 
 ---
@@ -71,6 +75,11 @@ BreachScope auto-detects your stack. No config needed — just run it:
 | Go | `go.mod` |
 | Rust | `Cargo.toml`, `Cargo.lock` |
 | Ruby | `Gemfile`, `Gemfile.lock` |
+| Java | `pom.xml`, `build.gradle` |
+| PHP | `composer.json`, `composer.lock` |
+| .NET | `*.csproj`, `packages.lock.json` |
+| Elixir | `mix.exs`, `mix.lock` |
+| Dart | `pubspec.yaml`, `pubspec.lock` |
 
 CVEs are looked up against OSV.dev with the correct ecosystem per language.
 
@@ -91,43 +100,45 @@ CVEs are looked up against OSV.dev with the correct ecosystem per language.
 
 ## AI Mode
 
-Add `--ai` to enable the multi-agent pipeline:
+AI analysis runs automatically when `OPENAI_API_KEY` is set:
 
 ```bash
 export OPENAI_API_KEY=sk-...
-export FIRECRAWL_API_KEY=fc-...
+export FIRECRAWL_API_KEY=fc-...   # optional
 
-breachscope scan --ai --mode major --url https://myapp.com
+breachscope scan --mode major --url https://myapp.com
 ```
 
-With `--ai`, BreachScope also discovers SaaS services in your codebase and interactively probes them live — Supabase, GitHub, Stripe, Vercel, OpenAI, and more.
+BreachScope also discovers SaaS services in your codebase and interactively probes them live — Supabase, GitHub, Stripe, Vercel, OpenAI, and more.
+
+Free threat intel (OSV.dev, NVD, npm advisories) works with no API key.
 
 ---
 
-## Active Penetration Test
+## Docker Attack Arena
 
-Add `--browser --url` to launch an authenticated Playwright pentest:
+The `sandbox` command spins up a Docker container and runs an AI agent as root to actively exploit your app:
 
 ```bash
-breachscope scan --browser --url https://myapp.com --ai
-# Prompts for login URL, username, password
-# Runs: SQLi, XSS, JWT attacks, CORS, rate limiting, sensitive path scan
+breachscope sandbox
+
+# Extended attack mode
+breachscope sandbox --deep
 ```
+
+The agent installs any tool it needs (nmap, sqlmap, nikto), extracts env credentials, and tests JWT bypass, SSTI, SSRF, path traversal, command injection, and more. Results appear as a terminal replay in the dashboard.
 
 ---
 
-## Maximum Coverage Command
+## Maximum Coverage
 
 ```bash
-breachscope scan --mode deep --breach --bug --ai --browser --url https://yourapp.com -v
-```
+# Full static scan — all patterns, deep mode
+breachscope scan --mode deep --breach --bug
 
-This runs:
-- All 66 code patterns (base + bug + breach)
-- Full 6-level transitive dependency graph
-- All AI agents with mode-appropriate focus
-- Live service probing (interactive)
-- Authenticated browser pentest
+# Docker attack arena — active exploitation
+breachscope sandbox --deep
+```
 
 ---
 
@@ -137,7 +148,7 @@ This runs:
 breachscope login
 ```
 
-Opens a browser to authenticate with [breachscoope.vercel.app](https://breachscoope.vercel.app). Once connected, every scan result is pushed automatically — scan history, findings, probe activity logs, PDF reports.
+Opens a browser to authenticate with [breachscoope.vercel.app](https://breachscoope.vercel.app). Once connected, every scan result is pushed automatically — scan history, findings, sandbox terminal replay, PDF reports.
 
 Sign up free with GitHub, Google OAuth, or email/password.
 

@@ -22,7 +22,6 @@ import { runSubchainScan } from "../engine/index.js";
 import { discoverServices } from "../core/services.js";
 import { promptText, promptSecret, promptConfirm, SecureStore } from "../core/interactive.js";
 import { runLiveProbe } from "../agents/live-probe.js";
-import { runAttackProbe } from "../agents/attack-probe.js";
 import { pushScanToDashboard } from "../core/push-scan.js";
 import type { SubchainScanResult } from "../core/types.js";
 
@@ -57,10 +56,8 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   if (remote) {
     if (!opts.mode)   mode   = remote.defaultMode   as typeof mode;
     if (!opts.target) target = remote.defaultScanMode as typeof target;
-    if (opts.ai) {
-      if (!process.env.OPENAI_API_KEY    && remote.openaiKey)    process.env.OPENAI_API_KEY    = remote.openaiKey;
-      if (!process.env.FIRECRAWL_API_KEY && remote.firecrawlKey) process.env.FIRECRAWL_API_KEY = remote.firecrawlKey;
-    }
+    if (!process.env.OPENAI_API_KEY    && remote.openaiKey)    process.env.OPENAI_API_KEY    = remote.openaiKey;
+    if (!process.env.FIRECRAWL_API_KEY && remote.firecrawlKey) process.env.FIRECRAWL_API_KEY = remote.firecrawlKey;
   }
 
   console.log(chalk.dim(BANNER));
@@ -83,7 +80,6 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     id: string; name: string; category: string;
     steps: string[]; findingsCount: number; tokensUsed: number;
   }> = [];
-  let probeAttack: { url: string; attacks: string[]; pagesVisited: string[]; findingsCount: number; tokensUsed: number } | undefined;
 
   // ── Static scanners ───────────────────────────────────────────────────────
   // breach mode: deps + toolchain + supply chain; skip code quality patterns
@@ -185,7 +181,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   }
 
   // ── Interactive live probe ─────────────────────────────────────────────────
-  if (opts.ai && process.stdin.isTTY) {
+  if (process.env.OPENAI_API_KEY && process.stdin.isTTY) {
     logger.blank();
     logger.section("Live Service Probe");
 
@@ -277,62 +273,14 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     }
   }
 
-  // ── Active attack probe (authenticated browser pentest) ───────────────────
-  if (opts.browser && opts.url && process.stdin.isTTY) {
-    logger.blank();
-    logger.section("Active Penetration Test");
-    console.log(chalk.gray("  Launches a real browser, logs in, then actively probes for: SQLi, XSS,"));
-    console.log(chalk.gray("  JWT attacks, IDOR, CORS misconfig, rate limiting, sensitive paths, and more.\n"));
-    const { promptText: pt, promptSecret: ps } = await import("../core/interactive.js");
-    const loginUrl = await pt(`  Login page URL (leave blank to use ${opts.url}): `);
-    const username = await pt("  Username / email: ");
-    const password = await ps("  Password: ");
-
-    if (!username || !password) {
-      console.log(chalk.yellow("  Skipping — username and password are required."));
-    } else {
-      const spinner = ora("Launching attack probe — this may take a few minutes...").start();
-      try {
-        const result = await runAttackProbe(opts.url, {
-          username,
-          password,
-          loginUrl: loginUrl || opts.url,
-        });
-        findings.push(...result.findings);
-        probeAttack = {
-          url: opts.url, attacks: result.attacksSummary,
-          pagesVisited: result.pagesVisited, findingsCount: result.findings.length, tokensUsed: result.tokensUsed,
-        };
-        spinner.succeed(
-          `Attack probe — ${result.findings.length} finding(s) across ${result.pagesVisited.length} page(s) (${result.tokensUsed.toLocaleString()} tokens)`
-        );
-        if (result.attacksSummary.length > 0) {
-          console.log(chalk.gray(`  Attacks run: ${result.attacksSummary.slice(0, 6).join("  │  ")}`));
-        }
-        if (result.pagesVisited.length > 0) {
-          console.log(chalk.gray(`  Pages visited: ${result.pagesVisited.slice(0, 5).join(", ")}`));
-        }
-      } catch (e) {
-        spinner.fail(`Attack probe failed: ${String(e)}`);
-        logger.debug(e);
-      }
-    }
-  }
-
-  // ── AI multi-agent layer ───────────────────────────────────────────────────
-  if (opts.ai) {
-    if (!process.env.OPENAI_API_KEY) {
-      logger.warn("AI analysis skipped — OPENAI_API_KEY not set. Add it to dashboard Settings or export it locally.");
-      logger.warn("Run `breachscope whoami` to check login status, or set: export OPENAI_API_KEY=sk-...");
-    } else {
+  // ── AI multi-agent layer — always runs when OPENAI_API_KEY is set ────────────
+  if (process.env.OPENAI_API_KEY) {
     logger.section("AI Multi-Agent Analysis");
     const ctx = await buildAgentContext(cwd, config, url ?? undefined, scanMode);
     ctx.existingFindings = [...findings];
 
     const agentResults = await runOrchestrator(ctx);
 
-    // AI agents may discover findings not caught by static scanners.
-    // Merge them in, but never let GPT's curation shrink the raw findings set.
     const staticTitles = new Set(findings.map((f) => f.title));
     const aiNewFindings = agentResults
       .filter((r) => r.agent !== "report")
@@ -343,19 +291,15 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     renderAIReport(agentResults, lastSynthesis, mergedFindings);
 
     const aiResult = buildResult(cwd, startedAt, mergedFindings, { mode, url }, url);
+    if (opts.file) renderJsonReport(aiResult, opts.file);
 
-    if (opts.file) {
-      renderJsonReport(aiResult, opts.file);
-    }
-
-    await pushScan(aiResult, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, probeAttack, aiReport: lastSynthesis ? JSON.stringify(lastSynthesis) : undefined });
-
+    await pushScan(aiResult, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, aiReport: lastSynthesis ? JSON.stringify(lastSynthesis) : undefined });
     exitOnThreshold(opts, mergedFindings, config.thresholds.failOn);
     return;
-    } // end else (OPENAI_API_KEY present)
   }
 
-  // ── Standard output ────────────────────────────────────────────────────────
+  // ── Fallback output (no API key) ──────────────────────────────────────────
+  logger.warn("Set OPENAI_API_KEY for full AI-powered analysis (threat intel, code audit, web search).");
   const result = buildResult(cwd, startedAt, findings, { config: opts.config ?? "default", mode, url }, url);
   const format = opts.output ?? config.output.format;
 
@@ -366,8 +310,7 @@ export async function runScan(opts: ScanOptions): Promise<void> {
     if (opts.file) renderJsonReport(result, opts.file);
   }
 
-  await pushScan(result, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, probeAttack });
-
+  await pushScan(result, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices });
   exitOnThreshold(opts, findings, config.thresholds.failOn);
 }
 
@@ -377,13 +320,11 @@ async function pushScan(
     mode: string; scanMode: string; url?: string; explicitFlags?: boolean;
     subchainResult?: SubchainScanResult | null;
     probeServices?: Array<{ id: string; name: string; category: string; steps: string[]; findingsCount: number; tokensUsed: number }>;
-    probeAttack?: { url: string; attacks: string[]; pagesVisited: string[]; findingsCount: number; tokensUsed: number };
     aiReport?: string;
   }
 ): Promise<void> {
   const spinner = ora("Uploading results to dashboard…").start();
 
-  // Build compact tool risk data for the dashboard
   const toolRiskData = opts.subchainResult?.toolResults.map((r) => ({
     name:            r.tool.name,
     kind:            r.tool.kind,
@@ -401,8 +342,8 @@ async function pushScan(
     version:         r.tool.version,
   })) ?? undefined;
 
-  const probeData = (opts.probeServices?.length || opts.probeAttack)
-    ? { services: opts.probeServices ?? [], attack: opts.probeAttack }
+  const probeData = opts.probeServices?.length
+    ? { services: opts.probeServices }
     : undefined;
 
   const [scanId] = await Promise.all([

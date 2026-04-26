@@ -1,28 +1,27 @@
 # AI Multi-Agent Mode
 
-BreachScope's `--ai` flag activates a multi-agent pipeline powered by GPT-4o and Firecrawl. Each agent has a focused role and its behavior adapts based on the active scan mode (`--breach`, `--bug`, or `--breach --bug`).
+BreachScope's AI pipeline activates automatically when `OPENAI_API_KEY` is set. Each agent has a focused role and adapts behavior based on the active scan mode (`--breach`, `--bug`, or `--breach --bug`).
 
 ---
 
 ## How It Works
 
 ```bash
-breachscope scan --ai --mode major --url https://yourapp.com
+export OPENAI_API_KEY=sk-...
+breachscope scan --mode major --url https://yourapp.com
 ```
 
 1. Static scanners run first (dependency, code, toolchain, blackbox, smoke)
 2. **Orchestrator Agent** reviews the project profile + scan mode and plans which AI agents to dispatch
 3. Specialist agents run in sequence, each with tool access:
-   - `web_search` — Firecrawl or DuckDuckGo-powered web search
+   - `web_search` — Firecrawl or free OSV/NVD/npm API fallback
    - `crawl_url` — scrape specific advisory/changelog pages
    - HTTP tools — live requests to the target or registry APIs
-4. **Report Agent** synthesizes all findings, deduplicates, identifies attack chains, writes executive summary
+4. **Report Agent** synthesizes all findings, identifies attack chains, writes executive summary
 
 ---
 
 ## Mode Awareness
-
-The orchestrator and every specialist agent receive the current scan mode and behave differently:
 
 | Mode | Orchestrator bias | Code agent focus | Dep agent focus |
 |------|------------------|-----------------|----------------|
@@ -51,7 +50,7 @@ Researches packages using live tools:
 - Web search for known incidents, supply chain attacks
 - npm advisory data
 
-**In breach mode**: Investigates 20+ packages aggressively. Looks for active malware, postinstall script exfiltration, maintainer takeovers, typosquatting (`lodahs`, `reqest`), dependency confusion (internal-looking names on public registry), recently published packages with access to sensitive APIs.
+**In breach mode**: Investigates 20+ packages aggressively. Looks for active malware, postinstall script exfiltration, maintainer takeovers, typosquatting, dependency confusion.
 
 **In bug mode**: Cross-references installed versions against known-vulnerable version ranges. Focuses on packages in auth, parsing, and HTTP handling paths.
 
@@ -61,52 +60,33 @@ Researches packages using live tools:
 
 Deep static analysis with GPT-4o. Sends prioritized source files (auth, routes, DB, config first) and reasons about the full codebase.
 
-**In breach mode** (`SYSTEM_BREACH` prompt): Hunts exclusively for credentials, secrets, and misconfigurations that give attackers immediate access. Looks for GitHub PATs, cloud tokens, DB connection strings, hardcoded JWT secrets, debug/admin routes, env file paths.
+**In breach mode** (`SYSTEM_BREACH` prompt): Hunts exclusively for credentials, secrets, and misconfigurations that give attackers immediate access.
 
-**In bug mode** (`SYSTEM_BUG` prompt): Finds real exploitable security bugs — second-order injection (data stored safely, used dangerously later), race conditions in auth flows, prototype pollution chains, subtle SSRF patterns, insecure deserialization, business logic flaws (integer overflow in pricing, negative quantities, state transition gaps).
+**In bug mode** (`SYSTEM_BUG` prompt): Finds real exploitable security bugs — second-order injection, race conditions in auth flows, prototype pollution chains, subtle SSRF patterns, insecure deserialization, business logic flaws.
 
 **In full mode**: Both prompts merged — credential hunt + deep code vulnerability research simultaneously.
 
-Uses `web_search` to verify CVEs for specific library versions and look up prior art for suspicious patterns.
-
 ### Toolchain Agent
 
-Fetches live changelogs from Supabase, Vercel, and GitHub. Searches for:
-- Recent breach patterns specific to the tools in use
-- OAuth flow risks
-- Webhook abuse vectors
-- Third-party integration risks (e.g., GitHub Actions → Vercel token leak pattern)
-- Cross-tool attack chains
-
-Runs in `breach` and `full` modes. Skipped in `bug` mode (not relevant to code-level bugs).
+Fetches live changelogs from Supabase, Vercel, and GitHub. Searches for recent breach patterns, OAuth flow risks, webhook abuse vectors, and cross-tool attack chains. Runs in `breach` and `full` modes.
 
 ### Blackbox Agent
 
-HTTP-level penetration tester. Makes targeted requests to the live URL:
-- Tests specific attack paths flagged by static scanners
-- Identifies tech stack from response headers and searches for version-specific CVEs
-- Builds chained attack paths from individual findings
-
-Runs when `--url` is provided.
+HTTP-level penetration tester. Makes targeted requests to the live URL, tests specific attack paths flagged by static scanners, identifies tech stack from response headers. Runs when `--url` is provided.
 
 ### Report Agent
 
-CISO-grade synthesis — always runs last:
-- Deduplicates findings from all agents and static scanners
-- Identifies attack chains (A + B + C = account takeover)
-- Writes executive summary and prioritized action list
+CISO-grade synthesis — always runs last. Identifies attack chains (A + B + C = account takeover), writes executive summary and prioritized action list.
 
 ---
 
-## Live Service Probing (interactive `--ai`)
+## Live Service Probing
 
-With `--ai` and an interactive terminal (`stdin.isTTY`), BreachScope also discovers and probes live SaaS services:
+With an interactive terminal (`stdin.isTTY`), BreachScope discovers SaaS services in your codebase and prompts for credentials to probe them live:
 
 ```bash
-breachscope scan --ai
+breachscope scan
 ```
-
-BreachScope detects services from your codebase (Supabase, GitHub, Stripe, Vercel, OpenAI, Anthropic, Pinecone, Resend, etc.) and prompts:
 
 ```
 Detected 3 service(s) in your codebase:
@@ -119,7 +99,21 @@ Probe live Supabase environment? [y/N]
   Anon Key: ...
 ```
 
-Every API call made by the probe agent is logged step-by-step and sent to the dashboard Probe Activity tab with HTTP method badges (GET/POST/PATCH), search labels (SRCH), and crawl labels (CRAWL).
+Every API call made by the probe agent is logged step-by-step and sent to the dashboard with HTTP method badges (GET/POST/PATCH), search labels (SRCH), and crawl labels (CRAWL).
+
+In CI (`stdin.isTTY === false`), the interactive live service probe is skipped automatically.
+
+---
+
+## Free Threat Intelligence
+
+When `FIRECRAWL_API_KEY` is not set, BreachScope falls back to free public APIs automatically:
+
+- **OSV.dev** — comprehensive open vulnerability database (POST API, no key required)
+- **npm advisory bulk API** — security advisories with affected version ranges
+- **NVD CVE search** — NIST national vulnerability database keyword search
+
+Firecrawl enables full web search when available but is never required.
 
 ---
 
@@ -127,15 +121,15 @@ Every API call made by the probe agent is logged step-by-step and sent to the da
 
 ```bash
 export OPENAI_API_KEY=sk-...
-export FIRECRAWL_API_KEY=fc-...  # optional — DuckDuckGo used as fallback
+export FIRECRAWL_API_KEY=fc-...  # optional — free APIs used as fallback
 ```
 
 Or add to `breachscope.yaml`:
 
 ```yaml
 ai:
-  openaiApiKey: ""
-  firecrawlApiKey: ""
+  openaiApiKey: ""    # or OPENAI_API_KEY
+  firecrawlApiKey: "" # optional
   model: gpt-4o
 ```
 
@@ -145,13 +139,11 @@ Keys stored on the dashboard (Settings page) are encrypted with AES-256-GCM and 
 
 ## Token Usage
 
-A full `--ai` scan of a medium-sized project typically uses 20,000–60,000 tokens across all agents.
-
 | Scan type | Typical token range | Cost at GPT-4o pricing |
 |-----------|--------------------|-----------------------|
-| Basic `--ai` | 15,000–25,000 | ~$0.04–$0.06 |
-| `--ai --mode major` | 25,000–45,000 | ~$0.06–$0.11 |
-| `--ai --mode deep --breach --bug` | 40,000–80,000 | ~$0.10–$0.20 |
+| Basic scan | 15,000–25,000 | ~$0.04–$0.06 |
+| `--mode major` | 25,000–45,000 | ~$0.06–$0.11 |
+| `--mode deep --breach --bug` | 40,000–80,000 | ~$0.10–$0.20 |
 
 ---
 
@@ -159,12 +151,10 @@ A full `--ai` scan of a medium-sized project typically uses 20,000–60,000 toke
 
 ```yaml
 - name: AI Security Scan
-  run: breachscope scan --ai --breach --ci
+  run: breachscope scan --breach --ci
   env:
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
     SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
     SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
 ```
-
-In CI (`stdin.isTTY === false`), the interactive live service probe is skipped automatically. Static scanners, sub-toolchain engine, and all AI agents run normally.

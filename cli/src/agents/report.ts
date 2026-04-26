@@ -38,8 +38,6 @@ export interface ReportSynthesis {
     steps: string[];
     impact: string;
   }>;
-  /** Populated locally from ctx.existingFindings — NOT returned by GPT */
-  deduplicatedFindings?: Finding[];
 }
 
 export let lastSynthesis: ReportSynthesis | null = null;
