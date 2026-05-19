@@ -1,35 +1,73 @@
 User-agent: *
 Allow: /
 Allow: /docs
+Allow: /roadmap
+Allow: /legal
+Allow: /terms
+Allow: /privacy
+Allow: /acceptable-use
+Allow: /data-protection
+Allow: /security
 Allow: /llms.txt
 Allow: /llms-full.txt
-Disallow: /dashboard
 Disallow: /api/
+Disallow: /dashboard
 Disallow: /cli-auth
+Disallow: /login
 
-# LLM crawlers — full content available at /llms-full.txt
+# AI and research crawlers: use the concise index first, then the full context file.
 User-agent: GPTBot
-Allow: /llms-full.txt
 Allow: /llms.txt
-Disallow: /dashboard
+Allow: /llms-full.txt
 Disallow: /api/
+Disallow: /dashboard
+
+User-agent: ChatGPT-User
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /api/
+Disallow: /dashboard
+
+User-agent: ClaudeBot
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /api/
+Disallow: /dashboard
 
 User-agent: Claude-Web
-Allow: /llms-full.txt
 Allow: /llms.txt
-Disallow: /dashboard
+Allow: /llms-full.txt
 Disallow: /api/
+Disallow: /dashboard
 
 User-agent: anthropic-ai
-Allow: /llms-full.txt
 Allow: /llms.txt
-Disallow: /dashboard
+Allow: /llms-full.txt
 Disallow: /api/
+Disallow: /dashboard
 
 User-agent: PerplexityBot
-Allow: /llms-full.txt
 Allow: /llms.txt
-Disallow: /dashboard
+Allow: /llms-full.txt
 Disallow: /api/
+Disallow: /dashboard
+
+User-agent: Google-Extended
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /api/
+Disallow: /dashboard
+
+User-agent: Applebot-Extended
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /api/
+Disallow: /dashboard
+
+User-agent: CCBot
+Allow: /llms.txt
+Allow: /llms-full.txt
+Disallow: /api/
+Disallow: /dashboard
 
 Sitemap: https://breachscoope.vercel.app/sitemap.xml

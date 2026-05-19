@@ -236,7 +236,7 @@ function FindingCard({ finding }: { finding: Finding }) {
   try { refs = finding.references ? (JSON.parse(finding.references) as string[]) : []; } catch {}
 
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] overflow-hidden">
       <button
         className="w-full flex items-start gap-3 px-5 py-4 text-left hover:bg-white/[0.02] transition-colors"
         onClick={() => setOpen(!open)}
@@ -294,13 +294,13 @@ function FindingCard({ finding }: { finding: Finding }) {
 function AISynthesisSection({ synthesis }: { synthesis: AISynthesis }) {
   return (
     <div className="space-y-3">
-      <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+      <div className="p-5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
         <p className="text-white/35 text-[10px] font-semibold uppercase tracking-wider mb-2">AI Executive Summary</p>
         <p className="text-white/70 text-sm leading-relaxed">{synthesis.executiveSummary}</p>
       </div>
 
       {synthesis.topPriority && (
-        <div className="flex items-start gap-3 p-4 rounded-xl bg-red-500/[0.07] border border-red-500/20">
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-red-500/[0.07] border border-red-500/20">
           <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-300 border border-red-500/30 mt-0.5">
             Top Priority
           </span>
@@ -313,7 +313,7 @@ function AISynthesisSection({ synthesis }: { synthesis: AISynthesis }) {
           <p className="text-white/35 text-[10px] font-semibold uppercase tracking-wider mb-2">Attack Chains Identified</p>
           <div className="space-y-2">
             {synthesis.attackChains!.map((chain, i) => (
-              <div key={i} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+              <div key={i} className="p-4 rounded-lg bg-white/[0.02] border border-white/[0.06]">
                 <div className="flex items-center gap-2 mb-2">
                   <span className={clsx(
                     "shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase border",
@@ -369,8 +369,7 @@ function ToolRiskTable({ tools, findings }: { tools: ToolRiskEntry[]; findings: 
         return (
         <div
           key={t.name}
-          className="rounded-xl border border-white/[0.06] overflow-hidden"
-          style={t.depth > 0 ? { marginLeft: `${Math.min(t.depth * 20, 60)}px` } : undefined}
+          className="rounded-lg border border-white/[0.06] overflow-hidden"
         >
           <button
             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left min-w-0"
@@ -411,7 +410,7 @@ function ToolRiskTable({ tools, findings }: { tools: ToolRiskEntry[]; findings: 
                 <p className="text-white/45 text-sm leading-relaxed">{t.aiSummary}</p>
               )}
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
                 {t.scorecardScore !== undefined && (
                   <div className="p-2.5 rounded-lg bg-white/[0.04]">
                     <p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">OpenSSF</p>
@@ -511,7 +510,7 @@ function ServiceProbeCard({ svc }: { svc: ServiceProbeActivity }) {
   const [open, setOpen] = useState(false);
   const abbr = SERVICE_ABBR[svc.id] ?? svc.id.slice(0, 2).toUpperCase();
   return (
-    <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+    <div className="rounded-lg border border-white/[0.06] overflow-hidden">
       <button
         className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.03] transition-colors text-left"
         onClick={() => setOpen(!open)}
@@ -622,7 +621,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
     <div className="space-y-4">
 
       {/* ── Stats bar ── */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-6">
         {[
           { label: "Findings",  value: sandbox.findingsCount, color: sandbox.findingsCount > 0 ? "text-red-400" : "text-green-400", bg: sandbox.findingsCount > 0 ? "bg-red-500/[0.06] border-red-500/15" : "bg-green-500/[0.06] border-green-500/15" },
           { label: "Chains",    value: chains.length,         color: chains.length > 0 ? "text-orange-400" : "text-white/25",      bg: chains.length > 0 ? "bg-orange-500/[0.06] border-orange-500/15" : "bg-white/[0.03] border-white/[0.06]" },
@@ -631,7 +630,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
           { label: "Actions",   value: log.length,            color: "text-white/35",  bg: "bg-white/[0.03] border-white/[0.06]" },
           { label: "Tokens",    value: sandbox.tokensUsed > 0 ? `${Math.round(sandbox.tokensUsed / 1000)}K` : "—", color: "text-white/25", bg: "bg-white/[0.03] border-white/[0.06]" },
         ].map((s) => (
-          <div key={s.label} className={clsx("rounded-xl border px-3 py-2.5 text-center", s.bg)}>
+          <div key={s.label} className={clsx("rounded-lg border px-3 py-2.5 text-center", s.bg)}>
             <p className={clsx("text-base font-mono font-bold tabular-nums", s.color)}>{s.value}</p>
             <p className="text-white/25 text-[10px] mt-0.5">{s.label}</p>
           </div>
@@ -640,7 +639,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
 
       {/* ── AI Worldview / Narrative ── */}
       {mem?.worldview && mem.worldview !== "Session just started. No information gathered yet." && (
-        <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+        <div className="p-4 rounded-lg bg-white/[0.03] border border-white/[0.06]">
           <p className="text-white/30 text-[10px] font-semibold uppercase tracking-wider mb-2">AI Attack Narrative</p>
           <p className="text-white/60 text-sm leading-relaxed">{mem.worldview}</p>
         </div>
@@ -648,7 +647,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
 
       {/* ── Attack chains ── */}
       {chains.length > 0 && (
-        <div className="rounded-xl border border-orange-500/20 bg-orange-500/[0.04] overflow-hidden">
+        <div className="rounded-lg border border-orange-500/20 bg-orange-500/[0.04] overflow-hidden">
           <div className="px-4 py-3 border-b border-orange-500/10">
             <p className="text-orange-300/70 text-[10px] font-semibold uppercase tracking-wider">Confirmed Attack Chains</p>
           </div>
@@ -668,7 +667,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
 
           {/* ── Discovered Secrets ── */}
           {credEntries.length > 0 && (
-            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/[0.04] overflow-hidden">
+            <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/[0.04] overflow-hidden">
               <div className="px-4 py-3 border-b border-yellow-500/10">
                 <p className="text-yellow-300/70 text-[10px] font-semibold uppercase tracking-wider">
                   Discovered Secrets <span className="text-yellow-500/50 font-mono ml-1">{credEntries.length}</span>
@@ -689,7 +688,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
 
           {/* ── Confirmed Findings ── */}
           {confirmedFindings.length > 0 && (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/[0.04] overflow-hidden">
+            <div className="rounded-lg border border-red-500/20 bg-red-500/[0.04] overflow-hidden">
               <div className="px-4 py-3 border-b border-red-500/10">
                 <p className="text-red-300/70 text-[10px] font-semibold uppercase tracking-wider">
                   Sandbox Findings <span className="text-red-500/50 font-mono ml-1">{confirmedFindings.length}</span>
@@ -728,7 +727,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
 
           {/* ── Open Ports & Framework Versions ── */}
           {(mem!.openPorts.length > 0 || fwEntries.length > 0) && (
-            <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 space-y-3">
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4 space-y-3">
               {mem!.openPorts.length > 0 && (
                 <div>
                   <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider mb-2">Open Ports</p>
@@ -757,7 +756,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
 
           {/* ── PTT Tree ── */}
           {(pttVulnNodes.length > 0 || pttRootNodes.length > 0) && (
-            <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-white/25 text-[10px] font-semibold uppercase tracking-wider">Pentest Task Tree</p>
                 <button
@@ -846,7 +845,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
 
       {/* ── Discovered Endpoints ── */}
       {(mem?.discoveredEndpoints.length ?? 0) > 0 && (
-        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+        <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] overflow-hidden">
           <button
             onClick={() => setEndpointsOpen(!endpointsOpen)}
             className="w-full flex items-center gap-2 px-4 py-3 hover:bg-white/[0.02] transition-colors"
@@ -870,7 +869,7 @@ function SandboxTerminal({ sandbox }: { sandbox: SandboxActivity }) {
 
       {/* ── Full Attack Log Terminal ── */}
       {log.length > 0 && (
-        <div className="rounded-xl border border-white/10 overflow-hidden bg-[#0a0a0a]">
+        <div className="rounded-lg border border-white/10 overflow-hidden bg-[#0a0a0a]">
           <button
             onClick={() => setLogOpen(!logOpen)}
             className="w-full flex items-center gap-3 px-4 py-3 bg-[#111] hover:bg-[#141414] transition-colors border-b border-white/[0.06]"
@@ -1012,14 +1011,6 @@ function generateMarkdown(
 
   md += `---\n*Generated by [BreachScope](https://breachscoope.vercel.app) — ${date}*\n`;
   return md;
-}
-
-function downloadFile(content: string, filename: string, mime: string) {
-  const blob = new Blob([content], { type: mime });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
 }
 
 async function generatePdf(
@@ -1432,7 +1423,7 @@ function ReportTab({
             onClick={() => void action()}
             disabled={loading}
             className={clsx(
-              "group text-left p-5 rounded-2xl border transition-all duration-200 disabled:opacity-60 disabled:cursor-wait",
+              "group text-left p-5 rounded-lg border transition-all duration-200 disabled:opacity-60 disabled:cursor-wait",
               border, bg
             )}
           >
@@ -1455,7 +1446,7 @@ function ReportTab({
         ))}
       </div>
 
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] overflow-hidden">
         <div className="px-5 py-4 border-b border-white/[0.04]">
           <p className="text-white/50 text-xs font-semibold uppercase tracking-wider">Report Preview</p>
         </div>
@@ -1506,11 +1497,11 @@ function SandboxFindingsView({ sandbox, allFindings }: { sandbox: SandboxActivit
     <div className="space-y-6">
       {/* Summary strip */}
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="px-3 py-1.5 rounded-xl bg-breach-500/10 border border-breach-500/20 text-breach-300 text-xs font-medium">
+        <span className="px-3 py-1.5 rounded-lg bg-breach-500/10 border border-breach-500/20 text-breach-300 text-xs font-medium">
           {confirmed.length} confirmed finding{confirmed.length !== 1 ? "s" : ""}
         </span>
         {chains.length > 0 && (
-          <span className="px-3 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-300 text-xs font-medium">
+          <span className="px-3 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-300 text-xs font-medium">
             {chains.length} attack chain{chains.length !== 1 ? "s" : ""}
           </span>
         )}
@@ -1521,7 +1512,7 @@ function SandboxFindingsView({ sandbox, allFindings }: { sandbox: SandboxActivit
 
       {/* Attack chains */}
       {chains.length > 0 && (
-        <div className="rounded-2xl border border-orange-500/20 bg-orange-500/[0.04] overflow-hidden">
+        <div className="rounded-lg border border-orange-500/20 bg-orange-500/[0.04] overflow-hidden">
           <div className="px-5 py-3.5 border-b border-orange-500/10">
             <p className="text-orange-300/80 text-xs font-semibold uppercase tracking-wider">Confirmed Attack Chains</p>
           </div>
@@ -1554,7 +1545,7 @@ function SandboxFindingsView({ sandbox, allFindings }: { sandbox: SandboxActivit
               : "text-white/35 bg-white/5 border-white/10";
             const matchedFinding = allFindings.find((f) => f.title?.toLowerCase().trim() === cf.title?.toLowerCase().trim());
             return (
-              <div key={cf.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+              <div key={cf.id} className="rounded-lg border border-white/[0.08] bg-white/[0.02] overflow-hidden">
                 {/* Header */}
                 <div className="flex items-start gap-3 px-5 py-4">
                   <span className={clsx("shrink-0 px-2 py-0.5 rounded-full text-xs border font-semibold mt-0.5", sevColor)}>
@@ -1599,7 +1590,7 @@ function SandboxFindingsView({ sandbox, allFindings }: { sandbox: SandboxActivit
 
       {/* Secret keys discovered */}
       {(mem?.credentials && Object.keys(mem.credentials).length > 0) && (
-        <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/[0.04] p-5">
+        <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/[0.04] p-5">
           <p className="text-yellow-300/70 text-xs font-semibold uppercase tracking-wider mb-3">
             Extracted Secret Keys <span className="text-yellow-500/50 font-mono">({Object.keys(mem.credentials).length})</span>
           </p>
@@ -1683,7 +1674,7 @@ function SmartGroupView({ findings, total }: { findings: Finding[]; total: numbe
     if (total > 0) {
       return (
         <div className="py-16 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-4">
+          <div className="w-12 h-12 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-4">
             <svg className="w-6 h-6 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
             </svg>
@@ -1694,7 +1685,7 @@ function SmartGroupView({ findings, total }: { findings: Finding[]; total: numbe
         </div>
       );
     }
-    return <div className="py-12 text-center text-white/25 text-sm">No findings — clean scan.</div>;
+    return <div className="py-12 text-center text-white/25 text-sm">No findings - clean scan.</div>;
   }
 
   return (
@@ -1706,7 +1697,7 @@ function SmartGroupView({ findings, total }: { findings: Finding[]; total: numbe
         const hasHigh     = groupFindings.some((f) => f.severity === "high");
 
         return (
-          <div key={meta.key} className={clsx("rounded-2xl border overflow-hidden", meta.colorBorder, meta.colorBg)}>
+          <div key={meta.key} className={clsx("rounded-lg border overflow-hidden", meta.colorBorder, meta.colorBg)}>
             <button
               className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-white/[0.02] transition-colors"
               onClick={() => toggle(meta.key)}
@@ -1778,7 +1769,7 @@ function DepCard({ tool, findings }: { tool: ToolRiskEntry; findings: Finding[] 
 
   return (
     <div className={clsx(
-      "rounded-xl border transition-all",
+      "rounded-lg border transition-all",
       isBreached
         ? "border-red-500/40 bg-red-500/[0.04]"
         : tool.riskScore >= 75
@@ -1827,7 +1818,7 @@ function DepCard({ tool, findings }: { tool: ToolRiskEntry; findings: Finding[] 
         </div>
 
         {/* Metrics row */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-4">
           <div className="text-center">
             <p className="text-white/25 text-[9px] uppercase tracking-wider mb-0.5">Risk</p>
             <p className={clsx("text-xs font-mono font-bold", riskColor)}>{tool.riskScore}</p>
@@ -1968,7 +1959,7 @@ function SupplyChainGrid({ tools, findings }: { tools: ToolRiskEntry[]; findings
   return (
     <div className="space-y-5">
       {/* Stats bar */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-6">
         {[
           { label: "Total",      value: stats.total,      color: "text-white/60" },
           { label: "High Risk",  value: stats.highRisk,   color: stats.highRisk  > 0 ? "text-red-400"    : "text-white/30" },
@@ -1977,7 +1968,7 @@ function SupplyChainGrid({ tools, findings }: { tools: ToolRiskEntry[]; findings
           { label: "Low SSF",    value: stats.lowSSF,     color: stats.lowSSF    > 0 ? "text-yellow-400" : "text-white/30" },
           { label: "Breached",   value: stats.breached,   color: stats.breached  > 0 ? "text-red-400"    : "text-green-400" },
         ].map(({ label, value, color }) => (
-          <div key={label} className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05] text-center">
+          <div key={label} className="p-2.5 rounded-lg bg-white/[0.03] border border-white/[0.05] text-center">
             <p className="text-white/25 text-[9px] uppercase tracking-wider mb-0.5">{label}</p>
             <p className={clsx("text-sm font-mono font-bold", color)}>{value}</p>
           </div>
@@ -1985,15 +1976,15 @@ function SupplyChainGrid({ tools, findings }: { tools: ToolRiskEntry[]; findings
       </div>
 
       {/* Sort controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <span className="text-white/30 text-xs">Sort by:</span>
-        <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-0.5">
+        <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-white/[0.04] p-0.5">
           {([["risk", "Risk Score"], ["cves", "CVEs"], ["maintainers", "Maintainers"], ["ssf", "OpenSSF"]] as Array<[SortKey, string]>).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setSortKey(key)}
               className={clsx(
-                "px-2.5 py-1 rounded text-xs font-medium transition-all",
+                "shrink-0 rounded px-2.5 py-1 text-xs font-medium transition-all",
                 sortKey === key ? "bg-white/10 text-white border border-white/15" : "text-white/35 hover:text-white/60"
               )}
             >
@@ -2046,9 +2037,9 @@ function MaintainerRiskSection({ tools }: { tools: ToolRiskEntry[] }) {
         <p className="text-white/25 text-xs">{tools.length} packages analyzed</p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
         {statCards.map(({ label, value, sub, color, border }) => (
-          <div key={label} className={clsx("p-4 rounded-2xl bg-white/[0.03] border", border)}>
+          <div key={label} className={clsx("p-4 rounded-lg bg-white/[0.03] border", border)}>
             <p className={clsx("text-2xl font-mono font-bold mb-1", color)}>{value}</p>
             <p className="text-white/60 text-xs font-medium">{label}</p>
             <p className="text-white/25 text-[10px] mt-0.5 leading-snug">{sub}</p>
@@ -2064,7 +2055,7 @@ function MaintainerRiskSection({ tools }: { tools: ToolRiskEntry[] }) {
               const isBreached = KNOWN_COMPROMISED.has(t.name.toLowerCase());
               return (
                 <div key={t.name} className={clsx(
-                  "flex items-center gap-2 px-3 py-2 rounded-xl border",
+                  "flex items-center gap-2 px-3 py-2 rounded-lg border",
                   isBreached ? "bg-red-500/[0.06] border-red-500/20" : "bg-white/[0.03] border-white/[0.06]"
                 )}>
                   <span className="text-white/60 text-xs font-mono">{t.name}</span>
@@ -2153,11 +2144,11 @@ export function ScanDetail({ scan }: { scan: Scan }) {
   ];
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="max-w-5xl space-y-6">
       {/* Scan summary strip */}
       <div className="flex flex-wrap items-center gap-3">
         {total > 0 && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {critical > 0 && <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-500/15 border border-red-500/25 text-red-300">{critical} Critical</span>}
             {high > 0     && <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-500/15 border border-orange-500/25 text-orange-300">{high} High</span>}
             {medium > 0   && <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-500/15 border border-yellow-500/25 text-yellow-300">{medium} Medium</span>}
@@ -2176,26 +2167,28 @@ export function ScanDetail({ scan }: { scan: Scan }) {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-white/[0.06]">
-        {TABS.map(({ id, label, count }) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className={clsx(
-              "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
-              tab === id
-                ? "border-white/60 text-white"
-                : "border-transparent text-white/35 hover:text-white/60"
-            )}
-          >
-            {label}
-            {count !== undefined && (
-              <span className={clsx("text-[10px] font-mono px-1.5 py-0.5 rounded", tab === id ? "bg-white/10 text-white/70" : "bg-white/5 text-white/25")}>
-                {count}
-              </span>
-            )}
-          </button>
-        ))}
+      <div className="overflow-x-auto border-b border-white/[0.06]">
+        <div className="flex min-w-max items-center gap-1">
+          {TABS.map(({ id, label, count }) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={clsx(
+                "mb-[-1px] flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                tab === id
+                  ? "border-white/60 text-white"
+                  : "border-transparent text-white/35 hover:text-white/60"
+              )}
+            >
+              {label}
+              {count !== undefined && (
+                <span className={clsx("rounded px-1.5 py-0.5 font-mono text-[10px]", tab === id ? "bg-white/10 text-white/70" : "bg-white/5 text-white/25")}>
+                  {count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── Overview tab ── */}
@@ -2203,7 +2196,7 @@ export function ScanDetail({ scan }: { scan: Scan }) {
         <div className="space-y-6">
           {aiSynthesis && <AISynthesisSection synthesis={aiSynthesis} />}
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
             {[
               { label: "Scan Mode", value: scan.scanMode },
               { label: "Depth",     value: scan.mode },
@@ -2214,7 +2207,7 @@ export function ScanDetail({ scan }: { scan: Scan }) {
                 ? value === "full" ? "text-purple-400" : value === "breach" ? "text-red-400" : value === "bug" ? "text-yellow-400" : "text-white/80"
                 : "text-white/80";
               return (
-              <div key={label} className="p-4 rounded-2xl bg-white/[0.04]">
+              <div key={label} className="p-4 rounded-lg bg-white/[0.04]">
                 <p className="text-white/30 text-xs mb-2">{label}</p>
                 <p className={clsx("text-sm font-mono uppercase", scanModeColor)}>{value}</p>
               </div>
@@ -2222,12 +2215,12 @@ export function ScanDetail({ scan }: { scan: Scan }) {
             })}
           </div>
 
-          <div className="rounded-2xl bg-white/[0.04] p-5">
+          <div className="rounded-lg bg-white/[0.04] p-5">
             <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-4">Findings Breakdown</p>
             {total === 0 ? (
               <div className="flex items-center gap-3">
                 <div className="w-2 h-2 rounded-full bg-green-500" />
-                <p className="text-green-400 text-sm">No findings — clean scan</p>
+                <p className="text-green-400 text-sm">No findings - clean scan</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -2251,16 +2244,16 @@ export function ScanDetail({ scan }: { scan: Scan }) {
 
           {toolRiskData.length > 0 && (
             <section>
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <div>
+              <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
                   <h3 className="text-white/75 text-sm font-semibold">Dependency Risk Overview</h3>
                   <p className="text-white/30 text-xs mt-0.5">
                     {toolRiskData.length} package{toolRiskData.length !== 1 ? "s" : ""} audited
-                    {(() => { const top = [...toolRiskData].sort((a, b) => b.riskScore - a.riskScore)[0]; return top ? ` · highest: ${top.name} (${top.riskScore}/100)` : ""; })()}
+                    {(() => { const top = [...toolRiskData].sort((a, b) => b.riskScore - a.riskScore)[0]; return top ? ` - highest: ${top.name} (${top.riskScore}/100)` : ""; })()}
                   </p>
                 </div>
                 <div className="hidden sm:flex items-center gap-4 text-[10px] text-white/25 shrink-0">
-                  {[{ c: "bg-red-500", l: "≥75" }, { c: "bg-orange-500", l: "≥50" }, { c: "bg-yellow-500", l: "≥25" }, { c: "bg-green-500", l: "<25" }].map(({ c, l }) => (
+                  {[{ c: "bg-red-500", l: ">=75" }, { c: "bg-orange-500", l: ">=50" }, { c: "bg-yellow-500", l: ">=25" }, { c: "bg-green-500", l: "<25" }].map(({ c, l }) => (
                     <span key={l} className="flex items-center gap-1"><span className={clsx("w-2 h-2 rounded-full", c)} />{l}</span>
                   ))}
                 </div>
@@ -2277,8 +2270,8 @@ export function ScanDetail({ scan }: { scan: Scan }) {
       {tab === "findings" && (
         <div className="space-y-5">
           {/* View mode toggle */}
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-1 bg-white/[0.04] rounded-xl p-1">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-white/[0.04] p-1">
               {([
                 ["smart",   "Smart Groups"],
                 ["grid",    "Supply Chain"],
@@ -2289,7 +2282,7 @@ export function ScanDetail({ scan }: { scan: Scan }) {
                   key={mode}
                   onClick={() => setFindingsView(mode)}
                   className={clsx(
-                    "px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
                     findingsView === mode
                       ? mode === "sandbox"
                         ? "bg-breach-500/20 text-breach-300 border border-breach-500/30"
@@ -2322,7 +2315,7 @@ export function ScanDetail({ scan }: { scan: Scan }) {
           {findingsLoading && (
             <div className="space-y-2 py-4">
               {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-14 rounded-xl bg-white/[0.03] border border-white/[0.05] animate-pulse" />
+                <div key={i} className="h-14 rounded-lg bg-white/[0.03] border border-white/[0.05] animate-pulse" />
               ))}
             </div>
           )}
@@ -2344,7 +2337,7 @@ export function ScanDetail({ scan }: { scan: Scan }) {
           {findings.length === 0 ? (
             total > 0 ? (
               <div className="py-16 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-4">
+                <div className="w-12 h-12 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mx-auto mb-4">
                   <svg className="w-6 h-6 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                   </svg>
@@ -2355,7 +2348,7 @@ export function ScanDetail({ scan }: { scan: Scan }) {
               </div>
             ) : (
               <div className="py-16 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-4">
+                <div className="w-12 h-12 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-4">
                   <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
@@ -2396,7 +2389,7 @@ export function ScanDetail({ scan }: { scan: Scan }) {
         <div className="space-y-6">
           {!hasProbes ? (
             <div className="py-16 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mx-auto mb-4">
+              <div className="w-12 h-12 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mx-auto mb-4">
                 <svg className="w-6 h-6 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>

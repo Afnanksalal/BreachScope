@@ -1,52 +1,65 @@
 # BreachScope
 
-> Open-source CLI and dashboard for detecting supply chain attacks, toolchain misconfigurations, and code vulnerabilities across your entire stack — before they become incidents.
+> Open-source security workflow for local scans, CI gates, release evidence, dashboard triage, audit logs, and customer-owned integrations.
 
-BreachScope is a security scanner for developers and DevSecOps teams. It scans dependencies, audits source code, probes live third-party service APIs (Supabase, Vercel, GitHub, Stripe, etc.), and runs blackbox HTTP probes against your running app — all from a single CLI command.
+BreachScope combines a Node.js CLI with a Next.js dashboard. It scans code, dependency manifests, lockfiles, live URLs, SaaS toolchain posture, Docker sandbox attack paths, and runtime events, then produces SARIF, SBOM, OpenVEX, JSON, Markdown fix briefs, dashboard findings, and audit history.
 
-## Key Links
+## Canonical Links
 
-- [Homepage](https://breachscoope.vercel.app)
-- [Documentation](https://breachscoope.vercel.app/docs)
-- [Full documentation for LLMs](https://breachscoope.vercel.app/llms-full.txt)
-
-## Installation
-
-```bash
-npm install -g breachscope
-```
+- Homepage: https://breachscoope.vercel.app
+- Documentation: https://breachscoope.vercel.app/docs
+- Roadmap: https://breachscoope.vercel.app/roadmap
+- Legal center: https://breachscoope.vercel.app/legal
+- Terms: https://breachscoope.vercel.app/terms
+- Privacy: https://breachscoope.vercel.app/privacy
+- Acceptable use: https://breachscoope.vercel.app/acceptable-use
+- Data protection: https://breachscoope.vercel.app/data-protection
+- Security policy: https://breachscoope.vercel.app/security
+- Full machine-readable context: https://breachscoope.vercel.app/llms-full.txt
+- Sitemap: https://breachscoope.vercel.app/sitemap.xml
+- Robots policy: https://breachscoope.vercel.app/robots.txt
+- GitHub repository: https://github.com/Afnanksalal/BreachScope
 
 ## Core Commands
 
-- `breachscope scan` — Full scan: dependencies, code, toolchain, blackbox
-- `breachscope scan --ai` — AI-powered multi-agent scan with live API probing
-- `breachscope scan --target dependency` — Dependency/supply-chain only
-- `breachscope scan --target code` — Static code audit only
-- `breachscope scan --target toolchain` — Toolchain misconfiguration only
-- `breachscope scan --target blackbox --url https://yourapp.com` — Blackbox HTTP probe
-- `breachscope scan --mode deep` — Deep recursive scan (basic | major | deep)
-- `breachscope login` — Authenticate CLI with the dashboard (device flow)
-- `breachscope audit` — Static code audit only
-- `breachscope deps` — Dependency scan only
-- `breachscope probe <url>` — Blackbox probe a URL
-- `breachscope smoke <url>` — Smoke test a URL
+```bash
+npm install -g breachscope
+breachscope login
+breachscope scan
+breachscope scan --mode deep --breach --bug --ci
+breachscope scan --ci --policy release-gate.yml --output sarif --file breachscope.sarif
+breachscope sandbox --deep --breach --bug
+breachscope runtime --container app --duration 120 --file tracee-events.jsonl
+breachscope init-ci
+```
 
-## What It Detects
+## Capabilities
 
-- Vulnerable dependencies (CVEs via OSV, npm advisories, OpenSSF Scorecard)
-- Supply chain attacks (compromised packages, wildcard versions, missing integrity hashes)
-- Hardcoded secrets in source code
-- Supabase RLS misconfigurations and exposed anon keys
-- Vercel preview environment secret leakage
-- GitHub unprotected branches and overprivileged tokens
-- CORS misconfigurations and missing security headers
-- Exposed internal paths (/.env, /.git, /admin)
-- Weak cryptography, SQL injection patterns, prototype pollution
+- Multi-ecosystem dependency and lockfile scanning.
+- Static code audit for secrets, injection patterns, insecure crypto, unsafe deserialization, and risky sinks.
+- Toolchain checks for Supabase, Vercel, GitHub, Stripe, OpenAI, Anthropic, Sentry, Datadog, Cloudflare, AWS, Firebase, Clerk, Auth0, Neon, PlanetScale, Upstash, SendGrid, Resend, Twilio, and Pinecone.
+- Blackbox HTTP checks for headers, CORS, exposed internal files, admin routes, debug endpoints, and error leakage.
+- Docker sandbox attack simulation and optional Tracee runtime evidence command.
+- Release evidence through SARIF, CycloneDX SBOM, SPDX SBOM, OpenVEX, JSON, and fix briefs.
+- Dashboard workflows for projects, scan history, finding triage, scoped API keys, audit logs, policies, and integrations.
 
-## Supported Services (Live Probing)
+## Data And Credentials
 
-Supabase, Firebase, Clerk, Auth0, Vercel, GitHub, AWS, Cloudflare, Stripe, SendGrid, Resend, Twilio, Neon, PlanetScale, Upstash, OpenAI, Anthropic, Pinecone, Sentry, Datadog
+- Customers bring their own provider accounts and credentials.
+- BreachScope does not provide Slack, GitHub, Jira, Linear, PagerDuty, OpenAI, Firecrawl, cloud, or repository accounts.
+- Saved provider keys are optional and encrypted before storage.
+- API keys for dashboard automation are scoped and hashed where used for authentication.
+- Public crawler files are limited to product, docs, legal, sitemap, robots, and machine-readable context pages.
+- Dashboard, API, CLI auth, and login routes are private or operational and disallowed in robots.txt.
 
-## Dashboard
+## Machine-Readable Summary
 
-The web dashboard at breachscoope.vercel.app provides scan history, per-finding detail views, API key management, and settings sync to the CLI. Authentication uses NextAuth v5 with credentials, GitHub OAuth, and Google OAuth.
+Product: BreachScope
+Category: security scanner, supply-chain security, DevSecOps workflow
+Primary users: developers, DevSecOps teams, AppSec teams, platform teams
+Runtime: Node.js 18+
+CLI package: breachscope
+Web stack: Next.js, React, Drizzle ORM, PostgreSQL, NextAuth, Tailwind CSS
+Evidence outputs: SARIF, CycloneDX SBOM, SPDX SBOM, OpenVEX, JSON, Markdown, PDF
+Security model: local-first scanning, scoped dashboard API keys, encrypted customer-supplied provider keys, policy-as-code, audit logging
+Public crawler files: /robots.txt, /sitemap.xml, /llms.txt, /llms-full.txt

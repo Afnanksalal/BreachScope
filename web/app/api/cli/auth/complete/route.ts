@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { cliAuthStates, apiKeys } from "@/lib/schema";
 import { generateApiKey } from "@/lib/api-keys";
-import { eq, and, isNull, gt, isNotNull } from "drizzle-orm";
+import { eq, and, isNull, gt } from "drizzle-orm";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -58,6 +58,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   await db.insert(apiKeys).values({
     userId:    session.user.id,
     name:      "CLI (device flow)",
+    scopes:    ["scan:write", "config:read", "settings:write"],
     keyHash:   hash,
     keyPrefix: prefix,
   });

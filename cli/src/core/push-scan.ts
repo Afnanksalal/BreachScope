@@ -73,6 +73,10 @@ export async function pushScanToDashboard(
       file:        f.file        ?? undefined,
       line:        f.line        ?? undefined,
       references:  f.references  ?? undefined,
+      fingerprint: f.fingerprint ?? undefined,
+      status:      f.status      ?? undefined,
+      compliance:  f.compliance  ?? undefined,
+      vexStatus:   f.vexStatus   ?? undefined,
     })),
   };
 

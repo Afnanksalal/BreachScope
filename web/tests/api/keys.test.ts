@@ -122,6 +122,19 @@ describe("POST /api/keys", () => {
     expect(body).toHaveProperty("prefix");
     expect(body.name).toBe("ci-key");
     expect(body.fullKey.startsWith("bs_live_")).toBe(true);
+    expect(body.scopes).toEqual(["scan:write", "config:read"]);
+  });
+
+  it("normalizes requested scopes", async () => {
+    authedSession();
+    makeInsertChain();
+    const req = new NextRequest("http://localhost/api/keys", {
+      method: "POST",
+      body: JSON.stringify({ name: "scoped", scopes: ["secrets:read", "bogus", "scan:write", "scan:write"] }),
+    });
+    const res = await POST(req);
+    const body = await res.json();
+    expect(body.scopes).toEqual(["secrets:read", "scan:write"]);
   });
 
   it("uses 'Unnamed Key' when no name provided", async () => {

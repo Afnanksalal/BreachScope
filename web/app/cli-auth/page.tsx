@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect */
+
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
@@ -41,7 +43,7 @@ function CliAuthContent() {
 
       setPageStatus("complete");
     } catch {
-      setError("Network error — please try again");
+      setError("Network error - please try again");
       setPageStatus("error");
     }
   }, [state]);
@@ -66,7 +68,7 @@ function CliAuthContent() {
   }, [status, session, state, completeCliAuth]);
 
   return (
-    <div className="min-h-screen bg-surface-0 flex items-center justify-center px-6">
+    <div className="flex min-h-screen items-center justify-center bg-surface-0 px-4 py-10 sm:px-6">
       {/* Background radial */}
       <div className="absolute inset-0 bg-radial-surface pointer-events-none" />
 
@@ -77,7 +79,7 @@ function CliAuthContent() {
         className="relative w-full max-w-md"
       >
         {/* Card */}
-        <div className="border-glow rounded-2xl bg-surface-50/80 backdrop-blur-sm p-8">
+        <div className="border-glow rounded-lg bg-surface-50/80 p-5 backdrop-blur-sm sm:p-8">
           {/* Logo */}
           <div className="mb-8">
             <span className="font-serif italic text-lg text-white">BreachScope</span>
@@ -119,14 +121,14 @@ function SignInState() {
       <div className="space-y-3">
         <button
           onClick={() => signIn("github", { callbackUrl: window.location.href })}
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-white/8 border border-white/10 text-white/80 text-sm font-medium hover:bg-white/12 hover:border-white/20 transition-all"
+          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-white/8 border border-white/10 text-white/80 text-sm font-medium hover:bg-white/12 hover:border-white/20 transition-all"
         >
           <GithubIcon />
           Continue with GitHub
         </button>
         <button
           onClick={() => signIn("google", { callbackUrl: window.location.href })}
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-white/8 border border-white/10 text-white/80 text-sm font-medium hover:bg-white/12 hover:border-white/20 transition-all"
+          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-white/8 border border-white/10 text-white/80 text-sm font-medium hover:bg-white/12 hover:border-white/20 transition-all"
         >
           <GoogleIcon />
           Continue with Google
@@ -154,9 +156,9 @@ function CompleteState() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
       </div>
-      <h2 className="text-xl font-semibold text-white mb-2">You're logged in</h2>
+      <h2 className="text-xl font-semibold text-white mb-2">You&apos;re logged in</h2>
       <p className="text-white/40 text-sm mb-6">
-        Return to your terminal — BreachScope is ready.
+        Return to your terminal - BreachScope is ready.
       </p>
       <p className="text-white/25 text-xs">You can close this tab.</p>
     </div>

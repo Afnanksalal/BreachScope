@@ -1,183 +1,108 @@
 # Getting Started
 
+This guide gets BreachScope running locally, connected to the dashboard, and ready for CI.
+
 ## Prerequisites
 
 - Node.js 18 or higher
 - npm, pnpm, yarn, or bun
-- Docker (required for `breachscope sandbox`)
+- Docker Desktop for `breachscope sandbox`
+- Optional: customer-owned OpenAI and Firecrawl keys for model-assisted analysis and web research
 
-## Installation
+## Install
 
 ```bash
 npm install -g breachscope
-```
 
-Or run without installing:
-
-```bash
+# or run without installing
 npx breachscope scan
 ```
 
-Both `breachscope` and `bs` (shorthand) are available after install.
+Both `breachscope` and `bs` are available after installation.
 
----
-
-## First Scan
+## First Local Scan
 
 ```bash
-# Navigate to your project
 cd my-project
-
-# Initialize a config (optional but recommended)
-breachscope init
-
-# Run a full scan — auto-detects language, runs everything
 breachscope scan
-
-# Include a live URL for blackbox + smoke testing
-breachscope scan --url https://myapp.com
-
-# Launch Docker attack arena — AI agent attacks your running app
-breachscope sandbox
 ```
 
----
+BreachScope auto-detects manifests, source files, lockfiles, and supported services. It runs dependency, code, toolchain, blackbox, and smoke scanners when the relevant inputs are present.
 
-## Scan Depth
-
-| Flag | Description |
-|------|-------------|
-| `--mode basic` | Direct tools only — fast (default) |
-| `--mode major` | Direct tools + their direct dependencies |
-| `--mode deep` | Full transitive dependency tree (up to 6 levels) |
-
----
-
-## Scan Focus
-
-| Flag(s) | What it focuses on | Patterns |
-|---------|-------------------|----------|
-| *(none)* | Balanced — CVE lookup + code audit + supply chain | 13 base |
-| `--breach` | Supply chain attacks, CVEs, leaked credentials and API keys | 35 |
-| `--bug` | Code vulnerabilities — injection, auth bypass, deserialization, logic bugs | 40 |
-| `--breach --bug` | Everything combined — maximum coverage, all scanners | 62 |
-
----
-
-## Languages
-
-BreachScope auto-detects your stack. No config needed — just run it:
-
-| Language | Manifest files detected |
-|----------|------------------------|
-| JavaScript / TypeScript | `package.json`, lockfiles |
-| Python | `requirements.txt`, `pyproject.toml`, `Pipfile`, `setup.py` |
-| Go | `go.mod` |
-| Rust | `Cargo.toml`, `Cargo.lock` |
-| Ruby | `Gemfile`, `Gemfile.lock` |
-| Java | `pom.xml`, `build.gradle` |
-| PHP | `composer.json`, `composer.lock` |
-| .NET | `*.csproj`, `packages.lock.json` |
-| Elixir | `mix.exs`, `mix.lock` |
-| Dart | `pubspec.yaml`, `pubspec.lock` |
-
-CVEs are looked up against OSV.dev with the correct ecosystem per language.
-
----
-
-## What Gets Scanned
-
-| Target | What it does |
-|--------|-------------|
-| `dependency` | Audits all package manifests across all languages for CVEs and supply chain risks |
-| `code` | Scans source files with 13–62 regex patterns depending on mode |
-| `toolchain` | Probes Supabase, Vercel, GitHub APIs for misconfigurations |
-| `blackbox` | Hits a live URL for header, CORS, and path exposure issues |
-| `smoke` | Tests live app behavior — error leakage, auth bypass, payload limits |
-| `all` | All of the above (default) |
-
----
-
-## AI Mode
-
-AI analysis runs automatically when `OPENAI_API_KEY` is set:
-
-```bash
-export OPENAI_API_KEY=sk-...
-export FIRECRAWL_API_KEY=fc-...   # optional
-
-breachscope scan --mode major --url https://myapp.com
-```
-
-BreachScope also discovers SaaS services in your codebase and interactively probes them live — Supabase, GitHub, Stripe, Vercel, OpenAI, and more.
-
-Free threat intel (OSV.dev, NVD, npm advisories) works with no API key.
-
----
-
-## Docker Attack Arena
-
-The `sandbox` command spins up a Docker container, deploys your app, and runs a multi-agent swarm to actively exploit it:
-
-```bash
-breachscope sandbox
-
-# Extended attack (120 iterations instead of 80)
-breachscope sandbox --deep
-
-# Focus companion agents on supply chain risk
-breachscope sandbox --breach
-
-# Focus companion agents on code vulnerabilities
-breachscope sandbox --bug
-
-# Keep container running after scan for manual inspection
-breachscope sandbox --no-cleanup
-```
-
-Sandbox defaults (attack depth + companion agent focus) can also be set permanently in the dashboard Settings page — CLI flags always take priority.
-
-**What happens:**
-1. AI reads your entire codebase (including `.env` and secrets) and writes a purpose-built Dockerfile — monorepo-aware
-2. Self-healing build loop: up to 4 attempts with AI-powered Dockerfile fixes on failure
-3. Supervisor agent analyzes all recon data and creates a prioritized attack plan
-4. 4 agents run in parallel: dynamic sandbox attack, static code analysis, dependency CVE scan (all 10 ecosystems), blackbox HTTP probe
-5. 11 specialist attackers: SQLi, JWT forge, auth bypass, SSRF, XSS, path traversal, Redis exploit, prototype pollution, race conditions, business logic, LLM prompt injection
-6. OWASP ZAP active scan runs inside the container
-7. Validator agent independently re-confirms every critical/high finding with a confidence score
-
-Results appear in the dashboard Sandbox tab: AI narrative, discovered secret key names (values never displayed), confirmed findings with CVSS + validator confidence, expandable Pentest Task Tree, framework versions, full structured attack log.
-
----
-
-## Maximum Coverage
-
-```bash
-# Full static scan — all patterns, deep mode
-breachscope scan --mode deep --breach --bug
-
-# Docker attack arena — deep mode, all companion agents
-breachscope sandbox --deep --breach --bug
-```
-
----
-
-## Connect to the Web Dashboard
+## Connect the Dashboard
 
 ```bash
 breachscope login
 ```
 
-Opens a browser to authenticate with [breachscoope.vercel.app](https://breachscoope.vercel.app). Once connected, every scan result is pushed automatically — scan history, findings, sandbox terminal replay, PDF reports.
+The login command opens the dashboard in a browser and stores a local API token under `~/.config/breachscope/credentials.json`. Dashboard-connected scans can push results, use encrypted customer-supplied provider keys, and participate in project-level controls.
 
-Sign up free with GitHub, Google OAuth, or email/password.
+## Configure Defaults
 
----
+```bash
+breachscope init
+```
+
+Example policy and threshold block:
+
+```yaml
+thresholds:
+  failOn: high
+
+policy:
+  failOn: high
+  maxFindings:
+    critical: 0
+    high: 3
+  blockedPackages:
+    - event-stream
+  deniedCategories:
+    - compliance
+```
+
+## Scan Modes
+
+| Flag | Purpose |
+| --- | --- |
+| `--mode basic` | Direct tools and manifests only |
+| `--mode major` | Direct tools plus first-level dependencies |
+| `--mode deep` | Recursive dependency graph |
+| `--breach` | CVEs, supply-chain risk, credentials, infrastructure exposure |
+| `--bug` | Code vulnerabilities, injection, auth bypass, deserialization, SSRF, XSS |
+| `--breach --bug` | Full coverage |
+
+## Release Evidence
+
+```bash
+breachscope scan --output sarif --file breachscope.sarif
+breachscope sbom --output cyclonedx --file bom.cdx.json
+breachscope scan --output json --file scan.json
+breachscope vex --from scan.json --file openvex.json
+breachscope suggest-fixes --from scan.json --file fixes.md
+```
+
+## Docker Attack Arena
+
+```bash
+breachscope sandbox
+breachscope sandbox --deep --breach --bug
+breachscope sandbox --include-secrets
+```
+
+Sandbox secret handling is safe by default: `.env` files are excluded from model context, Docker context, and container environment unless `--include-secrets` is explicitly passed.
+
+## CI Setup
+
+```bash
+breachscope init-ci
+```
+
+This generates GitHub Actions workflows for pull-request scans, scheduled scans, sandbox scans, and safe Dependabot automation.
 
 ## Next Steps
 
-- [Full scan command reference](./commands/scan.md)
-- [Sandbox command reference](./commands/sandbox.md)
-- [AI multi-agent mode](./ai-agents.md)
-- [Supabase integration](./integrations/supabase.md)
-- [CI/CD setup](./commands/scan.md#cicd)
+- [Controls and evidence](enterprise.md)
+- [Architecture](architecture.md)
+- [Scan command reference](commands/scan.md)
+- [Sandbox command reference](commands/sandbox.md)
+- [Model-assisted analysis](ai-agents.md)

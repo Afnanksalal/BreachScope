@@ -19,7 +19,6 @@ export function RiskChart({ scans }: RiskChartProps) {
   }
 
   const maxFindings = Math.max(...last14.map((s) => s.findingsTotal ?? 0), 1);
-  const W = 100 / last14.length;
 
   return (
     <div className="relative h-32 flex items-end gap-1 px-1">

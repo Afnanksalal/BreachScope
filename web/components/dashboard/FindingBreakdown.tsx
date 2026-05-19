@@ -28,7 +28,7 @@ export function FindingBreakdown({ categories, total }: FindingBreakdownProps) {
     .reduce((a, [, v]) => a + v, 0);
 
   return (
-    <div className="rounded-2xl bg-white/[0.04] p-6">
+    <div className="rounded-lg bg-white/[0.04] p-6">
       <div className="mb-6">
         <h2 className="text-white font-semibold text-sm">By Category</h2>
         <p className="text-white/30 text-xs">Last 30 days</p>

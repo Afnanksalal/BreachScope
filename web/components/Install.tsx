@@ -3,35 +3,22 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { Check, Clipboard, Terminal } from "lucide-react";
 
 type PM = "npm" | "pnpm" | "yarn" | "bun";
 
 const INSTALL: Record<PM, string> = {
-  npm:  "npm install -g breachscope",
+  npm: "npm install -g breachscope",
   pnpm: "pnpm add -g breachscope",
   yarn: "yarn global add breachscope",
-  bun:  "bun add -g breachscope",
+  bun: "bun add -g breachscope",
 };
 
 const STEPS = [
-  {
-    step: "01",
-    label: "Install globally",
-    cmd: "npm install -g breachscope",
-    sub: "or pnpm · yarn · bun",
-  },
-  {
-    step: "02",
-    label: "Connect your dashboard (optional)",
-    cmd: "breachscope login",
-    sub: "opens browser · device-flow OAuth · stores token securely",
-  },
-  {
-    step: "03",
-    label: "Run a scan from inside your project",
-    cmd: "cd my-project && breachscope scan",
-    sub: "reads package.json, imports, env files — nothing is uploaded",
-  },
+  ["1", "Install the CLI", "npm install -g breachscope"],
+  ["2", "Authenticate once", "breachscope login"],
+  ["3", "Run a release gate", "breachscope scan --ci --policy release-gate.yml --output sarif --file breachscope.sarif"],
+  ["4", "Export release evidence", "breachscope sbom --output cyclonedx --file bom.cdx.json"],
 ];
 
 export function Install() {
@@ -41,158 +28,88 @@ export function Install() {
   const copy = async () => {
     await navigator.clipboard.writeText(INSTALL[pm]);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 1800);
   };
 
   return (
-    <section id="install" className="relative py-36 px-6">
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
-
-      {/* Subtle gradient to distinguish section */}
-      <div className="absolute inset-0 bg-[#0a0a0a] pointer-events-none" />
-
-      <div className="max-w-3xl mx-auto relative">
-        {/* Header */}
+    <section id="install" className="relative bg-[#030404] px-4 py-20 sm:px-6 sm:py-28">
+      <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.85fr_1.15fr]">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.7 }}
-          className="text-center mb-16"
+          transition={{ duration: 0.55 }}
         >
-          <p className="text-xs font-medium text-white/40 tracking-[0.18em] uppercase mb-5">
-            Get started
-          </p>
-          <h2 className="text-4xl md:text-[3.25rem] font-serif italic text-white tracking-tight mb-5 leading-[1.05]">
-            Running in thirty seconds.
+          <p className="mb-4 text-xs font-semibold uppercase text-white/35">Deploy the workflow</p>
+          <h2 className="max-w-xl text-4xl font-semibold leading-tight text-white md:text-5xl">
+            Ship security checks without changing how developers work.
           </h2>
-          <p className="text-white/50 text-base font-light">
-            Node.js 18+ · macOS · Linux · Windows
+          <p className="mt-5 max-w-lg text-base leading-8 text-white/55">
+            Install the CLI, connect it to the dashboard, and use generated CI workflows to enforce policy, export artifacts, and route findings with your own provider accounts.
           </p>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Link href="/dashboard" className="btn-primary">
+              Open dashboard
+            </Link>
+            <Link href="/docs" className="btn-ghost">
+              Read setup guide
+            </Link>
+          </div>
         </motion.div>
 
-        {/* PM tabs */}
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06] w-fit mx-auto mb-4"
+          transition={{ duration: 0.55, delay: 0.08 }}
+          className="rounded-lg border border-white/[0.08] bg-black/45 p-5"
         >
-          {(Object.keys(INSTALL) as PM[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPm(p)}
-              className={`px-4 py-2 rounded-lg text-[0.8125rem] font-mono font-medium transition-all duration-200 ${
-                pm === p
-                  ? "bg-white/10 text-white border border-white/10"
-                  : "text-white/40 hover:text-white/70"
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-        </motion.div>
+          <div className="mb-4 flex flex-wrap gap-1 rounded-lg border border-white/[0.07] bg-white/[0.025] p-1">
+            {(Object.keys(INSTALL) as PM[]).map((item) => (
+              <button
+                key={item}
+                onClick={() => setPm(item)}
+                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  pm === item ? "bg-white text-black" : "text-white/45 hover:bg-white/[0.06] hover:text-white"
+                }`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
 
-        {/* Install command block */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.15 }}
-          className="relative mb-16"
-        >
-          <div className="relative flex items-center justify-between p-5 rounded-2xl border border-white/[0.08] bg-[#0d0d0d] font-mono text-[0.9rem]">
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-white/40 shrink-0">$</span>
-              <span className="text-white/75 truncate">{INSTALL[pm]}</span>
-            </div>
+          <div className="flex items-center gap-3 rounded-lg border border-white/[0.08] bg-[#050606] px-4 py-4">
+            <Terminal className="h-4 w-4 text-cyan-100/70" aria-hidden="true" />
+            <code className="min-w-0 flex-1 truncate font-mono text-sm text-white/78">{INSTALL[pm]}</code>
             <button
               onClick={copy}
-              className={`ml-4 shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-                copied
-                  ? "bg-green-500/15 text-green-400 border border-green-500/20"
-                  : "bg-white/5 border border-white/10 text-white/40 hover:text-white/75 hover:border-white/20"
-              }`}
+              className="inline-flex h-8 items-center gap-2 rounded-md border border-white/[0.1] bg-white/[0.04] px-3 text-xs font-medium text-white/60 hover:bg-white/[0.08] hover:text-white"
             >
-              {copied ? (
-                <>
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                  Copied
-                </>
-              ) : (
-                <>
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
-                  </svg>
-                  Copy
-                </>
-              )}
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
+              {copied ? "Copied" : "Copy"}
             </button>
           </div>
-        </motion.div>
 
-        {/* Steps */}
-        <div className="space-y-3 mb-16">
-          {STEPS.map((step, i) => (
-            <motion.div
-              key={step.step}
-              initial={{ opacity: 0, x: -12 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: i * 0.09 }}
-              className="flex items-start gap-5 p-5 rounded-2xl border border-white/[0.05] bg-surface-50/40 hover:border-white/[0.1] transition-colors"
-            >
-              <span className="text-white/25 font-mono text-xs font-bold tracking-widest shrink-0 mt-0.5">
-                {step.step}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-white/70 text-sm font-medium mb-2">{step.label}</p>
-                <code className="block text-xs font-mono text-white/70 bg-black/60 px-3.5 py-2.5 rounded-xl border border-white/[0.06] break-all">
-                  {step.cmd}
-                </code>
-                <p className="text-white/40 text-xs mt-2 font-mono">{step.sub}</p>
+          <div className="mt-5 space-y-2">
+            {STEPS.map(([number, title, command]) => (
+              <div key={title} className="grid gap-3 rounded-lg border border-white/[0.07] bg-white/[0.025] p-4 min-[420px]:grid-cols-[34px_1fr]">
+                <span className="flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-black/30 text-xs text-white/35">
+                  {number}
+                </span>
+                <div className="min-w-0">
+                  <p className="mb-2 text-sm font-medium text-white/72">{title}</p>
+                  <code className="block break-all rounded-md bg-black/45 px-3 py-2 font-mono text-xs text-white/48">
+                    {command}
+                  </code>
+                </div>
               </div>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Dashboard CTA */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-8 text-center"
-        >
-          <p className="text-white font-semibold text-lg mb-2">Want a dashboard?</p>
-          <p className="text-white/55 text-sm mb-6 max-w-sm mx-auto leading-relaxed">
-            Sign in to track scan history, manage API keys, and store encrypted AI credentials.
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link href="/dashboard" className="btn-primary text-sm">
-              Open Dashboard
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-              </svg>
-            </Link>
-            <span className="text-white/40 text-xs">Free · No credit card required</span>
+            ))}
           </div>
-        </motion.div>
 
-        {/* npx option */}
-        <motion.p
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-          className="text-center text-white/40 text-sm mt-10 font-light"
-        >
-          Run without installing:{" "}
-          <code className="font-mono text-white/35">npx breachscope scan</code>
-        </motion.p>
+          <p className="mt-5 text-sm text-white/38">
+            For zero-install scans, run <code className="font-mono text-white/60">npx breachscope scan</code>. Docker is required only for sandbox attack runs.
+          </p>
+        </motion.div>
       </div>
     </section>
   );

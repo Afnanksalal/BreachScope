@@ -15,11 +15,11 @@ interface StatsCardProps {
 }
 
 const ACCENT_BORDER: Record<Accent, string> = {
-  red:     "bg-red-500/[0.06]",
-  yellow:  "bg-yellow-500/[0.06]",
-  blue:    "bg-white/[0.04]",
-  green:   "bg-green-500/[0.06]",
-  default: "bg-white/[0.04]",
+  red:     "bg-red-500/[0.06] border border-red-500/20",
+  yellow:  "bg-yellow-500/[0.06] border border-yellow-500/20",
+  blue:    "bg-white/[0.04] border border-breach-500/20",
+  green:   "bg-green-500/[0.06] border border-green-500/20",
+  default: "bg-white/[0.04] border border-white/10",
 };
 
 const VALUE_COLOR: Record<Accent, string> = {
@@ -49,7 +49,7 @@ export function StatsCard({ title, value, sub, trend, accent = "default", index 
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.04, ease: [0.16, 1, 0.3, 1] }}
-      className={clsx("p-5 rounded-2xl transition-colors", ACCENT_BORDER[accent])}
+      className={clsx("p-5 rounded-lg transition-colors backdrop-blur", ACCENT_BORDER[accent])}
     >
       <p className="text-white/35 text-[0.6875rem] font-semibold uppercase tracking-[0.1em] mb-3">
         {title}

@@ -51,7 +51,7 @@ async function checkReachability(base: string): Promise<Finding[]> {
         remediation: "Investigate server logs for the underlying error. Do not deploy to production in this state.",
       }];
     }
-  } catch (e) {
+  } catch {
     return [{
       id: "smoke-unreachable",
       title: "Target is unreachable",

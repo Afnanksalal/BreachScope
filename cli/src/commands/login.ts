@@ -70,7 +70,7 @@ export function makeLoginCommand(): Command {
         }
         authUrl = (data as Record<string, unknown>)["authUrl"] as string;
         initSpinner.succeed("Authentication session created.");
-      } catch (err) {
+      } catch {
         initSpinner.fail(`Cannot reach dashboard at ${dashboardUrl}`);
         process.exit(1);
       }

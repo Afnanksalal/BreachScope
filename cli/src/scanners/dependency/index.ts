@@ -9,6 +9,7 @@ import { scanPython } from "./python.js";
 import { scanGo } from "./go.js";
 import { scanRust } from "./rust.js";
 import { scanRuby } from "./ruby.js";
+import { scanAdditionalEcosystems } from "./multilang.js";
 
 interface LangScan { lang: string; detected: boolean; findings: Finding[] }
 
@@ -23,6 +24,11 @@ export async function runDependencyScanner(cwd: string): Promise<Finding[]> {
   const hasGo      = exists("go.mod");
   const hasRust    = exists("Cargo.toml") || exists("Cargo.lock");
   const hasRuby    = exists("Gemfile") || exists("Gemfile.lock");
+  const hasJava    = exists("pom.xml") || exists("build.gradle") || exists("build.gradle.kts");
+  const hasPhp     = exists("composer.json") || exists("composer.lock");
+  const hasDotnet  = fs.readdirSync(cwd).some((file) => file.endsWith(".csproj")) || exists("packages.lock.json");
+  const hasElixir  = exists("mix.exs") || exists("mix.lock");
+  const hasDart    = exists("pubspec.yaml") || exists("pubspec.lock");
 
   const detected = [
     hasJs     && chalk.yellow("JS/npm"),
@@ -30,6 +36,11 @@ export async function runDependencyScanner(cwd: string): Promise<Finding[]> {
     hasGo     && chalk.cyan("Go"),
     hasRust   && chalk.red("Rust"),
     hasRuby   && chalk.magenta("Ruby"),
+    hasJava   && chalk.red("Java"),
+    hasPhp    && chalk.blue("PHP"),
+    hasDotnet && chalk.green(".NET"),
+    hasElixir && chalk.magenta("Elixir"),
+    hasDart   && chalk.cyan("Dart"),
   ].filter(Boolean);
 
   if (detected.length > 0) {
@@ -77,6 +88,11 @@ export async function runDependencyScanner(cwd: string): Promise<Finding[]> {
     scans.push({ lang: "Ruby", detected: true, findings: rubyFindings });
   }
 
+  if (hasJava || hasPhp || hasDotnet || hasElixir || hasDart) {
+    const multiFindings = await scanAdditionalEcosystems(cwd);
+    scans.push({ lang: "Java/PHP/.NET/Elixir/Dart", detected: true, findings: multiFindings });
+  }
+
   const findings = scans.flatMap((s) => s.findings);
 
   // Per-language summary
@@ -87,7 +103,7 @@ export async function runDependencyScanner(cwd: string): Promise<Finding[]> {
   }
 
   if (scans.length === 0) {
-    logger.info("  No supported package manifest found (package.json, requirements.txt, go.mod, Cargo.toml, Gemfile)");
+    logger.info("  No supported package manifest found");
   }
 
   logger.info(`Found ${findings.length} dependency issue(s)`);

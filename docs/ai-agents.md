@@ -1,203 +1,65 @@
-# AI Multi-Agent Mode
+# Model-Assisted Analysis
 
-BreachScope's AI pipeline activates automatically when `OPENAI_API_KEY` is set. Each agent has a focused role and adapts behavior based on the active scan mode (`--breach`, `--bug`, or `--breach --bug`).
+BreachScope can run without model assistance. When a customer supplies `OPENAI_API_KEY`, optional analysis workers add reasoning, prioritization, attack-chain synthesis, and source-aware review.
 
----
-
-## How It Works
+## Activation
 
 ```bash
 export OPENAI_API_KEY=sk-...
-breachscope scan --mode major --url https://yourapp.com
+export FIRECRAWL_API_KEY=fc-... # optional
+
+breachscope scan --mode major --url https://app.example.com
 ```
 
-1. Static scanners run first (dependency, code, toolchain, blackbox, smoke)
-2. **Orchestrator Agent** reviews the project profile + scan mode and plans which AI agents to dispatch
-3. Specialist agents run in sequence, each with tool access:
-   - `web_search` — Firecrawl or free OSV/NVD/npm API fallback
-   - `crawl_url` — scrape specific advisory/changelog pages
-   - HTTP tools — live requests to the target or registry APIs
-4. **Report Agent** synthesizes all findings, identifies attack chains, writes executive summary
+The dashboard can store customer-supplied OpenAI and Firecrawl keys. API keys need `secrets:read` to retrieve those encrypted values.
 
----
+## Agent Roles
+
+| Agent | Role |
+| --- | --- |
+| Orchestrator | Chooses which agents should run based on scan mode, detected stack, URL, and credentials |
+| Dependency | Investigates packages across supported ecosystems using OSV, advisory sources, and web research |
+| Code | Reviews prioritized source files for credential exposure and exploitable vulnerabilities |
+| Toolchain | Probes configured SaaS tools such as Supabase, Vercel, and GitHub |
+| Blackbox | Uses live HTTP observations to test external attack paths |
+| Report | Produces an executive summary, attack chains, and prioritized remediation |
 
 ## Mode Awareness
 
-| Mode | Orchestrator bias | Code agent focus | Dep agent focus |
-|------|------------------|-----------------|----------------|
-| `all` | Balanced dispatch | Broad vulnerability classes | Top 15 risky packages across all ecosystems |
-| `breach` | Dependency + toolchain heavy | Credential hunt — keys, tokens, infra exposure | 20+ packages: hijacks, malware, CVEs, typosquatting (all ecosystems) |
-| `bug` | Code heavy, skip toolchain | Deep logic bugs — race conditions, IDOR, deserialization | Reachable CVEs in auth/parsing/HTTP packages (all ecosystems) |
-| `full` | Everything runs | Both bug + breach combined | Aggressive + reachable CVEs, 25+ packages (all ecosystems) |
-
----
-
-## Agents
-
-### Orchestrator
-
-Plans the attack. Reads the project profile (dependencies, file list, toolchain credentials present, URL, scan mode) and returns a JSON dispatch plan. Falls back to a deterministic plan (no AI) if parsing fails.
-
-**Breach mode fallback**: always includes `dependency + code + toolchain (if creds present) + blackbox (if URL)`  
-**Bug mode fallback**: always includes `code + dependency`  
-**Full mode fallback**: everything
-
-### Dependency Agent
-
-Researches packages across **all 10 ecosystems** using live tools — npm, PyPI, Go, crates.io, RubyGems, Maven, Packagist, NuGet, Hex, pub. Each lookup uses the correct ecosystem tag for accurate CVE matching.
-
-Tools available:
-- `fetch_osv_data(package, ecosystem)` — queries OSV.dev directly with the correct ecosystem
-- `fetch_github_advisory(package, ecosystem)` — GitHub Security Advisories per ecosystem
-- `search_vulnerabilities(package, ecosystem)` — targeted web search for CVEs and supply chain incidents
-- `web_search` — broader incident research (HackTricks, Snyk, Socket.dev, Exploit-DB)
-- `crawl_url` — fetches specific advisory pages, NVD CVE entries, registry pages
-
-The agent receives all detected packages grouped by ecosystem and is instructed to pass the correct ecosystem identifier to every lookup call.
-
-**In breach mode**: Investigates 20+ packages aggressively across all ecosystems. Looks for active malware, postinstall script exfiltration, maintainer takeovers, typosquatting, dependency confusion.
-
-**In bug mode**: Cross-references installed versions against known-vulnerable version ranges. Focuses on packages in auth, parsing, and HTTP handling paths.
-
-**In full mode**: Combines both — 25+ packages, breach hunting + CVE cross-reference.
-
-### Code Agent
-
-Deep static analysis with GPT-4o. Sends prioritized source files (auth, routes, DB, config first) and reasons about the full codebase.
-
-**In breach mode** (`SYSTEM_BREACH` prompt): Hunts exclusively for credentials, secrets, and misconfigurations that give attackers immediate access.
-
-**In bug mode** (`SYSTEM_BUG` prompt): Finds real exploitable security bugs — second-order injection, race conditions in auth flows, prototype pollution chains, subtle SSRF patterns, insecure deserialization, business logic flaws.
-
-**In full mode**: Both prompts merged — credential hunt + deep code vulnerability research simultaneously.
-
-### Toolchain Agent
-
-Fetches live changelogs from Supabase, Vercel, and GitHub. Searches for recent breach patterns, OAuth flow risks, webhook abuse vectors, and cross-tool attack chains. Runs in `breach` and `full` modes.
-
-### Blackbox Agent
-
-HTTP-level penetration tester. Makes targeted requests to the live URL, tests specific attack paths flagged by static scanners, identifies tech stack from response headers. Runs when `--url` is provided.
-
-### Report Agent
-
-CISO-grade synthesis — always runs last. Identifies attack chains (A + B + C = account takeover), writes executive summary and prioritized action list.
-
----
+| Mode | Assisted behavior |
+| --- | --- |
+| `all` | Balanced analysis across dependency, code, toolchain, and blackbox signals |
+| `breach` | Favors supply-chain incidents, CVEs, credentials, exposed infrastructure, and SaaS misconfiguration |
+| `bug` | Favors code-level exploitability: auth bypass, injection, deserialization, SSRF, XSS, race conditions |
+| `full` | Runs both breach and bug emphasis |
 
 ## Sandbox Agents
 
-The `breachscope sandbox` command runs an additional three specialized agents on top of the main attack loop.
+`breachscope sandbox` adds active runtime agents:
 
-### Sandbox Supervisor
+- sandbox attack agent
+- code companion
+- dependency companion
+- blackbox companion
+- supervisor planner
+- validator for critical and high findings
 
-Runs before the main exploit loop. Receives all recon data (discovered credentials, endpoints, open ports, framework versions) and produces a prioritized `SpecialistTask[]` attack plan.
+The sandbox agent can install tools inside the container and run active probes. Critical and high findings are independently rechecked before being presented as confirmed evidence.
 
-- Performs targeted web searches for known CVEs against detected framework/library versions
-- Produces tasks with exact context: endpoint paths, parameter names, credential values, chained hypotheses
-- Falls back gracefully if recon data is insufficient (skips with a log entry rather than burning tokens)
-- Max 6 tasks per session — quality over quantity
+## Data Handling
 
-### Sandbox Validator
+- Source context is local-first.
+- Dashboard secret values are encrypted at rest.
+- Sandbox excludes local `.env` files by default.
+- `--include-secrets` must be explicit when a disposable test requires real secrets inside the sandbox.
 
-Runs after the main attack loop. Independently re-verifies every critical and high finding by re-running replication steps from scratch.
+## Free Intelligence Fallbacks
 
-- Skeptical by default: must reproduce the same evidence to confirm
-- Confidence levels: `confirmed` (≥90/100), `likely` (60–89), `uncertain` (30–59), `false_positive` (<30)
-- Results annotated onto findings in the dashboard: confidence badge + score
-- Caps at 5 validations per session to control token use
-- Medium/low findings skipped (auto-assigned `likely` / 70 score)
+When Firecrawl is not configured, BreachScope still uses public sources where available:
 
-### CVE Intelligence (`cve-intel.ts`)
+- OSV.dev
+- npm advisory data
+- NVD keyword/CVE search paths
+- package registry metadata
 
-Triggered whenever a CVE ID is found during dependency scanning or live attack. Fetches in parallel:
-
-| Signal | Source | What it provides |
-|--------|--------|-----------------|
-| EPSS score | FIRST.org API | Exploitation probability in 30 days (0–100%) |
-| CVSS + severity | NVD API | Base score, vector string, severity label |
-| Nuclei template | projectdiscovery/nuclei-templates | Exploit-ready template available? |
-| Exploit-DB entry | Reference URL matching | Public PoC / exploit exists? |
-
-EPSS risk classification: 🔴 >50% (HIGH) · 🟡 10–50% (MEDIUM) · 🟢 <10% (LOW). Displayed inline in agent output and batch CVE reports.
-
----
-
-## Live Service Probing
-
-With an interactive terminal (`stdin.isTTY`), BreachScope discovers SaaS services in your codebase and prompts for credentials to probe them live:
-
-```bash
-breachscope scan
-```
-
-```
-Detected 3 service(s) in your codebase:
-● Supabase (database)
-● GitHub (vcs)
-● Stripe (payments)
-
-Probe live Supabase environment? [y/N]
-  Project URL: ...
-  Anon Key: ...
-```
-
-Every API call made by the probe agent is logged step-by-step and sent to the dashboard with HTTP method badges (GET/POST/PATCH), search labels (SRCH), and crawl labels (CRAWL).
-
-In CI (`stdin.isTTY === false`), the interactive live service probe is skipped automatically.
-
----
-
-## Free Threat Intelligence
-
-When `FIRECRAWL_API_KEY` is not set, BreachScope falls back to free public APIs automatically:
-
-- **OSV.dev** — comprehensive open vulnerability database (POST API, no key required)
-- **npm advisory bulk API** — security advisories with affected version ranges
-- **NVD CVE search** — NIST national vulnerability database keyword search
-
-Firecrawl enables full web search when available but is never required.
-
----
-
-## Requirements
-
-```bash
-export OPENAI_API_KEY=sk-...
-export FIRECRAWL_API_KEY=fc-...  # optional — free APIs used as fallback
-```
-
-Or add to `breachscope.yaml`:
-
-```yaml
-ai:
-  openaiApiKey: ""    # or OPENAI_API_KEY
-  firecrawlApiKey: "" # optional
-  model: gpt-4o
-```
-
-Keys stored on the dashboard (Settings page) are encrypted with AES-256-GCM and auto-injected into CLI sessions.
-
----
-
-## Token Usage
-
-| Scan type | Typical token range | Cost at GPT-4o pricing |
-|-----------|--------------------|-----------------------|
-| Basic scan | 15,000–25,000 | ~$0.04–$0.06 |
-| `--mode major` | 25,000–45,000 | ~$0.06–$0.11 |
-| `--mode deep --breach --bug` | 40,000–80,000 | ~$0.10–$0.20 |
-
----
-
-## CI Integration
-
-```yaml
-- name: AI Security Scan
-  run: breachscope scan --breach --ci
-  env:
-    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-    FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
-    SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-    SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-```
+Model-assisted synthesis can improve prioritization, but deterministic scanners and policy gates remain useful without it.

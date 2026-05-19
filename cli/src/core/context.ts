@@ -4,7 +4,7 @@ import fg from "fast-glob";
 import type { AgentContext, BreachScopeConfig, LanguageDep } from "./types.js";
 import { logger } from "./logger.js";
 
-const SCAN_EXTENSIONS = ["ts", "tsx", "js", "jsx", "mjs", "py", "go", "rb", "php"];
+const SCAN_EXTENSIONS = ["ts", "tsx", "js", "jsx", "mjs", "py", "go", "rb", "php", "java", "cs", "rs", "ex", "exs", "dart"];
 const IGNORE_DIRS = ["node_modules", ".git", "dist", "build", ".next", "__pycache__", ".turbo"];
 const MAX_FILE_SIZE = 80 * 1024; // 80KB per file
 const MAX_TOTAL_CHARS = 120_000; // keep total context manageable

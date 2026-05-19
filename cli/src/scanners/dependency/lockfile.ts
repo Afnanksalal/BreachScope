@@ -28,6 +28,19 @@ export async function scanLockfile(lockPath: string, type: LockfileType): Promis
     });
   }
 
+  if (gitPattern.test(raw)) {
+    findings.push({
+      id: `lockfile-insecure-git-${type}`,
+      title: "Package resolved from non-HTTPS git source",
+      severity: "high",
+      category: "dependency",
+      description: "One or more packages are resolved from a git protocol that is not HTTPS. This can weaken transport security and provenance.",
+      remediation: "Use git+https URLs or registry-published packages for dependencies.",
+      file: lockPath,
+      tool: type,
+    });
+  }
+
   if (filePattern.test(raw)) {
     findings.push({
       id: `lockfile-file-protocol-${type}`,

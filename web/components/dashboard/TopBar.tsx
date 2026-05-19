@@ -2,6 +2,7 @@
 
 import { signOut } from "next-auth/react";
 import type { Session } from "next-auth";
+import Image from "next/image";
 import Link from "next/link";
 
 interface TopBarProps {
@@ -13,8 +14,8 @@ interface TopBarProps {
 
 export function TopBar({ session, title, subtitle, back }: TopBarProps) {
   return (
-    <header className="h-16 border-b border-white/5 flex items-center justify-between pl-16 pr-6 md:px-8 shrink-0">
-      <div className="flex items-center gap-3">
+    <header className="flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-white/[0.07] bg-black/35 py-3 pl-16 pr-4 backdrop-blur-xl md:px-8">
+      <div className="flex min-w-0 items-center gap-3">
         {back && (
           <Link
             href={back}
@@ -26,30 +27,33 @@ export function TopBar({ session, title, subtitle, back }: TopBarProps) {
             </svg>
           </Link>
         )}
-        <div>
-          <h1 className="text-white font-semibold text-base">{title}</h1>
-          {subtitle && <p className="text-white/35 text-xs">{subtitle}</p>}
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-semibold leading-tight text-white">{title}</h1>
+          {subtitle && <p className="text-white/38 text-xs mt-0.5">{subtitle}</p>}
         </div>
       </div>
 
       {session && (
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+          <div className="flex min-w-0 items-center gap-3">
             {session.user?.image && (
-              <img
+              <Image
                 src={session.user.image}
                 alt={session.user.name ?? "User"}
+                width={28}
+                height={28}
+                unoptimized
                 className="w-7 h-7 rounded-full ring-1 ring-white/10"
               />
             )}
-            <div className="hidden sm:block">
-              <p className="text-white/70 text-xs font-medium">{session.user?.name}</p>
-              <p className="text-white/30 text-xs">{session.user?.email}</p>
+            <div className="hidden min-w-0 sm:block">
+              <p className="truncate text-xs font-medium text-white/70">{session.user?.name}</p>
+              <p className="truncate text-xs text-white/30">{session.user?.email}</p>
             </div>
           </div>
           <button
             onClick={() => signOut({ callbackUrl: "/" })}
-            className="text-xs text-white/30 hover:text-white/60 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5"
+            className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-white/38 transition-colors hover:bg-white/[0.07] hover:text-white sm:px-3"
           >
             Sign out
           </button>

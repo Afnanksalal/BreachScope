@@ -5,7 +5,7 @@ import path from "path";
 import { loadConfig } from "../core/config.js";
 import { logger } from "../core/logger.js";
 import { fetchRemoteConfig, syncRemoteConfig } from "../core/remote-config.js";
-import type { ScanOptions, ScanResult, ScanSummary, Finding } from "../core/types.js";
+import type { BreachScopeConfig, ScanOptions, ScanResult, ScanSummary, Finding } from "../core/types.js";
 import { runDependencyScanner } from "../scanners/dependency/index.js";
 import { runToolchainScanner } from "../scanners/toolchain/index.js";
 import { runCodeAudit } from "../scanners/code/index.js";
@@ -13,6 +13,7 @@ import { runBlackboxProbe } from "../scanners/blackbox/index.js";
 import { runSmokeTests } from "../scanners/smoke/index.js";
 import { renderConsoleReport } from "../reporters/console.js";
 import { renderJsonReport } from "../reporters/json.js";
+import { renderSarifReport } from "../reporters/sarif.js";
 import { renderDashboard } from "../reporters/dashboard.js";
 import { buildAgentContext } from "../core/context.js";
 import { runOrchestrator } from "../agents/orchestrator.js";
@@ -24,6 +25,9 @@ import { promptText, promptSecret, promptConfirm, SecureStore } from "../core/in
 import { runLiveProbe } from "../agents/live-probe.js";
 import { pushScanToDashboard } from "../core/push-scan.js";
 import type { SubchainScanResult } from "../core/types.js";
+import { attachFingerprints, filterNewFindings, loadBaseline, writeBaseline } from "../core/baseline.js";
+import { evaluatePolicy, loadPolicy, meetsSeverityThreshold } from "../core/policy.js";
+import { attachCompliance } from "../core/compliance.js";
 
 const BANNER = `
   ██████╗ ██████╗ ███████╗ █████╗  ██████╗██╗  ██╗
@@ -289,28 +293,26 @@ export async function runScan(opts: ScanOptions): Promise<void> {
 
     renderAIReport(agentResults, lastSynthesis, mergedFindings);
 
-    const aiResult = buildResult(cwd, startedAt, mergedFindings, { mode, url }, url);
-    if (opts.file) renderJsonReport(aiResult, opts.file);
+    const prepared = prepareFindings(mergedFindings, opts, config);
+    const aiResult = buildResult(cwd, startedAt, prepared.findings, { mode, url, governance: prepared.metadata }, url);
+    renderSelectedReport(aiResult, opts.output ?? config.output.format, opts.file);
+    if (opts.writeBaseline) writeBaseline(opts.writeBaseline, prepared.baselineSource);
 
     await pushScan(aiResult, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, aiReport: lastSynthesis ? JSON.stringify(lastSynthesis) : undefined });
-    exitOnThreshold(opts, mergedFindings, config.thresholds.failOn);
+    exitOnThreshold(opts, prepared.ciFindings, prepared.failOn);
     return;
   }
 
   // ── Fallback output (no API key) ──────────────────────────────────────────
   logger.warn("Set OPENAI_API_KEY for full AI-powered analysis (threat intel, code audit, web search).");
-  const result = buildResult(cwd, startedAt, findings, { config: opts.config ?? "default", mode, url }, url);
+  const prepared = prepareFindings(findings, opts, config);
+  const result = buildResult(cwd, startedAt, prepared.findings, { config: opts.config ?? "default", mode, url, governance: prepared.metadata }, url);
   const format = opts.output ?? config.output.format;
-
-  if (format === "json") {
-    renderJsonReport(result, opts.file);
-  } else {
-    renderConsoleReport(result);
-    if (opts.file) renderJsonReport(result, opts.file);
-  }
+  renderSelectedReport(result, format, opts.file);
+  if (opts.writeBaseline) writeBaseline(opts.writeBaseline, prepared.baselineSource);
 
   await pushScan(result, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices });
-  exitOnThreshold(opts, findings, config.thresholds.failOn);
+  exitOnThreshold(opts, prepared.ciFindings, prepared.failOn);
 }
 
 async function pushScan(
@@ -403,9 +405,74 @@ function makeSummary(findings: Finding[]): ScanSummary {
   };
 }
 
-function exitOnThreshold(opts: ScanOptions, findings: Finding[], failOn: string): void {
-  const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-  const threshold = order[failOn] ?? 1;
-  const failed = findings.some((f) => (order[f.severity] ?? 99) <= threshold);
+function renderSelectedReport(result: ScanResult, format: string, outputFile?: string): void {
+  if (format === "json") {
+    renderJsonReport(result, outputFile);
+    return;
+  }
+
+  if (format === "sarif") {
+    renderSarifReport(result, outputFile);
+    return;
+  }
+
+  renderConsoleReport(result);
+  if (outputFile) renderJsonReport(result, outputFile);
+}
+
+function prepareFindings(
+  findings: Finding[],
+  opts: ScanOptions,
+  config: Pick<BreachScopeConfig, "policy" | "thresholds">
+): {
+  findings: Finding[];
+  ciFindings: Finding[];
+  baselineSource: Finding[];
+  failOn: Finding["severity"];
+  metadata: Record<string, unknown>;
+} {
+  const loadedPolicy = opts.policy ? loadPolicy(opts.policy) : {};
+  const policy = { ...(config.policy ?? {}), ...loadedPolicy };
+  const failOn = opts.failOn ?? policy.failOn ?? config.thresholds.failOn;
+
+  const baselineSource = attachFingerprints(attachCompliance(findings));
+  const suppressionOnly = evaluatePolicy(baselineSource, { suppressions: policy.suppressions });
+  let activeFindings = suppressionOnly.findings;
+
+  let baselineMatchCount = 0;
+  if (opts.baseline) {
+    const baseline = loadBaseline(opts.baseline);
+    const newFindings = filterNewFindings(activeFindings, baseline);
+    baselineMatchCount = activeFindings.length - newFindings.length;
+    if (opts.newFindingsOnly) {
+      activeFindings = newFindings;
+    }
+  }
+
+  const policyResult = evaluatePolicy(activeFindings, { ...policy, suppressions: [] });
+  const reportFindings = attachFingerprints([...policyResult.findings, ...policyResult.violations]);
+
+  return {
+    findings: reportFindings,
+    ciFindings: reportFindings,
+    baselineSource,
+    failOn,
+    metadata: {
+      baseline: opts.baseline ? {
+        path: opts.baseline,
+        newFindingsOnly: Boolean(opts.newFindingsOnly),
+        matchedFindings: baselineMatchCount,
+      } : undefined,
+      policy: {
+        path: opts.policy,
+        violations: policyResult.violations.length,
+        suppressed: suppressionOnly.suppressed.length,
+      },
+    },
+  };
+}
+
+function exitOnThreshold(opts: ScanOptions, findings: Finding[], failOn: Finding["severity"]): void {
+  const failed = findings.some((f) => meetsSeverityThreshold(f, failOn));
   if (opts.ci && failed) process.exit(1);
 }

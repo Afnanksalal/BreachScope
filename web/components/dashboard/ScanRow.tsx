@@ -3,13 +3,6 @@
 import { clsx } from "clsx";
 import type { Scan } from "@/lib/schema";
 
-const SEV_BAR = (n: number, color: string) =>
-  n > 0 ? (
-    <span className={clsx("inline-flex items-center gap-1 text-xs font-mono", color)}>
-      {n}
-    </span>
-  ) : null;
-
 const MODE_BADGE: Record<string, string> = {
   breach: "bg-red-500/15 text-red-300 border-red-500/20",
   bug:    "bg-blue-500/15 text-blue-300 border-blue-500/20",

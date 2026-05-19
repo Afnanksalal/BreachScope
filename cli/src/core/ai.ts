@@ -52,11 +52,14 @@ export async function complete(opts: CompletionOptions): Promise<CompletionResul
   });
 
   const choice = response.choices[0]!;
-  const toolCalls = (choice.message.tool_calls ?? []).map((tc) => ({
-    id: tc.id,
-    name: tc.function.name,
-    args: JSON.parse(tc.function.arguments) as Record<string, unknown>,
-  }));
+  const toolCalls = (choice.message.tool_calls ?? []).flatMap((tc) => {
+    if (tc.type !== "function") return [];
+    return [{
+      id: tc.id,
+      name: tc.function.name,
+      args: JSON.parse(tc.function.arguments) as Record<string, unknown>,
+    }];
+  });
 
   logger.debug(
     `[ai] ${AI_MODEL} — ${response.usage?.total_tokens ?? "?"} tokens`,

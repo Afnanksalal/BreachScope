@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { TopBar } from "@/components/dashboard/TopBar";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
@@ -9,10 +9,19 @@ interface ApiKey {
   id: string;
   name: string;
   keyPrefix: string;
+  scopes: string[] | null;
   lastUsedAt: string | null;
   revokedAt: string | null;
   createdAt: string;
 }
+
+const DEFAULT_SCOPES = ["scan:write", "config:read"];
+const AVAILABLE_SCOPES = [
+  { value: "scan:write", label: "Scan upload" },
+  { value: "config:read", label: "Read config" },
+  { value: "secrets:read", label: "Read secrets" },
+  { value: "settings:write", label: "Write settings" },
+];
 
 function timeAgo(date: string | null): string {
   if (!date) return "Never";
@@ -31,16 +40,18 @@ export default function KeysPage() {
   const [newKeyName, setNewKeyName] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null);
+  const [selectedScopes, setSelectedScopes] = useState<string[]>(DEFAULT_SCOPES);
   const [copied, setCopied] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
 
-  async function loadKeys() {
+  const loadKeys = useCallback(async () => {
     const res = await fetch("/api/keys");
     if (res.ok) setKeys(await res.json());
     setLoading(false);
-  }
+  }, []);
 
-  useEffect(() => { loadKeys(); }, []);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void loadKeys(); }, [loadKeys]);
 
   function handleCreate() {
     if (!newKeyName.trim()) return;
@@ -48,14 +59,15 @@ export default function KeysPage() {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName.trim() }),
+        body: JSON.stringify({ name: newKeyName.trim(), scopes: selectedScopes }),
       });
       if (res.ok) {
         const data = await res.json();
         setNewKeyValue(data.fullKey);
         setNewKeyName("");
+        setSelectedScopes(DEFAULT_SCOPES);
         setShowForm(false);
-        loadKeys();
+        void loadKeys();
       }
     });
   }
@@ -68,7 +80,7 @@ export default function KeysPage() {
       body: JSON.stringify({ id }),
     });
     setRevoking(null);
-    loadKeys();
+    void loadKeys();
   }
 
   async function copyKey() {
@@ -78,13 +90,21 @@ export default function KeysPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  function toggleScope(scope: string) {
+    setSelectedScopes((current) => (
+      current.includes(scope)
+        ? current.filter((item) => item !== scope)
+        : [...current, scope]
+    ));
+  }
+
   const activeKeys = keys.filter((k) => !k.revokedAt);
 
   return (
     <>
       <TopBar title="API Keys" subtitle="Manage CLI authentication" />
 
-      <div className="flex-1 p-8 space-y-6">
+      <div className="flex-1 space-y-6 px-4 py-5 sm:px-6 md:p-8">
         {/* Revealed key banner */}
         <AnimatePresence>
           {newKeyValue && (
@@ -92,12 +112,12 @@ export default function KeysPage() {
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              className="rounded-2xl border border-green-500/20 bg-green-500/[0.05] p-5"
+              className="rounded-lg border border-green-500/20 bg-green-500/[0.05] p-5"
             >
-              <div className="flex items-start justify-between mb-3">
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-green-400 font-semibold text-sm">API key created</p>
-                  <p className="text-white/40 text-xs mt-0.5">Copy it now — it won't be shown again.</p>
+                  <p className="text-white/40 text-xs mt-0.5">Copy it now; it won&apos;t be shown again.</p>
                 </div>
                 <button
                   onClick={() => setNewKeyValue(null)}
@@ -106,7 +126,7 @@ export default function KeysPage() {
                   Dismiss
                 </button>
               </div>
-              <div className="flex items-center gap-3 bg-black/60 border border-white/[0.08] rounded-xl px-4 py-3">
+              <div className="flex flex-col gap-3 rounded-lg border border-white/[0.08] bg-black/60 px-4 py-3 sm:flex-row sm:items-center">
                 <code className="flex-1 text-white/80 font-mono text-sm tracking-wide break-all">
                   {newKeyValue}
                 </code>
@@ -119,26 +139,26 @@ export default function KeysPage() {
                       : "bg-white/[0.06] text-white/60 border border-white/[0.10] hover:bg-white/10"
                   )}
                 >
-                  {copied ? "Copied!" : "Copy"}
+                  {copied ? "Copied" : "Copy"}
                 </button>
               </div>
-              <div className="mt-3 p-3 rounded-xl bg-white/[0.04] border border-white/[0.08]">
+              <div className="mt-3 p-3 rounded-lg bg-white/[0.04] border border-white/[0.08]">
                 <p className="text-white/35 text-xs mb-1">Use with CLI:</p>
-                <code className="text-white/55 text-xs font-mono">breachscope login --token {newKeyValue.slice(0, 20)}...</code>
+                <code className="break-words font-mono text-xs text-white/55">breachscope login --token {newKeyValue.slice(0, 20)}...</code>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
         {/* Header actions */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-white font-semibold">Active Keys</h2>
             <p className="text-white/30 text-sm mt-0.5">{activeKeys.length} key{activeKeys.length !== 1 ? "s" : ""}</p>
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors"
           >
             <span className="text-lg leading-none">+</span>
             New Key
@@ -154,9 +174,9 @@ export default function KeysPage() {
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <div className="rounded-2xl bg-white/[0.04] p-5">
+              <div className="rounded-lg bg-white/[0.04] p-5">
                 <p className="text-white/60 text-sm font-medium mb-4">Create a new API key</p>
-                <div className="flex gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   <input
                     autoFocus
                     type="text"
@@ -164,21 +184,37 @@ export default function KeysPage() {
                     value={newKeyName}
                     onChange={(e) => setNewKeyName(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                    className="flex-1 bg-black/40 border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-white/20 transition-colors"
+                    className="flex-1 bg-black/40 border border-white/[0.08] rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-white/20 transition-colors"
                   />
                   <button
                     onClick={handleCreate}
                     disabled={creating || !newKeyName.trim()}
-                    className="px-5 py-2.5 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    className="px-5 py-2.5 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                   >
-                    {creating ? "Creating…" : "Create"}
+                    {creating ? "Creating..." : "Create"}
                   </button>
                   <button
                     onClick={() => { setShowForm(false); setNewKeyName(""); }}
-                    className="px-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/[0.08] text-white/40 text-sm hover:text-white/60 transition-colors"
+                    className="px-4 py-2.5 rounded-lg bg-white/[0.05] border border-white/[0.08] text-white/40 text-sm hover:text-white/60 transition-colors"
                   >
                     Cancel
                   </button>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {AVAILABLE_SCOPES.map((scope) => (
+                    <label
+                      key={scope.value}
+                      className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-white/50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedScopes.includes(scope.value)}
+                        onChange={() => toggleScope(scope.value)}
+                        className="h-3.5 w-3.5 accent-white"
+                      />
+                      {scope.label}
+                    </label>
+                  ))}
                 </div>
               </div>
             </motion.div>
@@ -186,22 +222,50 @@ export default function KeysPage() {
         </AnimatePresence>
 
         {/* Keys table */}
-        <div className="rounded-2xl bg-white/[0.04] overflow-hidden">
+        <div className="rounded-lg bg-white/[0.04] overflow-hidden">
           {loading ? (
-            <div className="px-5 py-12 text-center text-white/20 text-sm">Loading…</div>
+            <div className="px-5 py-12 text-center text-sm text-white/20">Loading...</div>
           ) : activeKeys.length === 0 ? (
             <div className="px-5 py-16 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center mx-auto mb-4">
+              <div className="w-12 h-12 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center mx-auto mb-4">
                 <KeyIconLg />
               </div>
               <p className="text-white/30 text-sm mb-2">No API keys yet</p>
               <p className="text-white/20 text-xs">Create a key to connect the CLI to your account.</p>
             </div>
           ) : (
-            <table className="w-full">
+            <>
+            <div className="grid gap-3 p-3 md:hidden">
+              {activeKeys.map((key) => (
+                <div key={key.id} className="rounded-lg border border-white/[0.07] bg-black/20 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-white/80">{key.name}</p>
+                      <code className="mt-2 inline-block rounded-lg border border-white/[0.08] bg-white/[0.05] px-2 py-1 font-mono text-xs text-white/55">
+                        {key.keyPrefix}********
+                      </code>
+                    </div>
+                    <button
+                      onClick={() => handleRevoke(key.id)}
+                      disabled={revoking === key.id}
+                      className="shrink-0 text-xs text-red-400/60 transition-colors hover:text-red-400 disabled:opacity-40"
+                    >
+                      {revoking === key.id ? "Revoking..." : "Revoke"}
+                    </button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-white/35 min-[420px]:grid-cols-2">
+                    <p><span className="text-white/22">Scopes:</span> {formatScopes(key.scopes)}</p>
+                    <p><span className="text-white/22">Last used:</span> {timeAgo(key.lastUsedAt)}</p>
+                    <p><span className="text-white/22">Created:</span> {timeAgo(key.createdAt)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[760px]">
               <thead>
                 <tr className="border-b border-white/[0.05]">
-                  {["Name", "Key", "Last Used", "Created", ""].map((h) => (
+                  {["Name", "Key", "Scopes", "Last Used", "Created", ""].map((h) => (
                     <th key={h} className="px-5 py-3 text-left text-xs text-white/25 font-medium">
                       {h}
                     </th>
@@ -216,9 +280,10 @@ export default function KeysPage() {
                     </td>
                     <td className="px-5 py-4">
                       <code className="text-white/55 text-xs font-mono bg-white/[0.05] border border-white/[0.08] px-2 py-1 rounded-lg">
-                        {key.keyPrefix}••••••••
+                        {key.keyPrefix}********
                       </code>
                     </td>
+                    <td className="px-5 py-4 text-white/35 text-xs">{formatScopes(key.scopes)}</td>
                     <td className="px-5 py-4 text-white/35 text-xs">{timeAgo(key.lastUsedAt)}</td>
                     <td className="px-5 py-4 text-white/25 text-xs">{timeAgo(key.createdAt)}</td>
                     <td className="px-5 py-4 text-right">
@@ -227,13 +292,15 @@ export default function KeysPage() {
                         disabled={revoking === key.id}
                         className="text-xs text-red-400/60 hover:text-red-400 transition-colors disabled:opacity-40"
                       >
-                        {revoking === key.id ? "Revoking…" : "Revoke"}
+                        {revoking === key.id ? "Revoking..." : "Revoke"}
                       </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
+            </>
           )}
         </div>
 
@@ -246,14 +313,14 @@ export default function KeysPage() {
             },
             {
               title: "Key Security",
-              body: "Keys are shown once at creation. We store only a SHA-256 hash — if lost, revoke and create a new one.",
+              body: "Keys are shown once at creation. We store only a SHA-256 hash. If lost, revoke and create a new one.",
             },
             {
               title: "Permissions",
-              body: "Each key has full access to your account. Scope-limited keys are coming in a future release.",
+              body: "Grant only the scopes each automation path needs. Secret access is separate from scan upload and config read.",
             },
           ].map(({ title, body }) => (
-            <div key={title} className="p-4 rounded-2xl bg-white/[0.04]">
+            <div key={title} className="p-4 rounded-lg bg-white/[0.04]">
               <p className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-2">{title}</p>
               <p className="text-white/30 text-xs leading-relaxed">{body}</p>
             </div>
@@ -262,6 +329,11 @@ export default function KeysPage() {
       </div>
     </>
   );
+}
+
+function formatScopes(scopes: string[] | null): string {
+  const values = Array.isArray(scopes) && scopes.length > 0 ? scopes : DEFAULT_SCOPES;
+  return values.join(", ");
 }
 
 function KeyIconLg() {

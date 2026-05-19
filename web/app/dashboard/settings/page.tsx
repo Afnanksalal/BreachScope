@@ -8,9 +8,9 @@ import { clsx } from "clsx";
 import type { SettingsResponse as Settings } from "@/app/api/settings/route";
 
 const MODE_OPTIONS = [
-  { value: "basic", label: "Basic", desc: "Direct dependencies only — fastest" },
+  { value: "basic", label: "Basic", desc: "Direct dependencies only - fastest" },
   { value: "major", label: "Major", desc: "2-level deep sub-dependency graph" },
-  { value: "deep",  label: "Deep",  desc: "Full recursive traversal — thorough" },
+  { value: "deep",  label: "Deep",  desc: "Full recursive traversal - thorough" },
 ];
 
 const SCAN_MODE_OPTIONS = [
@@ -26,8 +26,8 @@ const SANDBOX_SCAN_MODE_OPTIONS = [
 ];
 
 const SANDBOX_DEPTH_OPTIONS = [
-  { value: "normal", label: "Normal", desc: "80 attack iterations — balanced coverage" },
-  { value: "deep",   label: "Deep",   desc: "120 attack iterations — exhaustive" },
+  { value: "normal", label: "Normal", desc: "80 attack iterations - balanced coverage" },
+  { value: "deep",   label: "Deep",   desc: "120 attack iterations - exhaustive" },
 ];
 
 function FieldRow({
@@ -51,8 +51,8 @@ function FieldRow({
 }) {
   return (
     <div className="py-5 border-b border-white/[0.06] last:border-0">
-      <div className="flex items-start justify-between gap-8">
-        <div className="flex-1">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
             <p className="text-white/80 text-sm font-medium">{label}</p>
             {isSet && (
@@ -63,14 +63,14 @@ function FieldRow({
           </div>
           <p className="text-white/30 text-xs">{hint}</p>
         </div>
-        <div className="w-80 shrink-0">
+        <div className="w-full sm:w-80 sm:shrink-0">
           <input
             type={type}
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={isSet ? "••••••••••••••• (leave blank to keep)" : placeholder}
+            placeholder={isSet ? "*************** (leave blank to keep)" : placeholder}
             disabled={saving}
-            className="w-full bg-black/40 border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/20 transition-colors font-mono disabled:opacity-50"
+            className="w-full bg-black/40 border border-white/[0.08] rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/20 transition-colors font-mono disabled:opacity-50"
           />
         </div>
       </div>
@@ -136,19 +136,19 @@ export default function SettingsPage() {
     <>
       <TopBar title="Settings" subtitle="Configure scan defaults and integrations" />
 
-      <div className="flex-1 p-8 space-y-8 max-w-4xl">
-        {/* AI Integrations */}
+      <div className="max-w-4xl flex-1 space-y-8 px-4 py-5 sm:px-6 md:p-8">
+        {/* Customer-owned provider keys */}
         <section>
           <div className="mb-4">
-            <h2 className="text-white font-semibold text-sm">AI Integrations</h2>
+            <h2 className="text-white font-semibold text-sm">Customer-Owned Provider Keys</h2>
             <p className="text-white/30 text-xs mt-0.5">
-              Keys are encrypted with AES-256-GCM before storage and fetched by the CLI at scan time.
+              Bring your own provider accounts. Saved keys are encrypted with AES-256-GCM before storage and fetched by the CLI only when the API key scope allows it.
             </p>
           </div>
-          <div className="rounded-2xl bg-white/[0.04] px-5 divide-y divide-white/[0.05]">
+          <div className="rounded-lg bg-white/[0.04] px-5 divide-y divide-white/[0.05]">
             <FieldRow
               label="OpenAI API Key"
-              hint="Used for GPT-4o analysis across all agents. Required for AI-powered scanning."
+              hint="Optional. Used only for workflows where your team enables model-assisted analysis."
               type="password"
               value={openAiKey}
               onChange={setOpenAiKey}
@@ -158,7 +158,7 @@ export default function SettingsPage() {
             />
             <FieldRow
               label="Firecrawl API Key"
-              hint="Used for web intelligence — SaaS incident research, changelog fetching, advisory search."
+              hint="Optional. Used only for customer-enabled web intelligence, changelog fetching, and advisory research."
               type="password"
               value={firecrawlKey}
               onChange={setFirecrawlKey}
@@ -179,15 +179,15 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-2xl bg-white/[0.04] p-5">
+            <div className="rounded-lg bg-white/[0.04] p-5">
               <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-4">Depth Mode</p>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {MODE_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => setDefaultMode(opt.value)}
                     className={clsx(
-                      "p-4 rounded-xl border text-left transition-all",
+                      "p-4 rounded-lg border text-left transition-all",
                       defaultMode === opt.value
                         ? "bg-white/[0.08] border-white/[0.15] text-white"
                         : "bg-black/20 border-white/[0.06] text-white/40 hover:border-white/[0.12] hover:text-white/60"
@@ -200,15 +200,15 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white/[0.04] p-5">
+            <div className="rounded-lg bg-white/[0.04] p-5">
               <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-4">Scan Mode</p>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {SCAN_MODE_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => setDefaultScanMode(opt.value)}
                     className={clsx(
-                      "p-4 rounded-xl border text-left transition-all",
+                      "p-4 rounded-lg border text-left transition-all",
                       defaultScanMode === opt.value
                         ? "bg-white/[0.08] border-white/[0.15] text-white"
                         : "bg-black/20 border-white/[0.06] text-white/40 hover:border-white/[0.12] hover:text-white/60"
@@ -233,15 +233,15 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-2xl bg-white/[0.04] p-5">
+            <div className="rounded-lg bg-white/[0.04] p-5">
               <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-4">Attack Depth</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {SANDBOX_DEPTH_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => setSandboxDeep(opt.value === "deep")}
                     className={clsx(
-                      "p-4 rounded-xl border text-left transition-all",
+                      "p-4 rounded-lg border text-left transition-all",
                       (sandboxDeep ? "deep" : "normal") === opt.value
                         ? "bg-white/[0.08] border-white/[0.15] text-white"
                         : "bg-black/20 border-white/[0.06] text-white/40 hover:border-white/[0.12] hover:text-white/60"
@@ -254,16 +254,16 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white/[0.04] p-5">
+            <div className="rounded-lg bg-white/[0.04] p-5">
               <p className="text-white/40 text-xs font-semibold uppercase tracking-wider mb-4">Companion Agent Mode</p>
               <p className="text-white/30 text-xs mb-4">Sets focus for the code, dependency, and blackbox agents that run alongside the attack agent.</p>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {SANDBOX_SCAN_MODE_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => setSandboxScanMode(opt.value)}
                     className={clsx(
-                      "p-4 rounded-xl border text-left transition-all",
+                      "p-4 rounded-lg border text-left transition-all",
                       sandboxScanMode === opt.value
                         ? "bg-white/[0.08] border-white/[0.15] text-white"
                         : "bg-black/20 border-white/[0.06] text-white/40 hover:border-white/[0.12] hover:text-white/60"
@@ -279,14 +279,14 @@ export default function SettingsPage() {
         </section>
 
         {/* Save */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <motion.button
             onClick={handleSave}
             disabled={saving}
             whileTap={{ scale: 0.98 }}
-            className="px-6 py-2.5 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="px-6 py-2.5 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
-            {saving ? "Saving…" : "Save Changes"}
+            {saving ? "Saving..." : "Save Changes"}
           </motion.button>
           {saved && (
             <motion.span
@@ -301,9 +301,9 @@ export default function SettingsPage() {
         </div>
 
         {/* Danger zone */}
-        <section className="rounded-2xl border border-red-500/15 bg-red-500/[0.03] p-5">
+        <section className="rounded-lg border border-red-500/15 bg-red-500/[0.03] p-5">
           <h3 className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-4">Danger Zone</h3>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-white/70 text-sm font-medium">Clear all scan data</p>
               <p className="text-white/30 text-xs mt-0.5">Permanently delete all scans and findings from your account. This cannot be undone.</p>
@@ -311,12 +311,12 @@ export default function SettingsPage() {
             {!deleteConfirm ? (
               <button
                 onClick={() => setDeleteConfirm(true)}
-                className="shrink-0 px-4 py-2 rounded-xl border border-red-500/25 text-red-400/70 text-sm hover:bg-red-500/10 hover:text-red-400 transition-all"
+                className="shrink-0 px-4 py-2 rounded-lg border border-red-500/25 text-red-400/70 text-sm hover:bg-red-500/10 hover:text-red-400 transition-all"
               >
                 Delete All Scans
               </button>
             ) : (
-              <div className="shrink-0 flex items-center gap-2">
+              <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
                 <span className="text-red-400/70 text-xs">Are you sure?</span>
                 <button
                   onClick={async () => {
@@ -329,7 +329,7 @@ export default function SettingsPage() {
                   disabled={deleting}
                   className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-xs font-medium hover:bg-red-500/30 transition-all disabled:opacity-50"
                 >
-                  {deleting ? "Deleting…" : "Yes, delete all"}
+                  {deleting ? "Deleting..." : "Yes, delete all"}
                 </button>
                 <button
                   onClick={() => setDeleteConfirm(false)}

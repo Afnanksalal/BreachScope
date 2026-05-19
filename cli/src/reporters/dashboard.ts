@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import type { SubchainScanResult, ToolPipelineResult } from "../core/types.js";
+import type { SubchainScanResult } from "../core/types.js";
 
 const SEVERITY_COLOR: Record<string, (s: string) => string> = {
   critical: (s) => chalk.bgRed.white.bold(s),

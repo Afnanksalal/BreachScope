@@ -143,29 +143,33 @@ async function _tryStartContainer(
     args.push("-p", `${hostPort}:${containerPort}`);
   }
 
-  // Write env vars to a temp file to avoid shell interpretation of special chars
-  // (& in URLs, $, quotes, spaces, etc. all break when passed as -e KEY=VALUE strings)
+  // Write env vars to a private temp file to avoid shell interpretation of special chars.
   let envFilePath: string | null = null;
+  let envFileDir: string | null = null;
   const envVars = opts.envVars ?? {};
   if (Object.keys(envVars).length > 0) {
     const os = await import("os");
-    envFilePath = path.join(os.tmpdir(), `breachscope-env-${Date.now()}.env`);
+    envFileDir = fs.mkdtempSync(path.join(os.tmpdir(), "breachscope-env-"));
+    envFilePath = path.join(envFileDir, "container.env");
     const envFileContent = Object.entries(envVars)
-      .map(([k, v]) => `${k}=${v}`)
+      .filter(([k]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k))
+      .map(([k, v]) => `${k}=${String(v).replace(/\r?\n/g, "\\n")}`)
       .join("\n");
     fs.writeFileSync(envFilePath, envFileContent, "utf-8");
+    fs.chmodSync(envFilePath, 0o600);
     args.push("--env-file", envFilePath);
   }
 
   args.push("--network", opts.networkMode ?? "bridge");
   args.push("--memory", opts.memory ?? "2g");
   args.push("--cpus", "2.0");
+  args.push("--pids-limit", "512");
+  args.push("--security-opt", "no-new-privileges:true");
+  args.push("--cap-drop", "ALL");
 
   if (opts.attackMode) {
     args.push("--cap-add", "NET_RAW");
     args.push("--cap-add", "NET_ADMIN");
-  } else {
-    args.push("--security-opt", "no-new-privileges:true");
   }
 
   args.push(opts.image);
@@ -178,7 +182,7 @@ async function _tryStartContainer(
     proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
     proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
     proc.on("close", (code) => {
-      if (envFilePath) { try { fs.unlinkSync(envFilePath); } catch { /* ignore */ } }
+      cleanupEnvFile(envFilePath, envFileDir);
       if (code === 0) {
         resolve({ ok: true, id: stdout.trim() });
       } else {
@@ -188,10 +192,19 @@ async function _tryStartContainer(
       }
     });
     proc.on("error", (e) => {
-      if (envFilePath) { try { fs.unlinkSync(envFilePath); } catch { /* ignore */ } }
+      cleanupEnvFile(envFilePath, envFileDir);
       resolve({ ok: false, portConflict: false, error: String(e) });
     });
   });
+}
+
+function cleanupEnvFile(filePath: string | null, dirPath: string | null): void {
+  if (filePath) {
+    try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+  }
+  if (dirPath) {
+    try { fs.rmdirSync(dirPath); } catch { /* ignore */ }
+  }
 }
 
 export async function stopContainer(containerId: string): Promise<void> {
@@ -355,9 +368,6 @@ export function generateDockerfile(projectType: ProjectType, cwd: string): strin
         const deps = Object.keys(pkg.dependencies ?? {});
         const isNest = deps.includes("@nestjs/core") || deps.includes("@nestjs/common");
         const isNext = deps.includes("next");
-        const hasTypeScript = fs.existsSync(path.join(cwd, "tsconfig.json"));
-        const hasBuildScript = !!pkg.scripts?.build;
-
         if (isNext) {
           return `FROM node:20
 WORKDIR /app
@@ -393,7 +403,6 @@ CMD ["sh", "-c", "node dist/main.js 2>/dev/null || npm run start:dev 2>/dev/null
         } else if (fs.existsSync(path.join(cwd, "src/index.js"))) {
           startCmd = `["node", "src/index.js"]`;
         }
-        const buildStep = (hasTypeScript && hasBuildScript) ? "RUN npm run build 2>/dev/null || true\n" : "";
       } catch { /* use default */ }
       return `FROM node:20
 WORKDIR /app

@@ -1,7 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
 
 const ALGORITHM = "aes-256-gcm";
-const KEY_LEN = 32;
 
 function getDerivedKey(): Buffer {
   const secret = process.env["ENCRYPTION_KEY"];

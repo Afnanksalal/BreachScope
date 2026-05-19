@@ -1375,7 +1375,7 @@ APPROACH:
    http("POST", "/api/order", body: '{"total":0.01}') — check if server trusts client-side total
 2. QUANTITY MANIPULATION: order 0 items, -1 items, fractional quantities
 3. DISCOUNT/COUPON ABUSE: apply same coupon multiple times in parallel, apply coupon to wrong items
-4. PRIVILEGE ESCALATION: change account type via PUT /api/users/me → {"role":"admin","plan":"enterprise"}
+4. PRIVILEGE ESCALATION: change account type via PUT /api/users/me -> {"role":"admin","plan":"paid"}
 5. WORKFLOW BYPASS: skip required steps (e.g., skip payment → go directly to order confirmation)
    Map the full flow: register → verify → pay → confirm. Try accessing step N+2 directly.
 6. IDOR on resources: GET /api/orders/1, /api/orders/2 — can you see other users' orders?

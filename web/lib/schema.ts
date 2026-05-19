@@ -1,5 +1,5 @@
 import {
-  pgTable, uuid, text, timestamp, integer, index, uniqueIndex, primaryKey,
+  pgTable, uuid, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, primaryKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
@@ -38,6 +38,39 @@ export const sessions = pgTable("sessions", {
   expires:      timestamp("expires", { mode: "date" }).notNull(),
 });
 
+// Tenancy and project controls
+export const organizations = pgTable("organizations", {
+  id:        uuid("id").primaryKey().defaultRandom(),
+  name:      text("name").notNull(),
+  slug:      text("slug").notNull().unique(),
+  ssoDomain: text("sso_domain"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const organizationMembers = pgTable("organization_members", {
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId:         uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role:           text("role").notNull().default("member"), // owner | admin | security | auditor | member
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.organizationId, t.userId] }),
+  index("organization_members_user_idx").on(t.userId),
+]);
+
+export const projects = pgTable("projects", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  ownerUserId:    uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }),
+  name:           text("name").notNull(),
+  slug:           text("slug").notNull(),
+  repositoryUrl:  text("repository_url"),
+  defaultBranch:  text("default_branch").default("main"),
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("projects_org_slug_idx").on(t.organizationId, t.slug),
+  index("projects_owner_idx").on(t.ownerUserId),
+]);
+
 // ─── CLI device auth (device flow for `breachscope login`) ────────────────────
 export const cliAuthStates = pgTable("cli_auth_states", {
   id:        uuid("id").primaryKey().defaultRandom(),
@@ -53,7 +86,10 @@ export const cliAuthStates = pgTable("cli_auth_states", {
 export const apiKeys = pgTable("api_keys", {
   id:          uuid("id").primaryKey().defaultRandom(),
   userId:      uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  projectId:   uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
   name:        text("name").notNull(),
+  scopes:      jsonb("scopes").$type<string[]>().default([]),
   keyHash:     text("key_hash").notNull().unique(),  // sha256 of the full key
   keyPrefix:   text("key_prefix").notNull(),         // first 12 chars (for display)
   lastUsedAt:  timestamp("last_used_at"),
@@ -77,6 +113,8 @@ export const userSettings = pgTable("user_settings", {
 export const scans = pgTable("scans", {
   id:               uuid("id").primaryKey().defaultRandom(),
   userId:           uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId:   uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  projectId:        uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
   apiKeyId:         uuid("api_key_id").references(() => apiKeys.id, { onDelete: "set null" }),
   project:          text("project"),
   mode:             text("mode").notNull(),       // basic | major | deep
@@ -95,7 +133,11 @@ export const scans = pgTable("scans", {
   probeData:        text("probe_data"),   // JSON ProbeActivity (service probes + attack probe steps)
   aiReport:         text("ai_report"),    // JSON AISynthesis: executiveSummary, topPriority, attackChains
   createdAt:        timestamp("created_at").defaultNow().notNull(),
-}, (t) => [index("scans_user_idx").on(t.userId)]);
+}, (t) => [
+  index("scans_user_idx").on(t.userId),
+  index("scans_project_idx").on(t.projectId),
+  index("scans_created_idx").on(t.createdAt),
+]);
 
 // ─── Findings ─────────────────────────────────────────────────────────────────
 export const findings = pgTable("findings", {
@@ -111,8 +153,66 @@ export const findings = pgTable("findings", {
   file:        text("file"),
   line:        integer("line"),
   references:  text("references"),   // JSON array stored as text
+  fingerprint: text("fingerprint"),
+  status:      text("status").default("open"),
+  assigneeId:  uuid("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  dueAt:       timestamp("due_at"),
+  acceptedRiskReason: text("accepted_risk_reason"),
+  suppressedUntil: timestamp("suppressed_until"),
+  vexStatus:   text("vex_status"),
+  compliance:  jsonb("compliance").$type<string[]>(),
   createdAt:   timestamp("created_at").defaultNow().notNull(),
-}, (t) => [index("findings_scan_idx").on(t.scanId)]);
+}, (t) => [
+  index("findings_scan_idx").on(t.scanId),
+  index("findings_fingerprint_idx").on(t.fingerprint),
+  index("findings_status_idx").on(t.status),
+]);
+
+export const policies = pgTable("policies", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  projectId:      uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  name:           text("name").notNull(),
+  enabled:        boolean("enabled").default(true).notNull(),
+  document:       jsonb("document").$type<Record<string, unknown>>().notNull(),
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+  updatedAt:      timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("policies_org_idx").on(t.organizationId),
+  index("policies_project_idx").on(t.projectId),
+]);
+
+export const integrations = pgTable("integrations", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  projectId:      uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  provider:       text("provider").notNull(), // github | gitlab | bitbucket | jira | linear | slack | teams | pagerduty | saml | scim
+  name:           text("name").notNull(),
+  enabled:        boolean("enabled").default(true).notNull(),
+  config:         jsonb("config").$type<Record<string, unknown>>().default({}),
+  secretRef:      text("secret_ref"),
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+  updatedAt:      timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("integrations_org_idx").on(t.organizationId),
+  index("integrations_project_idx").on(t.projectId),
+  index("integrations_provider_idx").on(t.provider),
+]);
+
+export const auditLogs = pgTable("audit_logs", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  projectId:      uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  actorUserId:    uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  action:         text("action").notNull(),
+  targetType:     text("target_type").notNull(),
+  targetId:       text("target_id"),
+  metadata:       jsonb("metadata").$type<Record<string, unknown>>().default({}),
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("audit_logs_org_idx").on(t.organizationId),
+  index("audit_logs_created_idx").on(t.createdAt),
+]);
 
 // ─── Relations ────────────────────────────────────────────────────────────────
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -120,13 +220,35 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   sessions:    many(sessions),
   apiKeys:     many(apiKeys),
   scans:       many(scans),
+  memberships: many(organizationMembers),
   settings:    one(userSettings, { fields: [users.id], references: [userSettings.userId] }),
+}));
+
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  members: many(organizationMembers),
+  projects: many(projects),
+  apiKeys: many(apiKeys),
+  scans: many(scans),
+  policies: many(policies),
+  integrations: many(integrations),
+  auditLogs: many(auditLogs),
+}));
+
+export const projectsRelations = relations(projects, ({ one, many }) => ({
+  organization: one(organizations, { fields: [projects.organizationId], references: [organizations.id] }),
+  owner: one(users, { fields: [projects.ownerUserId], references: [users.id] }),
+  scans: many(scans),
+  apiKeys: many(apiKeys),
+  policies: many(policies),
+  integrations: many(integrations),
 }));
 
 export const scansRelations = relations(scans, ({ many, one }) => ({
   findings: many(findings),
   apiKey:   one(apiKeys, { fields: [scans.apiKeyId], references: [apiKeys.id] }),
   user:     one(users, { fields: [scans.userId], references: [users.id] }),
+  organization: one(organizations, { fields: [scans.organizationId], references: [organizations.id] }),
+  project:  one(projects, { fields: [scans.projectId], references: [projects.id] }),
 }));
 
 export const findingsRelations = relations(findings, ({ one }) => ({
@@ -139,3 +261,9 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type Scan = typeof scans.$inferSelect;
 export type Finding = typeof findings.$inferSelect;
 export type UserSettings = typeof userSettings.$inferSelect;
+export type Organization = typeof organizations.$inferSelect;
+export type OrganizationMember = typeof organizationMembers.$inferSelect;
+export type Project = typeof projects.$inferSelect;
+export type Policy = typeof policies.$inferSelect;
+export type Integration = typeof integrations.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;

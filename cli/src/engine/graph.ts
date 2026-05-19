@@ -1,4 +1,4 @@
-import type { DetectedTool, DependencyGraph, ToolKind } from "../core/types.js";
+import type { DependencyGraph, ToolKind } from "../core/types.js";
 
 /**
  * Build a visual dependency graph from scanned tools.

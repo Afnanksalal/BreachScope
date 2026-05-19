@@ -8,6 +8,7 @@ import { fetchDepsDevProject, depsDevToFindings } from "../apis/deps-dev.js";
 import { fetchNpmMeta, npmMetaToFindings } from "../apis/npm-registry.js";
 import { fetchPypiMeta, pypiMetaToFindings } from "../apis/pypi.js";
 import { complete } from "../core/ai.js";
+import { scoreSupplyChainRisk, type SupplyChainRiskScore } from "../core/supply-chain-risk.js";
 
 const OSS_ANALYSIS_SYSTEM = `You are a senior supply-chain security analyst reviewing an open-source package.
 Given structured security data about a package, produce a concise risk assessment.
@@ -228,6 +229,22 @@ export async function runOssPipeline(
     findings.push(...sourceFindings);
   }
 
+  const sourceFindingsCount = mode !== "basic" ? findings.filter(f => f.id.startsWith("source-")).length : 0;
+  const depsDevScore = depsDevData?.scorecardV2?.score?.overall ?? depsDevData?.scorecard?.score;
+  const deterministicRisk = scoreSupplyChainRisk({
+    osvCount:         osvVulns.length,
+    criticalFindings: findings.filter((finding) => finding.category === "supply-chain" && finding.severity === "critical").length,
+    highFindings:     findings.filter((finding) => finding.category === "supply-chain" && finding.severity === "high").length,
+    scorecardScore:   scorecard?.score,
+    depsDevScore,
+    maintainerCount:  npmMeta?.maintainers.length ?? pypiMeta?.maintainers.length,
+    weeklyDownloads:  npmMeta?.weeklyDownloads ?? pypiMeta?.weeklyDownloads,
+    publishedAt:      npmMeta?.publishedAt,
+    sourceFindings:   sourceFindingsCount,
+    deprecated:       Boolean(npmMeta?.deprecated),
+    license:          npmMeta?.license,
+  });
+
   const riskScore = await synthesizeRisk({
     tool:              tool.name,
     ecosystem,
@@ -238,10 +255,14 @@ export async function runOssPipeline(
     osvIds:            osvVulns.map((v) => v.id),
     maintainerCount:   npmMeta?.maintainers.length ?? (pypiMeta?.maintainers.length),
     weeklyDownloads:   npmMeta?.weeklyDownloads ?? pypiMeta?.weeklyDownloads,
-    depsDevScore:      depsDevData?.scorecardV2?.score?.overall ?? depsDevData?.scorecard?.score,
-    sourceFindings:    mode !== "basic" ? findings.filter(f => f.id.startsWith("source-")).length : 0,
+    depsDevScore,
+    sourceFindings:    sourceFindingsCount,
+    deprecated:        Boolean(npmMeta?.deprecated),
+    license:           npmMeta?.license,
+    deterministicRiskScore: deterministicRisk.score,
+    deterministicRiskReasons: deterministicRisk.reasons,
     mode,
-  });
+  }, deterministicRisk);
 
   return {
     tool:               { ...tool, github: github ?? tool.github },
@@ -255,7 +276,10 @@ export async function runOssPipeline(
   };
 }
 
-async function synthesizeRisk(data: Record<string, unknown>): Promise<{ score: number; summary: string }> {
+async function synthesizeRisk(
+  data: Record<string, unknown>,
+  deterministicRisk: SupplyChainRiskScore
+): Promise<{ score: number; summary: string }> {
   try {
     const { content } = await complete({
       system: OSS_ANALYSIS_SYSTEM,
@@ -269,12 +293,12 @@ async function synthesizeRisk(data: Record<string, unknown>): Promise<{ score: n
     if (typeof parsed["riskScore"] !== "number" || typeof parsed["summary"] !== "string") {
       throw new Error("invalid shape");
     }
-    return { score: parsed["riskScore"] as number, summary: parsed["summary"] as string };
+    const aiScore = Math.max(0, Math.min(100, Math.round(parsed["riskScore"] as number)));
+    if (deterministicRisk.score > aiScore) {
+      return { score: deterministicRisk.score, summary: deterministicRisk.summary };
+    }
+    return { score: aiScore, summary: parsed["summary"] as string };
   } catch {
-    const osv = Number(data["osvCount"] ?? 0);
-    const sc = Number(data["scorecardScore"] ?? 5);
-    const src = Number(data["sourceFindings"] ?? 0);
-    const fallback = Math.min(100, osv * 15 + (10 - sc) * 5 + src * 10);
-    return { score: fallback, summary: "Automated risk assessment (AI synthesis unavailable)." };
+    return deterministicRisk;
   }
 }

@@ -28,9 +28,11 @@ function formatStars(n: number): string {
 }
 
 const NAV_LINKS: Array<{ label: string; href: string; external?: boolean }> = [
-  { label: "Features",     href: "#features" },
-  { label: "How It Works", href: "#install" },
-  { label: "Docs",         href: "/docs" },
+  { label: "Product",  href: "/#features" },
+  { label: "Workflow", href: "/#workflow" },
+  { label: "Install",  href: "/#install" },
+  { label: "Docs",     href: "/docs" },
+  { label: "Legal",    href: "/legal" },
 ];
 
 export function Nav() {
@@ -38,7 +40,15 @@ export function Nav() {
   const isLoggedIn = status === "authenticated" && !!session?.user;
   const isLoading  = status === "loading";
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const stars = useGitHubStars();
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Close on route change / escape
   useEffect(() => {
@@ -56,12 +66,19 @@ export function Nav() {
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-xl border-b border-white/[0.06]">
-        <div className="max-w-6xl mx-auto px-5 h-[60px] flex items-center justify-between">
+      <nav
+        className={clsx(
+          "fixed left-0 right-0 top-0 z-50 border-b transition-all duration-300",
+          scrolled || open
+            ? "border-white/[0.08] bg-black/[0.78] shadow-2xl shadow-black/30 backdrop-blur-xl"
+            : "border-transparent bg-transparent",
+        )}
+      >
+        <div className="mx-auto flex h-[60px] max-w-7xl items-center justify-between px-5">
 
           {/* Wordmark */}
           <Link href="/" className="group" onClick={() => setOpen(false)}>
-            <span className="font-serif italic text-[1.15rem] text-white tracking-tight group-hover:text-white/70 transition-colors duration-150">
+            <span className="font-serif text-[1.18rem] font-semibold italic text-white transition-colors duration-150 group-hover:text-white/70">
               BreachScope
             </span>
           </Link>
@@ -74,7 +91,7 @@ export function Nav() {
                   href={link.href}
                   target={link.external ? "_blank" : undefined}
                   rel={link.external ? "noopener noreferrer" : undefined}
-                  className="text-[0.8125rem] text-white/45 hover:text-white/85 transition-colors duration-150 tracking-wide"
+                  className="text-[0.8125rem] text-white/48 hover:text-white/85 transition-colors duration-150"
                 >
                   {link.label}
                 </Link>
@@ -104,7 +121,7 @@ export function Nav() {
             ) : isLoggedIn ? (
               <Link
                 href="/dashboard"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-black text-[0.8125rem] font-semibold hover:bg-white/90 transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white px-4 py-2 text-[0.8125rem] font-semibold text-black transition-colors hover:bg-white/90"
               >
                 Dashboard
                 <ArrowIcon />
@@ -114,7 +131,7 @@ export function Nav() {
                 <Link href="/login" className="text-[0.8125rem] text-white/50 hover:text-white/85 transition-colors px-3 py-2">
                   Sign in
                 </Link>
-                <Link href="/login" className="inline-flex items-center px-4 py-2 rounded-lg bg-white text-black text-[0.8125rem] font-semibold hover:bg-white/90 transition-colors">
+                <Link href="/login" className="inline-flex items-center rounded-lg bg-white px-4 py-2 text-[0.8125rem] font-semibold text-black transition-colors hover:bg-white/90">
                   Get started
                 </Link>
               </>
@@ -135,37 +152,55 @@ export function Nav() {
       {/* Mobile drawer overlay */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-black/65 backdrop-blur-sm md:hidden"
           onClick={() => setOpen(false)}
         />
       )}
 
       {/* Mobile drawer */}
-      <div className={clsx(
-        "fixed top-[60px] left-0 right-0 z-40 md:hidden bg-black/95 backdrop-blur-xl border-b border-white/[0.08]",
-        "transition-all duration-200 ease-out",
-        open ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-2 pointer-events-none"
+      <aside className={clsx(
+        "fixed bottom-3 right-3 top-3 z-50 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-white/[0.09] bg-[#050606]/96 shadow-2xl shadow-black/60 backdrop-blur-xl md:hidden",
+        "transition-all duration-300 ease-out",
+        open ? "translate-x-0 opacity-100 pointer-events-auto" : "translate-x-[calc(100%+1rem)] opacity-0 pointer-events-none"
       )}>
-        <div className="px-5 py-4 space-y-1">
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.06] px-5">
+          <Link href="/" className="font-serif text-lg font-semibold italic text-white" onClick={() => setOpen(false)}>
+            BreachScope
+          </Link>
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-white/50 transition-all hover:bg-white/[0.06] hover:text-white"
+            onClick={() => setOpen(false)}
+            aria-label="Close menu"
+          >
+            <XIcon />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          <p className="mb-3 px-3 text-[10px] font-semibold uppercase text-white/28">Navigate</p>
+          <div className="space-y-1">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
               target={link.external ? "_blank" : undefined}
+              rel={link.external ? "noopener noreferrer" : undefined}
               onClick={() => setOpen(false)}
-              className="flex items-center px-3 py-2.5 rounded-xl text-sm text-white/60 hover:text-white hover:bg-white/[0.06] transition-all"
+              className="flex items-center justify-between rounded-lg px-3 py-3 text-sm text-white/62 transition-all hover:bg-white/[0.06] hover:text-white"
             >
-              {link.label}
+              <span>{link.label}</span>
+              <ArrowIcon />
             </Link>
           ))}
+          </div>
         </div>
 
-        <div className="px-5 pb-5 pt-2 border-t border-white/[0.06] flex flex-col gap-2">
+        <div className="flex shrink-0 flex-col gap-2 border-t border-white/[0.06] px-5 pb-5 pt-4">
           <a
             href={`https://github.com/${GITHUB_REPO}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-white/60 hover:text-white hover:bg-white/[0.06] transition-all"
+            className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06] transition-all"
             onClick={() => setOpen(false)}
           >
             <GitHubIcon />
@@ -178,7 +213,7 @@ export function Nav() {
             <Link
               href="/dashboard"
               onClick={() => setOpen(false)}
-              className="flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors"
+              className="flex items-center justify-center gap-1.5 px-4 py-3 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors"
             >
               Dashboard <ArrowIcon />
             </Link>
@@ -187,21 +222,21 @@ export function Nav() {
               <Link
                 href="/login"
                 onClick={() => setOpen(false)}
-                className="flex items-center justify-center px-4 py-2.5 rounded-xl text-sm text-white/60 hover:text-white hover:bg-white/[0.06] border border-white/[0.08] transition-all"
+                className="flex items-center justify-center px-4 py-2.5 rounded-lg text-sm text-white/60 hover:text-white hover:bg-white/[0.06] border border-white/[0.08] transition-all"
               >
                 Sign in
               </Link>
               <Link
                 href="/login"
                 onClick={() => setOpen(false)}
-                className="flex items-center justify-center px-4 py-3 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors"
+                className="flex items-center justify-center px-4 py-3 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors"
               >
                 Get started
               </Link>
             </>
           )}
         </div>
-      </div>
+      </aside>
     </>
   );
 }

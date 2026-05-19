@@ -5,6 +5,11 @@ import { runSandbox } from "./commands/sandbox.js";
 import { generateConfig } from "./core/config.js";
 import { logger } from "./core/logger.js";
 import { makeLoginCommand, makeLogoutCommand, makeWhoamiCommand } from "./commands/login.js";
+import { makeInitCiCommand } from "./commands/ci.js";
+import { makeRuntimeCommand } from "./commands/runtime.js";
+import { renderSbom, type SbomFormat } from "./reporters/sbom.js";
+import { renderVexFromScanFile } from "./reporters/vex.js";
+import { renderFixSuggestionsFromScanFile } from "./reporters/fix-suggestions.js";
 import path from "path";
 import fs from "fs";
 
@@ -13,7 +18,7 @@ const program = new Command();
 program
   .name("breachscope")
   .description("Supply chain & toolchain breach scanner — audit your entire stack")
-  .version("0.1.0");
+  .version("0.3.0");
 
 // ─── scan ─────────────────────────────────────────────────────────────────────
 program
@@ -30,6 +35,11 @@ program
   .option("-f, --file <path>", "write output to a file")
   .option("-c, --config <path>", "path to breachscope.yaml config file")
   .option("--ci", "exit code 1 if findings exceed severity threshold (for CI pipelines)")
+  .option("--fail-on <severity>", "override CI threshold: critical | high | medium | low | info")
+  .option("--baseline <path>", "compare findings against a BreachScope baseline file")
+  .option("--write-baseline <path>", "write current findings to a baseline file")
+  .option("--new-findings-only", "with --baseline, report and fail only on new findings")
+  .option("--policy <path>", "path to policy-as-code YAML/JSON file")
   .option("--breach", "focus on CVE, supply chain, and SaaS incident intelligence")
   .option("--bug", "focus on code audit, static analysis, and vulnerability testing")
   .option("-v, --verbose", "verbose debug output")
@@ -39,6 +49,34 @@ program
     else if (opts.bug) opts.scanMode = "bug";
     else opts.scanMode = "all";
     await runScan(opts);
+  });
+
+program
+  .command("sbom")
+  .description("Generate an SBOM from supported manifests and lockfiles")
+  .option("-o, --output <format>", "SBOM format: cyclonedx | spdx", "cyclonedx")
+  .option("-f, --file <path>", "write SBOM to a file")
+  .action((opts) => {
+    const format = opts.output === "spdx" ? "spdx" : "cyclonedx";
+    renderSbom(process.cwd(), format as SbomFormat, opts.file);
+  });
+
+program
+  .command("vex")
+  .description("Generate an OpenVEX document from a BreachScope JSON scan result")
+  .requiredOption("--from <path>", "BreachScope JSON scan result")
+  .option("-f, --file <path>", "write OpenVEX JSON to a file")
+  .action((opts) => {
+    renderVexFromScanFile(opts.from, opts.file);
+  });
+
+program
+  .command("suggest-fixes")
+  .description("Generate prioritized fix suggestions from a BreachScope JSON scan result")
+  .requiredOption("--from <path>", "BreachScope JSON scan result")
+  .option("-f, --file <path>", "write Markdown suggestions to a file")
+  .action((opts) => {
+    renderFixSuggestionsFromScanFile(opts.from, opts.file);
   });
 
 // ─── audit ────────────────────────────────────────────────────────────────────
@@ -103,17 +141,19 @@ program
   .option("--deep", "run extended attack sequences (120 iterations instead of 80)")
   .option("--breach", "focus companion agents on supply chain & credential risk")
   .option("--bug", "focus companion agents on exploitable code vulnerabilities")
-  .option("--scan-mode <mode>", "companion agent focus: all | breach | bug (overrides --breach/--bug)")
+  .option("--scan-mode <mode>", "companion agent focus: all | breach | bug | full (overrides --breach/--bug)")
+  .option("--include-secrets", "allow sandbox AI and Docker context to include .env files and local secrets")
+  .option("--ci", "set exit code 1 when sandbox finds critical or high findings")
   .option("--no-cleanup", "keep the container running after the scan (for manual inspection)")
   .option("-u, --url <url>", "target URL context (for dashboard reporting)")
   .option("-o, --output <format>", "output format: console | json", "console")
   .option("-f, --file <path>", "write results to a file")
   .option("-v, --verbose", "verbose debug output")
   .action(async (opts) => {
-    if (opts.scanMode && ["all", "breach", "bug"].includes(opts.scanMode)) {
+    if (opts.scanMode && ["all", "breach", "bug", "full"].includes(opts.scanMode)) {
       // explicit --scan-mode wins
     } else if (opts.breach && opts.bug) {
-      opts.scanMode = "all";
+      opts.scanMode = "full";
     } else if (opts.breach) {
       opts.scanMode = "breach";
     } else if (opts.bug) {
@@ -126,6 +166,8 @@ program
 program.addCommand(makeLoginCommand());
 program.addCommand(makeLogoutCommand());
 program.addCommand(makeWhoamiCommand());
+program.addCommand(makeInitCiCommand());
+program.addCommand(makeRuntimeCommand());
 
 // ─── init ─────────────────────────────────────────────────────────────────────
 program

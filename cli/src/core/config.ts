@@ -17,6 +17,7 @@ const DEFAULTS: BreachScopeConfig = {
   toolchain: {},
   output: { format: "console", verbose: false },
   thresholds: { failOn: "high" },
+  policy: {},
 };
 
 export function loadConfig(configPath?: string): BreachScopeConfig {
@@ -89,6 +90,15 @@ output:
 
 thresholds:
   failOn: high       # critical | high | medium | low
+
+# Policy-as-code gates for CI and release controls
+policy:
+  failOn: high
+  maxFindings:
+    critical: 0
+  blockedPackages: []
+  deniedCategories: []
+  suppressions: []
 `;
   fs.writeFileSync(dest, template, "utf-8");
 }

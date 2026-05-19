@@ -8,6 +8,7 @@ import { clsx } from "clsx";
 const NAV = [
   { label: "Overview",  href: "/dashboard",          icon: GridIcon },
   { label: "Scans",     href: "/dashboard/scans",     icon: ScanIcon },
+  { label: "Controls",   href: "/dashboard/enterprise", icon: BriefcaseIcon },
   { label: "API Keys",  href: "/dashboard/keys",      icon: KeyIcon },
   { label: "Settings",  href: "/dashboard/settings",  icon: SettingsIcon },
   { label: "Docs",      href: "/docs",                icon: BookIcon },
@@ -32,6 +33,7 @@ export function Sidebar() {
   }, [open]);
 
   // Close drawer on route change
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setOpen(false); }, [path]);
 
   const sidebarContent = (
@@ -43,7 +45,7 @@ export function Sidebar() {
             BreachScope
           </span>
         </Link>
-        {/* Close button — mobile only */}
+        {/* Close button - mobile only */}
         <button
           className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg text-white/40 hover:text-white hover:bg-white/[0.06] transition-all"
           onClick={() => setOpen(false)}
@@ -81,7 +83,7 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger trigger — sits in top-left, only on mobile */}
+      {/* Mobile hamburger trigger - sits in top-left on mobile */}
       <button
         className="md:hidden fixed top-0 left-0 z-50 w-16 h-16 flex items-center justify-center text-white/50 hover:text-white transition-colors"
         onClick={() => setOpen(true)}
@@ -90,7 +92,7 @@ export function Sidebar() {
         <MenuIcon />
       </button>
 
-      {/* Overlay backdrop — mobile only */}
+      {/* Overlay backdrop - mobile only */}
       {open && (
         <div
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
@@ -98,15 +100,15 @@ export function Sidebar() {
         />
       )}
 
-      {/* Desktop sidebar — always visible */}
+      {/* Desktop sidebar - always visible */}
       <aside className="hidden md:flex fixed left-0 top-0 bottom-0 w-56 border-r border-white/[0.06] bg-black/95 backdrop-blur-xl flex-col z-40">
         {sidebarContent}
       </aside>
 
-      {/* Mobile drawer — slides in from left */}
+      {/* Mobile drawer - slides in from left */}
       <aside
         className={clsx(
-          "md:hidden fixed left-0 top-0 bottom-0 w-72 border-r border-white/[0.06] bg-black/98 backdrop-blur-xl flex flex-col z-50",
+          "md:hidden fixed left-0 top-0 bottom-0 w-[min(18rem,calc(100vw-2rem))] border-r border-white/[0.06] bg-black/98 backdrop-blur-xl flex flex-col z-50",
           "transition-transform duration-200 ease-out",
           open ? "translate-x-0" : "-translate-x-full"
         )}
@@ -117,7 +119,7 @@ export function Sidebar() {
   );
 }
 
-// ─── Icons ────────────────────────────────────────────────────────────────────
+// Icons
 
 function GridIcon({ className }: { className?: string }) {
   return (
@@ -140,6 +142,14 @@ function KeyIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+    </svg>
+  );
+}
+
+function BriefcaseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 14.15v4.1A2.25 2.25 0 0118 20.5H6a2.25 2.25 0 01-2.25-2.25v-4.1m16.5 0a2.18 2.18 0 00.75-1.65V9.75A2.25 2.25 0 0018.75 7.5H5.25A2.25 2.25 0 003 9.75v2.75c0 .64.27 1.22.75 1.65m16.5 0A9.72 9.72 0 0112 16.5a9.72 9.72 0 01-8.25-2.35M9.75 7.5V5.75A2.25 2.25 0 0112 3.5a2.25 2.25 0 012.25 2.25V7.5" />
     </svg>
   );
 }

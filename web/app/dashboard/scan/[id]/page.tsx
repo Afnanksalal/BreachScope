@@ -29,7 +29,7 @@ export default async function ScanDetailPage({ params }: { params: Promise<{ id:
         session={session}
         back="/dashboard/scans"
       />
-      <div className="flex-1 p-8">
+      <div className="flex-1 px-4 py-5 sm:px-6 md:p-8">
         <ScanDetail scan={scan} />
       </div>
     </>

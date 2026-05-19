@@ -1,45 +1,42 @@
 # Vercel Integration
 
-BreachScope probes your Vercel project for secrets exposure and access control gaps — the class of issues that led to the 2024 Vercel breach.
+BreachScope checks Vercel projects for preview exposure, secret handling, and team access risks.
 
-## Setup
+## Configuration
+
+```bash
+export VERCEL_TOKEN=your_token
+export VERCEL_PROJECT_ID=prj_xxx # optional
+```
+
+Or in `breachscope.yaml`:
 
 ```yaml
 toolchain:
   vercel:
-    token: ""      # or VERCEL_TOKEN env var
-    projectId: ""  # optional, enables project-level checks
+    token: ""
+    projectId: ""
 ```
 
-```bash
-export VERCEL_TOKEN=your_token_here
-export VERCEL_PROJECT_ID=prj_xxx  # optional
-```
+Use the least-privileged token that can read the project metadata required for scanning.
 
-## What gets checked
+## Checks
 
-### Secrets in preview deployments
+| Check | Severity | Why it matters |
+| --- | --- | --- |
+| Sensitive variables exposed to preview deployments | High | Compromised preview builds can leak production-grade secrets |
+| Unprotected preview deployments | Medium | Anyone with a preview URL may reach internal application states |
+| Open team invite links | Low/Medium | Unauthorized users may join the team and access projects |
+| Misconfigured custom domains | Medium | DNS mistakes can enable takeover or traffic interception |
 
-Preview deployments are publicly accessible via PR URLs. If environment variables with names matching `SECRET_*`, `*_KEY`, `*_TOKEN`, `PASSWORD`, etc. are available in preview environments, they can be leaked via a compromised preview build.
+## Recommended Fixes
 
-**Fix:** Restrict sensitive env vars to `production` only. Use Vercel's sensitive value flag to prevent them from appearing in the dashboard.
+- Restrict sensitive environment variables to production only.
+- Enable Vercel deployment protection for previews.
+- Rotate and remove unused team invite links.
+- Use SSO and domain allowlists for team membership.
+- Review domain verification and DNS status after every project/domain change.
 
-### Unprotected preview deployments
+## Dashboard Use
 
-Without Vercel Authentication or password protection, preview deployments are publicly accessible to anyone with the URL.
-
-**Fix:** Enable deployment protection for preview deployments in your project settings.
-
-### Open team invite links
-
-An active invite link allows anyone who finds it to join your Vercel team and gain access to projects, env vars, and deployments.
-
-**Fix:** Invalidate unused invite links. Use SAML SSO with an allowlisted domain for team access.
-
-## Severity mapping
-
-| Finding | Severity |
-|---------|----------|
-| Secret in preview deployment | HIGH |
-| Unprotected preview deployments | MEDIUM |
-| Open team invite link | LOW |
+Route high-severity Vercel findings to PagerDuty or Jira through project integrations, then track remediation in finding triage and audit logs.

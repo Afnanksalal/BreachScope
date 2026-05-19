@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { apiKeys } from "@/lib/schema";
 import { generateApiKey } from "@/lib/api-keys";
+import { DEFAULT_API_KEY_SCOPES } from "@/lib/middleware-utils";
 import { eq, and, isNull } from "drizzle-orm";
 
 export async function GET(): Promise<NextResponse> {
@@ -16,6 +17,7 @@ export async function GET(): Promise<NextResponse> {
       id:         apiKeys.id,
       name:       apiKeys.name,
       keyPrefix:  apiKeys.keyPrefix,
+      scopes:     apiKeys.scopes,
       lastUsedAt: apiKeys.lastUsedAt,
       revokedAt:  apiKeys.revokedAt,
       createdAt:  apiKeys.createdAt,
@@ -38,18 +40,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     typeof body === "object" && body !== null && "name" in body
       ? String((body as Record<string, unknown>).name ?? "").slice(0, 64) || "Unnamed Key"
       : "Unnamed Key";
+  const requestedScopes = typeof body === "object" && body !== null && Array.isArray((body as Record<string, unknown>).scopes)
+    ? (body as { scopes: unknown[] }).scopes
+    : [];
+  const scopes = normalizeScopes(requestedScopes);
 
   const { fullKey, prefix, hash } = generateApiKey();
 
   await db.insert(apiKeys).values({
     userId:    session.user.id,
     name,
+    scopes,
     keyHash:   hash,
     keyPrefix: prefix,
   });
 
   // fullKey returned ONCE — never stored in the DB
-  return NextResponse.json({ fullKey, prefix, name }, { status: 201 });
+  return NextResponse.json({ fullKey, prefix, name, scopes }, { status: 201 });
 }
 
 export async function DELETE(req: NextRequest): Promise<NextResponse> {
@@ -74,4 +81,10 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, session.user.id)));
 
   return NextResponse.json({ ok: true });
+}
+
+function normalizeScopes(scopes: unknown[]): string[] {
+  const allowed = new Set(["scan:write", "config:read", "secrets:read", "settings:write"]);
+  const normalized = scopes.filter((scope): scope is string => typeof scope === "string" && allowed.has(scope));
+  return normalized.length > 0 ? [...new Set(normalized)] : [...DEFAULT_API_KEY_SCOPES];
 }

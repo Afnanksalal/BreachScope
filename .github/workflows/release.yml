@@ -11,6 +11,8 @@ jobs:
   build:
     name: Build ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -29,10 +31,20 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+        working-directory: cli
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+        working-directory: cli
+
+      - name: Typecheck and test
+        run: npm run build && npm test
         working-directory: cli
 
       - name: Bundle

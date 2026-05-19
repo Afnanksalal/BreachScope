@@ -24,6 +24,10 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/middleware-utils", () => ({
   validateApiKey: mockValidateApiKey,
   unauthorized: () => new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+  forbidden: () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
+  hasScope: (authed: { scopes?: string[] }, scope: string) => (
+    Array.isArray(authed.scopes) ? authed.scopes.includes(scope) : ["scan:write", "config:read"].includes(scope)
+  ),
   ok: (data: unknown) => new Response(JSON.stringify(data)),
 }));
 
@@ -112,6 +116,16 @@ describe("POST /api/scans", () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
+  });
+
+  it("returns 403 when API key lacks scan:write scope", async () => {
+    mockValidateApiKey.mockResolvedValue({ userId: USER_ID, apiKeyId: API_KEY_ID, scopes: ["config:read"] });
+    const req = new NextRequest("http://localhost/api/scans", {
+      method: "POST",
+      body: JSON.stringify({ mode: "basic", scanMode: "all", startedAt: new Date().toISOString() }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(403);
   });
 
   it("returns 400 for invalid JSON body", async () => {

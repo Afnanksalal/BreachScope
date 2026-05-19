@@ -75,7 +75,7 @@ async function checkSecurityHeaders(base: string): Promise<Finding[]> {
         });
       }
     }
-  } catch (e) {
+    } catch {
     logger.warn(`Could not reach ${base} for header check`);
   }
   return findings;

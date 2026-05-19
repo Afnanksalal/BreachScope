@@ -51,7 +51,7 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        setError(mode === "signin" ? "Invalid email or password" : "Account created but sign-in failed — try again");
+        setError(mode === "signin" ? "Invalid email or password" : "Account created but sign-in failed - try again");
       } else {
         window.location.href = "/dashboard";
       }
@@ -63,7 +63,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#000] flex items-center justify-center px-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#000] px-4 py-10">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <motion.div
@@ -96,7 +96,7 @@ export default function LoginPage() {
             type="button"
             onClick={() => handleOAuth("github")}
             disabled={!!oauthLoading || loading}
-            className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-white/75 text-sm font-medium hover:bg-white/[0.09] hover:text-white/95 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-white/75 text-sm font-medium hover:bg-white/[0.09] hover:text-white/95 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {oauthLoading === "github" ? <SpinnerIcon /> : <GitHubIcon />}
             Continue with GitHub
@@ -106,7 +106,7 @@ export default function LoginPage() {
             type="button"
             onClick={() => handleOAuth("google")}
             disabled={!!oauthLoading || loading}
-            className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-white/75 text-sm font-medium hover:bg-white/[0.09] hover:text-white/95 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-white/75 text-sm font-medium hover:bg-white/[0.09] hover:text-white/95 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {oauthLoading === "google" ? <SpinnerIcon /> : <GoogleIcon />}
             Continue with Google
@@ -128,7 +128,7 @@ export default function LoginPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoComplete="name"
-                className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
+                className="w-full px-4 py-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
               />
             )}
 
@@ -139,7 +139,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
+              className="w-full px-4 py-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
             />
 
             <input
@@ -150,7 +150,7 @@ export default function LoginPage() {
               required
               minLength={mode === "register" ? 8 : 1}
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
+              className="w-full px-4 py-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
             />
 
             {error && (
@@ -160,7 +160,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading || !!oauthLoading}
-              className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? <SpinnerIcon dark /> : null}
               {mode === "signin" ? "Sign in" : "Create account"}

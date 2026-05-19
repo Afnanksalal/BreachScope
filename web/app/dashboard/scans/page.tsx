@@ -19,7 +19,7 @@ export default async function ScansPage() {
   return (
     <>
       <TopBar title="Scans" subtitle={`${allScans.length} total`} session={session} />
-      <div className="flex-1 p-8">
+      <div className="flex-1 px-4 py-5 sm:px-6 md:p-8">
         <ScansClient scans={allScans} />
       </div>
     </>

@@ -17,11 +17,9 @@ import {
   getContainerIP,
   getContainerLogs,
   execInContainer,
-  inspectContainer,
   detectProjectType,
   detectAppPort,
   generateDockerfile,
-  getContainerExitCode,
   isContainerRunning,
 } from "../core/docker.js";
 import { webSearch, crawlUrl } from "../core/crawler.js";
@@ -52,6 +50,8 @@ export interface SandboxOptions {
   verbose?: boolean;
   output?: string;
   noCleanup?: boolean;
+  includeSecrets?: boolean;
+  ci?: boolean;
 }
 
 const BANNER = `
@@ -560,7 +560,7 @@ const UNDERSTANDING_SYSTEM = `You are an elite security researcher and Docker ex
 1. THOROUGHLY READ THE CODEBASE — use read_file liberally. Read:
    - ALL manifest files: package.json, requirements.txt, pyproject.toml, Pipfile, go.mod, Cargo.toml,
      Gemfile, pom.xml, build.gradle, composer.json, *.csproj, mix.exs, pubspec.yaml — whichever exist
-   - ALL .env files: .env, .env.local, .env.production, .env.development, .env.example
+   - .env files only when the user explicitly enables --include-secrets
    - Language-specific config: wrangler.toml, config.yaml, config.toml, application.yml,
      application.properties, config/database.yml, config/secrets.yml, appsettings.json,
      config/environments/*.rb, priv/repo/migrations, prisma/schema.prisma
@@ -691,7 +691,7 @@ RULE 8 — CMD: use dev/debug start command for maximum verbose output and attac
   If startup needs multiple steps (DB migrate then start), use:
   CMD ["sh", "-c", "npm run db:migrate 2>/dev/null; npm run dev"]
 
-RULE 9 — NO MULTI-STAGE BUILDS. Everything in one stage. Source, deps, secrets, all of it.
+RULE 9 — NO MULTI-STAGE BUILDS. Everything in one stage. Source and deps are available; local secrets are excluded unless --include-secrets was set.
 
 RULE 10 — NATIVE MODULE / COMPILATION DEPS (read this carefully, these cause most build failures):
   Node.js with bcrypt, argon2, sharp, canvas, sqlite3, node-gyp based packages:
@@ -730,7 +730,7 @@ RULE 12 — PEER DEPENDENCY CONFLICTS:
   If package-lock.json exists with conflicts → RUN npm ci --legacy-peer-deps OR RUN rm -f package-lock.json && npm install
 
 RULE 13 — .ENV FILES:
-  The .env file IS in the build context (we ensured it). But many frameworks (NestJS, Next.js) don't auto-load .env in production.
+  The .env file is not included by default. If the user explicitly set --include-secrets, it may be available in the build context.
   Add to Dockerfile: ENV NODE_ENV=development
   Or add dotenv loading: CMD ["sh", "-c", "node -r dotenv/config dist/main.js 2>/dev/null || node dist/main.js"]
 
@@ -765,9 +765,11 @@ async function runCodebaseUnderstandingAgent(
   buildContext: string,        // Docker build root (monorepo root or project root)
   servicePath: string,         // Service to analyze and run (may equal buildContext)
   isMonorepoProject = false,   // true when we detected multiple services at root
+  includeSecrets = false,
 ): Promise<CodebaseAnalysis> {
   const isMonorepoService = buildContext !== servicePath || isMonorepoProject;
   const ignorePatterns = ["node_modules", ".git", "dist", "build", ".next", "__pycache__", ".turbo", "vendor", "target"];
+  const secretIgnorePatterns = includeSecrets ? [] : ["**/.env", "**/.env.*"];
 
   // For monorepos: list service files fully + root manifest files only (truncated)
   let serviceFiles: string[] = [];
@@ -776,7 +778,7 @@ async function runCodebaseUnderstandingAgent(
   try {
     serviceFiles = await fg("**/*", {
       cwd: servicePath,
-      ignore: ignorePatterns.map((d) => `**/${d}/**`),
+      ignore: [...ignorePatterns.map((d) => `**/${d}/**`), ...secretIgnorePatterns],
       absolute: false,
       onlyFiles: true,
       followSymbolicLinks: false,
@@ -817,7 +819,9 @@ async function runCodebaseUnderstandingAgent(
       type: "function",
       function: {
         name: "read_file",
-        description: "Read any file in the project. Read package.json, ALL .env files, entry points, config files, route handlers, auth middleware. Read as many files as needed.",
+        description: includeSecrets
+          ? "Read project files, including .env files because the user explicitly allowed secrets."
+          : "Read project files needed to build and assess the app. Do not read .env files or local secrets.",
         parameters: {
           type: "object",
           properties: {
@@ -849,7 +853,9 @@ async function runCodebaseUnderstandingAgent(
             },
             summary: {
               type: "string",
-              description: "Security-focused summary: tech stack, framework versions, auth mechanism, database/ORM, real env var names and values found, API endpoints, hardcoded secrets, every attack surface identified",
+              description: includeSecrets
+                ? "Security-focused summary including tech stack, framework versions, auth, database/ORM, env var names and values found, API endpoints, hardcoded secrets, and attack surface."
+                : "Security-focused summary including tech stack, framework versions, auth, database/ORM, env var names without values, API endpoints, and attack surface.",
             },
           },
           required: ["dockerfile", "port", "summary"],
@@ -878,7 +884,7 @@ ${fileTree}
 
 READING ORDER — read files in this order using their path relative to the SERVICE directory:
 1. package.json / requirements.txt / go.mod / Cargo.toml / composer.json / mix.exs / pubspec.yaml
-2. ALL .env files (.env, .env.local, .env.production, .env.example) — these have real secrets
+2. ${includeSecrets ? "ALL .env files (.env, .env.local, .env.production, .env.example) because --include-secrets was set" : "Configuration files, but do not read .env files or local secrets"}
 3. Any existing Dockerfile or docker-compose.yml — see how the dev team runs it
 4. wrangler.toml, config.yaml, application.yml, appsettings.json — any config file
 5. Main entry point
@@ -904,6 +910,9 @@ ${isMonorepoService ? `Remember: Dockerfile must COPY . . from root, then WORKDI
       async (toolName, args) => {
         if (toolName === "read_file") {
           const reqPath = String(args["path"] ?? "").replace(/\\/g, "/");
+          if (!includeSecrets && /(^|\/)\.env($|\.)/.test(reqPath)) {
+            return "Blocked: .env files are not available unless the user passes --include-secrets.";
+          }
 
           // Try service path first, then build context root
           const candidates = [
@@ -1062,7 +1071,7 @@ function neutralizeDockerignore(cwd: string): (() => void) {
 
 // ── Build AgentContext for static scan agents ─────────────────────────────────
 
-async function buildAgentContext(cwd: string, url?: string, scanMode = "all"): Promise<AgentContext> {
+async function buildAgentContext(cwd: string, url?: string, scanMode = "all", includeSecrets = false): Promise<AgentContext> {
   const files: Record<string, string> = {};
 
   let allFiles: string[] = [];
@@ -1071,7 +1080,8 @@ async function buildAgentContext(cwd: string, url?: string, scanMode = "all"): P
       "**/*.{ts,tsx,js,jsx,py,go,rs,rb,php,cs,java,ex,exs,dart}",
       "**/package.json", "**/requirements*.txt", "**/go.mod", "**/Cargo.toml",
       "**/Gemfile", "**/pom.xml", "**/build.gradle", "**/composer.json",
-      "**/.env", "**/.env.*", "**/Dockerfile*", "**/docker-compose*.yml",
+      ...(includeSecrets ? ["**/.env", "**/.env.*"] : []),
+      "**/Dockerfile*", "**/docker-compose*.yml",
     ], {
       cwd,
       ignore: ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.git/**", "**/vendor/**", "**/target/**"],
@@ -1138,11 +1148,15 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
   // CLI flags take priority; fall back to dashboard sandbox defaults
   const effectiveScanMode: string = opts.scanMode ?? remote?.sandboxScanMode ?? "all";
   const effectiveDeep: boolean    = opts.deep     ?? remote?.sandboxDeep     ?? false;
+  const includeSecrets = Boolean(opts.includeSecrets);
 
   if (effectiveScanMode !== "all" || effectiveDeep) {
     const modeLabel = effectiveScanMode !== "all" ? ` · mode: ${chalk.white(effectiveScanMode)}` : "";
     const depthLabel = effectiveDeep ? ` · ${chalk.yellow("deep")} (120 iterations)` : "";
     console.log(chalk.gray(`  Sandbox config${modeLabel}${depthLabel}`));
+  }
+  if (!includeSecrets) {
+    console.log(chalk.gray("  Secret-safe mode: .env files are excluded from model context, Docker context, and container env."));
   }
 
   // ── Project + monorepo detection (informational only — AI decides the rest) ─
@@ -1169,11 +1183,13 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
 
   if (process.env["OPENAI_API_KEY"]) {
     logger.section("Phase 0 — AI Codebase Understanding");
-    console.log(chalk.gray("  AI reading codebase — source, .env, configs, secrets...\n"));
+    console.log(chalk.gray(includeSecrets
+      ? "  AI reading codebase — source, configs, and explicitly allowed secrets...\n"
+      : "  AI reading codebase — source and configs only; local secrets excluded...\n"));
 
     const analysisSpinner = ora("AI analyzing codebase...").start();
     try {
-      const analysis = await runCodebaseUnderstandingAgent(cwd, cwd, monorepo);
+      const analysis = await runCodebaseUnderstandingAgent(cwd, cwd, monorepo, includeSecrets);
       if (analysis.dockerfile) {
         aiDockerfile = analysis.dockerfile;
         detectedPort = analysis.port || defaultPort;
@@ -1205,7 +1221,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
   let generatedDockerfileCreated = false;
 
   if (fs.existsSync(path.join(cwd, "Dockerfile"))) {
-    // Project has its own Dockerfile — use it but we'll still copy .env via .dockerignore handling
+    // Project has its own Dockerfile; use it without modifying user files.
     dockerfilePath = path.join(cwd, "Dockerfile");
     logger.info("Using project Dockerfile");
   } else if (aiDockerfile) {
@@ -1224,11 +1240,13 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
     logger.info(`Using template Dockerfile for ${projectType}`);
   }
 
-  // ── Neutralize .dockerignore so .env and secrets are copied into the image ─
-  restoreDockerignore = neutralizeDockerignore(cwd);
+  // Keep user .dockerignore intact unless they explicitly opt into secret-inclusive testing.
+  restoreDockerignore = includeSecrets ? neutralizeDockerignore(cwd) : null;
 
   // ── Build image (with self-healing retry loop) ────────────────────────────
-  const buildSpinner = ora("Building Docker image — copying ALL files including .env and secrets...").start();
+  const buildSpinner = ora(includeSecrets
+    ? "Building Docker image with explicit secret-inclusive context..."
+    : "Building Docker image with secret-safe context...").start();
   let buildAttempts = 0;
   try {
     await buildWithSelfHealing(
@@ -1266,10 +1284,10 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
   }
 
   // ── Read .env files and inject as container env vars ─────────────────────
-  const projectEnvVars = readProjectEnvVars(cwd);
+  const projectEnvVars = includeSecrets ? readProjectEnvVars(cwd) : {};
   const envVarCount = Object.keys(projectEnvVars).length;
   if (envVarCount > 0) {
-    logger.info(`Injecting ${envVarCount} env var(s) from .env files directly into container`);
+    logger.info(`Injecting ${envVarCount} env var(s) from .env files directly into container (--include-secrets)`);
   }
 
   // ── Start container ───────────────────────────────────────────────────────
@@ -1404,7 +1422,7 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
 
       const swarmSpinner = ora("Swarm running — may take 10-15 minutes...").start();
 
-      const agentCtx = await buildAgentContext(cwd, `http://127.0.0.1:${appPort}`, effectiveScanMode);
+      const agentCtx = await buildAgentContext(cwd, `http://127.0.0.1:${appPort}`, effectiveScanMode, includeSecrets);
 
       const serviceSubpath = aiChosenSubpath || "";
 
@@ -1524,10 +1542,10 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
     }
 
     // ── Report synthesis + subchain scan (parallel, best-effort) ────────────
-    const agentCtxForReport = await buildAgentContext(cwd, opts.url ?? `http://127.0.0.1:${appPort}`, effectiveScanMode);
+    const agentCtxForReport = await buildAgentContext(cwd, opts.url ?? `http://127.0.0.1:${appPort}`, effectiveScanMode, includeSecrets);
     agentCtxForReport.existingFindings = [...findings];
 
-    const [subchainResult, reportResult] = await Promise.allSettled([
+    const [subchainResult] = await Promise.allSettled([
       runSubchainScan(cwd, "deep", undefined as never),
       process.env["OPENAI_API_KEY"] ? runReportAgent(agentCtxForReport) : Promise.resolve(null),
     ]);
@@ -1617,6 +1635,10 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
         console.log(chalk.gray(`\n  Results saved — view at ${chalk.white(`https://breachscoope.vercel.app/dashboard/scan/${scanId}`)}`));
       }
     } catch { /* dashboard push is optional */ }
+
+    if (opts.ci && findings.some((finding) => finding.severity === "critical" || finding.severity === "high")) {
+      process.exitCode = 1;
+    }
 
   } finally {
     if (!opts.noCleanup) {

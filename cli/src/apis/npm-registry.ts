@@ -50,6 +50,8 @@ export async function fetchNpmMeta(packageName: string): Promise<NpmPackageMeta 
       maintainers: ((raw["maintainers"] ?? []) as Array<{ name: string; email: string }>),
       weeklyDownloads,
       publishedAt: time?.[latest],
+      license: normalizeLicense(versionData["license"] ?? raw["license"]),
+      deprecated: typeof versionData["deprecated"] === "string" ? versionData["deprecated"] : undefined,
       repository: String((versionData["repository"] as { url?: string } | undefined)?.url ?? ""),
       dependencies: deps,
     };
@@ -110,7 +112,42 @@ export function npmMetaToFindings(meta: NpmPackageMeta, toolName: string): Findi
     }
   }
 
+  if (meta.deprecated) {
+    findings.push({
+      id: `npm-deprecated-${toolName}`,
+      title: `${toolName} is deprecated on npm`,
+      severity: "high",
+      category: "supply-chain",
+      tool: toolName,
+      description: `The npm registry marks this package as deprecated: ${meta.deprecated}`,
+      remediation: "Replace this dependency with the registry-recommended package or a maintained alternative.",
+      references: [`https://www.npmjs.com/package/${toolName}`],
+    });
+  }
+
+  if (meta.license && ["UNLICENSED", "UNKNOWN", "NOASSERTION"].includes(meta.license.toUpperCase())) {
+    findings.push({
+      id: `npm-risky-license-${toolName}`,
+      title: `${toolName} has non-standard license metadata (${meta.license})`,
+      severity: "low",
+      category: "supply-chain",
+      tool: toolName,
+      description: "The package has missing, unknown, or unlicensed registry metadata. This can create legal and supply-chain review gaps for teams.",
+      remediation: "Review the package repository and replace it if licensing cannot be confirmed.",
+      references: [`https://www.npmjs.com/package/${toolName}`],
+    });
+  }
+
   return findings;
+}
+
+function normalizeLicense(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value !== null && "type" in value) {
+    const type = (value as { type?: unknown }).type;
+    return typeof type === "string" ? type : undefined;
+  }
+  return undefined;
 }
 
 function formatDownloads(n?: number): string {

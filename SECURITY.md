@@ -3,53 +3,58 @@
 ## Supported Versions
 
 | Version | Supported |
-|---------|-----------|
-| 0.3.1   | ✓ Current |
-| < 0.3.1 | ✗ Unsupported |
+| --- | --- |
+| 0.3.x | Current |
+| < 0.3.0 | Unsupported |
 
 ## Reporting a Vulnerability
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+Do not report vulnerabilities through public GitHub issues.
 
-If you discover a vulnerability in BreachScope itself, report it responsibly:
+Email: itsafnanksalal@gmail.com
+PGP: available on request
 
-**Email:** itsafnanksalal@gmail.com  
-**PGP:** Available on request
+Please include:
 
-### What to include
+- affected component: CLI, dashboard, API, release pipeline, or package distribution
+- reproduction steps
+- impact assessment
+- logs, payloads, or screenshots when safe to share
+- suggested mitigation if known
 
-- A description of the vulnerability
-- Steps to reproduce
-- Potential impact assessment
-- Any suggested mitigations
+## Response Targets
 
-### What to expect
-
-- **Acknowledgement** within 48 hours
-- **Initial assessment** within 7 days
-- **Patch timeline** communicated within 14 days
-- **Credit** in the release notes (if desired)
+| Step | Target |
+| --- | --- |
+| Acknowledgement | 48 hours |
+| Initial assessment | 7 days |
+| Patch timeline | 14 days |
+| Coordinated disclosure | 90 days unless risk requires faster action |
 
 ## Scope
 
 In scope:
-- The `breachscope` CLI package
-- The web application (`breachscoope.vercel.app`)
-- Supply chain of our published npm package
+
+- `breachscope` CLI package
+- dashboard application and API routes
+- authentication, API key, SCIM, SAML, scan ingestion, and triage flows
+- release, npm package, and GitHub Actions workflows
 
 Out of scope:
-- Vulnerabilities in packages that BreachScope *scans* (report those to the respective projects)
-- Social engineering attacks
-- Denial of service via intentional resource exhaustion
 
-## Responsible Disclosure
+- vulnerabilities in third-party projects that BreachScope scans
+- denial of service through intentional resource exhaustion
+- social engineering
+- findings that require access to another user's dashboard account without an underlying vulnerability
 
-We follow a 90-day disclosure timeline. After 90 days from the initial report (or sooner if a patch is available), we may disclose the vulnerability publicly regardless of patch status.
+## Current Security Practices
 
-## Security Practices
-
-BreachScope eats its own dog food. The repository is scanned on every push:
-- `breachscope scan --ci` runs in GitHub Actions
-- OpenSSF Scorecard is enabled on this repository
-- Dependabot is configured for automated dependency updates
-- Branch protection requires review on `master`
+- dependency audits run in CI
+- CLI and web builds are typechecked, linted, tested, and audited
+- API keys are hashed before storage
+- dashboard secrets are encrypted with AES-256-GCM
+- scan ingestion validates payload size, fields, dates, finding count, and embedded JSON
+- API key scopes are enforced for scan upload and CLI config access
+- CLI auth polling is replay-safe
+- sandbox secrets are excluded by default and require `--include-secrets`
+- SAML ACS fails closed until assertion validation and IdP certificate pinning are configured

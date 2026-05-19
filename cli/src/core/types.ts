@@ -10,6 +10,8 @@ export type ScanTarget =
   | "smoke"
   | "all";
 
+export type FindingCategory = ScanTarget | "supply-chain" | "policy" | "compliance";
+
 /** basic = direct tools only | major = +1 level sub-deps | deep = full transitive tree */
 export type ScanMode = "basic" | "major" | "deep";
 
@@ -28,7 +30,7 @@ export interface Finding {
   id: string;
   title: string;
   severity: Severity;
-  category: ScanTarget | "supply-chain";
+  category: FindingCategory;
   description: string;
   detail?: string;
   remediation?: string;
@@ -36,6 +38,13 @@ export interface Finding {
   tool?: string;
   file?: string;
   line?: number;
+  fingerprint?: string;
+  status?: "open" | "triaged" | "accepted-risk" | "false-positive" | "fixed";
+  assignee?: string;
+  dueAt?: string;
+  suppressedUntil?: string;
+  compliance?: string[];
+  vexStatus?: "affected" | "not_affected" | "fixed" | "under_investigation";
 }
 
 // ─── Detected tool model ──────────────────────────────────────────────────────
@@ -114,6 +123,8 @@ export interface NpmPackageMeta {
   maintainers: Array<{ name: string; email: string }>;
   weeklyDownloads?: number;
   publishedAt?: string;
+  license?: string;
+  deprecated?: string;
   repository?: string;
   dependencies: Record<string, string>;
 }
@@ -176,6 +187,7 @@ export interface BreachScopeConfig {
   output: OutputConfig;
   thresholds: ThresholdConfig;
   subchain?: SubchainConfig;
+  policy?: PolicyConfig;
 }
 
 export interface SubchainConfig {
@@ -213,6 +225,22 @@ export interface ThresholdConfig {
   maxHigh?: number;
 }
 
+export interface PolicyConfig {
+  failOn?: Severity;
+  maxFindings?: Partial<Record<Severity, number>>;
+  blockedPackages?: string[];
+  deniedCategories?: FindingCategory[];
+  allowedLicenses?: string[];
+  suppressions?: PolicySuppression[];
+}
+
+export interface PolicySuppression {
+  fingerprint: string;
+  reason: string;
+  expiresAt: string;
+  approvedBy?: string;
+}
+
 export interface ScanOptions {
   target?: ScanTarget;
   mode?: ScanMode;
@@ -225,6 +253,11 @@ export interface ScanOptions {
   tool?: string;
   url?: string;
   ci?: boolean;
+  baseline?: string;
+  writeBaseline?: string;
+  newFindingsOnly?: boolean;
+  failOn?: Severity;
+  policy?: string;
 }
 
 // ─── AI / Agent layer ─────────────────────────────────────────────────────────
