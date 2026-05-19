@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { TopBar } from "@/components/dashboard/TopBar";
+import { CheckboxControl } from "@/components/ui/CheckboxControl";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 
@@ -202,18 +203,12 @@ export default function KeysPage() {
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {AVAILABLE_SCOPES.map((scope) => (
-                    <label
+                    <CheckboxControl
                       key={scope.value}
-                      className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-white/50"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedScopes.includes(scope.value)}
-                        onChange={() => toggleScope(scope.value)}
-                        className="h-3.5 w-3.5 accent-white"
-                      />
-                      {scope.label}
-                    </label>
+                      checked={selectedScopes.includes(scope.value)}
+                      onChange={() => toggleScope(scope.value)}
+                      label={scope.label}
+                    />
                   ))}
                 </div>
               </div>

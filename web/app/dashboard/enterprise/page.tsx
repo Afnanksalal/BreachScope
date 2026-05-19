@@ -5,6 +5,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { TopBar } from "@/components/dashboard/TopBar";
+import { CheckboxControl } from "@/components/ui/CheckboxControl";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { clsx } from "clsx";
 
 interface Project {
@@ -351,14 +353,18 @@ export default function ControlsPage() {
         <section className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
           <Panel title="Projects" subtitle="Application boundary for scans, policies, integrations, and evidence.">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <select
+              <CustomSelect
                 value={selectedProjectId}
-                onChange={(event) => setSelectedProjectId(event.target.value)}
-                className="w-full rounded-lg border border-white/[0.08] bg-black/40 px-3 py-2 text-sm text-white sm:max-w-xs"
-              >
-                <option value="">Select project</option>
-                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-              </select>
+                onChange={setSelectedProjectId}
+                placeholder="Select project"
+                ariaLabel="Select project"
+                options={projects.map((project) => ({
+                  value: project.id,
+                  label: project.name,
+                  description: project.repositoryUrl || project.slug,
+                }))}
+                className="w-full sm:max-w-xs"
+              />
               {selectedProject?.repositoryUrl && (
                 <a className="truncate text-xs text-white/35 transition-colors hover:text-white/60" href={selectedProject.repositoryUrl} target="_blank" rel="noreferrer">
                   {selectedProject.repositoryUrl}
@@ -412,17 +418,19 @@ export default function ControlsPage() {
             <Panel title="Provider Integrations" subtitle="Secrets are encrypted and never returned by the API.">
               <div className="space-y-5">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <select
+                  <CustomSelect
                     value={provider}
-                    onChange={(e) => {
-                      const next = e.target.value;
+                    onChange={(next) => {
                       setProvider(next);
-                      setIntegrationName(PROVIDER_COPY[next]?.label ?? next);
+                      setIntegrationName(getProviderMeta(next).label);
                     }}
-                    className={inputClass()}
-                  >
-                    {PROVIDERS.map((item) => <option key={item} value={item}>{PROVIDER_COPY[item]?.label ?? item}</option>)}
-                  </select>
+                    ariaLabel="Select provider"
+                    options={PROVIDERS.map((item) => ({
+                      value: item,
+                      label: getProviderMeta(item).label,
+                      description: getProviderMeta(item).purpose,
+                    }))}
+                  />
                   <input value={integrationName} onChange={(e) => setIntegrationName(e.target.value)} placeholder="Integration name" className={inputClass()} />
                 </div>
 
@@ -467,14 +475,18 @@ export default function ControlsPage() {
                         <label className="text-xs font-medium text-cyan-100/55">Pull request number</label>
                         <input value={auditPrNumber} onChange={(e) => setAuditPrNumber(e.target.value)} placeholder="Optional, e.g. 42" className={inputClass("mt-1")} />
                       </div>
-                      <label className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-white/55">
-                        <input type="checkbox" checked={auditCreateIssue} onChange={(e) => setAuditCreateIssue(e.target.checked)} className="accent-white" />
-                        Create GitHub issue
-                      </label>
-                      <label className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-white/55">
-                        <input type="checkbox" checked={auditCommentOnPr} onChange={(e) => setAuditCommentOnPr(e.target.checked)} className="accent-white" />
-                        Comment on PR
-                      </label>
+                      <CheckboxControl
+                        checked={auditCreateIssue}
+                        onChange={setAuditCreateIssue}
+                        label="Create GitHub issue"
+                        className="md:min-h-[2.625rem]"
+                      />
+                      <CheckboxControl
+                        checked={auditCommentOnPr}
+                        onChange={setAuditCommentOnPr}
+                        label="Comment on PR"
+                        className="md:min-h-[2.625rem]"
+                      />
                     </div>
                   </div>
                 )}
@@ -551,10 +563,11 @@ function ProviderFields({ provider, values, setters }: {
         <Field label="Repository" value={values.githubRepo} setValue={setters.setGithubRepo} placeholder="owner/repo or GitHub URL" />
         <Field label="Default branch" value={values.githubBranch} setValue={setters.setGithubBranch} placeholder="main" />
         <Field label="Issue labels" value={values.githubLabels} setValue={setters.setGithubLabels} placeholder="security, breachscope" />
-        <label className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-xs text-white/55">
-          <input type="checkbox" checked={values.githubCreateIssues} onChange={(e) => setters.setGithubCreateIssues(e.target.checked)} className="accent-white" />
-          Allow scan notifications to create issues
-        </label>
+        <CheckboxControl
+          checked={values.githubCreateIssues}
+          onChange={setters.setGithubCreateIssues}
+          label="Allow scan notifications to create issues"
+        />
       </>
     );
   }
