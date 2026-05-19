@@ -7,6 +7,8 @@ import { eq, and, isNull } from "drizzle-orm";
 export interface AuthedRequest {
   userId: string;
   apiKeyId: string;
+  organizationId: string | null;
+  projectId: string | null;
   scopes: string[];
 }
 
@@ -23,9 +25,11 @@ export async function validateApiKey(req: NextRequest): Promise<AuthedRequest | 
 
   const [record] = await db
     .select({
-      id:     apiKeys.id,
-      userId: apiKeys.userId,
-      scopes: apiKeys.scopes,
+      id:             apiKeys.id,
+      userId:         apiKeys.userId,
+      organizationId: apiKeys.organizationId,
+      projectId:      apiKeys.projectId,
+      scopes:         apiKeys.scopes,
     })
     .from(apiKeys)
     .where(and(eq(apiKeys.keyHash, hash), isNull(apiKeys.revokedAt)))
@@ -40,9 +44,11 @@ export async function validateApiKey(req: NextRequest): Promise<AuthedRequest | 
     .where(eq(apiKeys.id, record.id));
 
   return {
-    userId:   record.userId,
-    apiKeyId: record.id,
-    scopes:   normalizeStoredScopes(record.scopes),
+    userId:         record.userId,
+    apiKeyId:       record.id,
+    organizationId: record.organizationId,
+    projectId:      record.projectId,
+    scopes:         normalizeStoredScopes(record.scopes),
   };
 }
 

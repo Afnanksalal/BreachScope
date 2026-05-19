@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { TopBar } from "@/components/dashboard/TopBar";
 import { CheckboxControl } from "@/components/ui/CheckboxControl";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 
@@ -11,9 +12,18 @@ interface ApiKey {
   name: string;
   keyPrefix: string;
   scopes: string[] | null;
+  projectId: string | null;
+  organizationId: string | null;
   lastUsedAt: string | null;
   revokedAt: string | null;
   createdAt: string;
+}
+
+interface ProjectOption {
+  id: string;
+  name: string;
+  slug: string;
+  repositoryUrl: string | null;
 }
 
 const DEFAULT_SCOPES = ["scan:write", "config:read"];
@@ -36,12 +46,14 @@ function timeAgo(date: string | null): string {
 
 export default function KeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, startCreate] = useTransition();
   const [newKeyName, setNewKeyName] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null);
   const [selectedScopes, setSelectedScopes] = useState<string[]>(DEFAULT_SCOPES);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
   const [copied, setCopied] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
 
@@ -51,8 +63,13 @@ export default function KeysPage() {
     setLoading(false);
   }, []);
 
+  const loadProjects = useCallback(async () => {
+    const res = await fetch("/api/projects");
+    if (res.ok) setProjects(await res.json());
+  }, []);
+
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadKeys(); }, [loadKeys]);
+  useEffect(() => { void Promise.all([loadKeys(), loadProjects()]); }, [loadKeys, loadProjects]);
 
   function handleCreate() {
     if (!newKeyName.trim()) return;
@@ -60,13 +77,14 @@ export default function KeysPage() {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName.trim(), scopes: selectedScopes }),
+        body: JSON.stringify({ name: newKeyName.trim(), scopes: selectedScopes, projectId: selectedProjectId || undefined }),
       });
       if (res.ok) {
         const data = await res.json();
         setNewKeyValue(data.fullKey);
         setNewKeyName("");
         setSelectedScopes(DEFAULT_SCOPES);
+        setSelectedProjectId("");
         setShowForm(false);
         void loadKeys();
       }
@@ -200,6 +218,20 @@ export default function KeysPage() {
                   >
                     Cancel
                   </button>
+                </div>
+                <div className="mt-4">
+                  <CustomSelect
+                    value={selectedProjectId}
+                    onChange={setSelectedProjectId}
+                    placeholder="All personal scans"
+                    ariaLabel="Scope key to project"
+                    options={projects.map((project) => ({
+                      value: project.id,
+                      label: project.name,
+                      description: project.repositoryUrl || project.slug,
+                    }))}
+                  />
+                  <p className="mt-2 text-xs text-white/25">Project-scoped keys automatically route uploaded scans to that project and its integrations.</p>
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {AVAILABLE_SCOPES.map((scope) => (

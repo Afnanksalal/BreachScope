@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { scans, findings as findingsTable } from "@/lib/schema";
+import { dispatchScanIntegrations, resolveScanProject } from "@/lib/integration-pipeline";
 import { forbidden, hasScope, unauthorized, validateApiKey } from "@/lib/middleware-utils";
 import { rateLimit } from "@/lib/rate-limit";
 import { eq, desc, inArray } from "drizzle-orm";
@@ -102,6 +103,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ? body.findings.slice(0, MAX_FINDINGS_PER_SCAN).map(normalizeFinding)
     : [];
 
+  const projectContext = await resolveScanProject({
+    userId: authed.userId,
+    apiKeyProjectId: authed.projectId,
+    project: body.project,
+    target: body.target,
+    url: body.url,
+  });
+
   const findingsCritical = rawFindings.filter((f) => f.severity === "critical").length;
   const findingsHigh     = rawFindings.filter((f) => f.severity === "high").length;
   const findingsMedium   = rawFindings.filter((f) => f.severity === "medium").length;
@@ -111,8 +120,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     .insert(scans)
     .values({
       userId:           authed.userId,
+      organizationId:   projectContext?.organizationId ?? authed.organizationId ?? null,
+      projectId:        projectContext?.id ?? authed.projectId ?? null,
       apiKeyId:         authed.apiKeyId,
-      project:          body.project   ?? null,
+      project:          projectContext?.name ?? body.project ?? null,
       mode:             body.mode,
       scanMode:         body.scanMode,
       target:           body.target    ?? null,
@@ -160,7 +171,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  return NextResponse.json({ id: scan.id, ok: true }, { status: 201 });
+  const deliveries = await dispatchScanIntegrations({
+    userId: authed.userId,
+    project: projectContext,
+    scan: {
+      id: scan.id,
+      project: projectContext?.name ?? body.project ?? null,
+      mode: body.mode,
+      scanMode: body.scanMode,
+      target: body.target ?? null,
+      url: body.url ?? null,
+      findingsTotal: rawFindings.length,
+      findingsCritical,
+      findingsHigh,
+      findingsMedium,
+      findingsLow,
+      createdAt: new Date(),
+    },
+    findings: rawFindings,
+    origin: req.nextUrl.origin,
+  });
+
+  return NextResponse.json({ id: scan.id, ok: true, deliveries }, { status: 201 });
 }
 
 function parseLimit(value: string | null): number {

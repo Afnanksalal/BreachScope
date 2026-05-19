@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-const { mockSelect, mockInsert, mockUpdate, mockAuth, mockValidateApiKey } = vi.hoisted(() => ({
+const { mockSelect, mockInsert, mockUpdate, mockAuth, mockValidateApiKey, mockResolveScanProject, mockDispatchScanIntegrations } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockInsert: vi.fn(),
   mockUpdate: vi.fn(),
   mockAuth: vi.fn(),
   mockValidateApiKey: vi.fn(),
+  mockResolveScanProject: vi.fn(),
+  mockDispatchScanIntegrations: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -29,6 +31,11 @@ vi.mock("@/lib/middleware-utils", () => ({
     Array.isArray(authed.scopes) ? authed.scopes.includes(scope) : ["scan:write", "config:read"].includes(scope)
   ),
   ok: (data: unknown) => new Response(JSON.stringify(data)),
+}));
+
+vi.mock("@/lib/integration-pipeline", () => ({
+  resolveScanProject: mockResolveScanProject,
+  dispatchScanIntegrations: mockDispatchScanIntegrations,
 }));
 
 import { GET, POST } from "@/app/api/scans/route";
@@ -70,6 +77,8 @@ function makeInsertReturning(returned: unknown[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockResolveScanProject.mockResolvedValue(null);
+  mockDispatchScanIntegrations.mockResolvedValue([]);
 });
 
 // ─── GET ─────────────────────────────────────────────────────────────────────
@@ -157,6 +166,8 @@ describe("POST /api/scans", () => {
     const body = await res.json();
     expect(body.id).toBe(SCAN_ID);
     expect(body.ok).toBe(true);
+    expect(body.deliveries).toEqual([]);
+    expect(mockDispatchScanIntegrations).toHaveBeenCalledOnce();
   });
 
   it("inserts findings when provided", async () => {

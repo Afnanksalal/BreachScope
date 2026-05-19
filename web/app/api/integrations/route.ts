@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { auditLogs, integrations, projects } from "@/lib/schema";
 import { encrypt } from "@/lib/crypto";
 import { parseGitHubRepo } from "@/lib/github-audit";
-import { and, eq } from "drizzle-orm";
+import { canManageProject, getProjectForUser } from "@/lib/access-control";
+import { eq } from "drizzle-orm";
 
 const PROVIDERS = new Set(["github", "gitlab", "bitbucket", "jira", "linear", "slack", "teams", "pagerduty", "saml", "scim"]);
 const SECRET_KEYS = new Set(["secret", "token", "apiToken", "webhookUrl", "routingKey", "accessToken", "pat"]);
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const [integration] = await db
     .insert(integrations)
     .values({
+      organizationId: project.organizationId,
       projectId,
       provider,
       name,
@@ -151,12 +153,7 @@ async function ownsProject(userId: string, projectId: string): Promise<boolean> 
 }
 
 async function getOwnedProject(userId: string, projectId: string) {
-  const [project] = await db
-    .select()
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.ownerUserId, userId)))
-    .limit(1);
-  return project;
+  return getProjectForUser(userId, projectId);
 }
 
 async function getOwnedIntegration(userId: string, integrationId: string) {
@@ -167,8 +164,9 @@ async function getOwnedIntegration(userId: string, integrationId: string) {
     })
     .from(integrations)
     .innerJoin(projects, eq(integrations.projectId, projects.id))
-    .where(and(eq(integrations.id, integrationId), eq(projects.ownerUserId, userId)))
+    .where(eq(integrations.id, integrationId))
     .limit(1);
+  if (!row || !row.project.id || !await canManageProject(userId, row.project.id)) return null;
   return row;
 }
 
@@ -212,6 +210,26 @@ function normalizeProviderConfig(
       defaultBranch: stringConfig(clean, "defaultBranch") || projectDefaultBranch || "main",
       createIssues: clean["createIssues"] === true,
       labels: arrayConfig(clean, "labels").slice(0, 10),
+      minimumSeverity: severityConfig(clean),
+    };
+  }
+  if (provider === "gitlab") {
+    return {
+      instanceUrl: trimUrl(stringConfig(clean, "instanceUrl")) || "https://gitlab.com",
+      projectPath: stringConfig(clean, "projectPath") || parseGitHubRepo(projectRepositoryUrl || ""),
+      createIssues: clean["createIssues"] !== false,
+      labels: arrayConfig(clean, "labels").slice(0, 10),
+      minimumSeverity: severityConfig(clean),
+    };
+  }
+  if (provider === "bitbucket") {
+    const repo = parseRepoParts(stringConfig(clean, "repoFullName") || projectRepositoryUrl || "");
+    return {
+      workspace: stringConfig(clean, "workspace") || repo.owner,
+      repoSlug: stringConfig(clean, "repoSlug") || repo.repo,
+      username: stringConfig(clean, "username"),
+      createIssues: clean["createIssues"] !== false,
+      minimumSeverity: severityConfig(clean),
     };
   }
   if (provider === "jira") {
@@ -220,11 +238,22 @@ function normalizeProviderConfig(
       email: stringConfig(clean, "email"),
       projectKey: stringConfig(clean, "projectKey").toUpperCase(),
       issueType: stringConfig(clean, "issueType") || "Bug",
+      priorityName: stringConfig(clean, "priorityName"),
+      labels: arrayConfig(clean, "labels").slice(0, 10),
+      minimumSeverity: severityConfig(clean),
     };
   }
-  if (provider === "linear") return { teamId: stringConfig(clean, "teamId") };
-  if (provider === "slack" || provider === "teams") return { channel: stringConfig(clean, "channel") };
-  if (provider === "pagerduty") return { serviceName: stringConfig(clean, "serviceName") };
+  if (provider === "linear") {
+    return {
+      teamId: stringConfig(clean, "teamId"),
+      projectId: stringConfig(clean, "projectId"),
+      labelIds: arrayConfig(clean, "labelIds").slice(0, 10),
+      priority: numberConfig(clean, "priority"),
+      minimumSeverity: severityConfig(clean),
+    };
+  }
+  if (provider === "slack" || provider === "teams") return { channel: stringConfig(clean, "channel"), minimumSeverity: severityConfig(clean) };
+  if (provider === "pagerduty") return { serviceName: stringConfig(clean, "serviceName"), minimumSeverity: severityConfig(clean) };
   if (provider === "saml") return { entityId: stringConfig(clean, "entityId"), ssoUrl: trimUrl(stringConfig(clean, "ssoUrl")) };
   if (provider === "scim") return { tenant: stringConfig(clean, "tenant") };
   return clean;
@@ -232,6 +261,8 @@ function normalizeProviderConfig(
 
 function validateProviderConfig(provider: string, config: Record<string, unknown>): string | null {
   if (provider === "github" && !config["repoFullName"]) return "GitHub repoFullName must be owner/repo or a GitHub URL";
+  if (provider === "gitlab" && !config["projectPath"]) return "GitLab requires a project path or project ID";
+  if (provider === "bitbucket" && (!config["workspace"] || !config["repoSlug"])) return "Bitbucket requires workspace and repoSlug";
   if (provider === "jira" && (!config["siteUrl"] || !config["email"] || !config["projectKey"])) {
     return "Jira requires siteUrl, email, and projectKey";
   }
@@ -271,6 +302,27 @@ function arrayConfig(config: Record<string, unknown>, key: string): string[] {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
   if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
   return [];
+}
+
+function numberConfig(config: Record<string, unknown>, key: string): number | undefined {
+  const value = config[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function severityConfig(config: Record<string, unknown>): string {
+  const severity = stringConfig(config, "minimumSeverity").toLowerCase();
+  return ["critical", "high", "medium", "low", "info"].includes(severity) ? severity : "high";
+}
+
+function parseRepoParts(value: string): { owner: string; repo: string } {
+  const trimmed = value.trim();
+  const match = trimmed.match(/(?:bitbucket\.org\/)?([^/\s]+)\/([^/\s#?]+)/i);
+  return { owner: match?.[1] ?? "", repo: match?.[2]?.replace(/\.git$/, "") ?? "" };
 }
 
 function trimUrl(value: string): string {

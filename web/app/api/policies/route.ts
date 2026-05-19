@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { policies, projects } from "@/lib/schema";
-import { and, eq } from "drizzle-orm";
+import { canManageProject } from "@/lib/access-control";
+import { policies } from "@/lib/schema";
+import { eq } from "drizzle-orm";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
@@ -54,10 +55,5 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 }
 
 async function ownsProject(userId: string, projectId: string): Promise<boolean> {
-  const [project] = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.ownerUserId, userId)))
-    .limit(1);
-  return Boolean(project);
+  return canManageProject(userId, projectId);
 }

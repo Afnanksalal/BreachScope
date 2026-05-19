@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { apiKeys } from "@/lib/schema";
 import { generateApiKey } from "@/lib/api-keys";
+import { canManageProject, getProjectForUser } from "@/lib/access-control";
 import { DEFAULT_API_KEY_SCOPES } from "@/lib/middleware-utils";
 import { eq, and, isNull } from "drizzle-orm";
 
@@ -18,6 +19,8 @@ export async function GET(): Promise<NextResponse> {
       name:       apiKeys.name,
       keyPrefix:  apiKeys.keyPrefix,
       scopes:     apiKeys.scopes,
+      organizationId: apiKeys.organizationId,
+      projectId:  apiKeys.projectId,
       lastUsedAt: apiKeys.lastUsedAt,
       revokedAt:  apiKeys.revokedAt,
       createdAt:  apiKeys.createdAt,
@@ -44,11 +47,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ? (body as { scopes: unknown[] }).scopes
     : [];
   const scopes = normalizeScopes(requestedScopes);
+  const projectId = typeof body === "object" && body !== null && typeof (body as Record<string, unknown>).projectId === "string"
+    ? ((body as Record<string, string>).projectId || "").trim()
+    : "";
+  const project = projectId ? await getProjectForUser(session.user.id, projectId) : null;
+  if (projectId && (!project || !await canManageProject(session.user.id, projectId))) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
 
   const { fullKey, prefix, hash } = generateApiKey();
 
   await db.insert(apiKeys).values({
-    userId:    session.user.id,
+    userId:         session.user.id,
+    organizationId: project?.organizationId ?? null,
+    projectId:      project?.id ?? null,
     name,
     scopes,
     keyHash:   hash,

@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { canManageOrganization, getUserOrganizations, slugify } from "@/lib/access-control";
 import { projects } from "@/lib/schema";
-import { and, eq } from "drizzle-orm";
-
-function slugify(value: string): string {
-  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
-}
+import { and, eq, inArray, or } from "drizzle-orm";
 
 export async function GET(): Promise<NextResponse> {
   const session = await auth();
@@ -14,10 +11,12 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const orgs = await getUserOrganizations(session.user.id);
+  const orgIds = orgs.map((org) => org.id);
   const rows = await db
     .select()
     .from(projects)
-    .where(eq(projects.ownerUserId, session.user.id));
+    .where(orgIds.length > 0 ? or(eq(projects.ownerUserId, session.user.id), inArray(projects.organizationId, orgIds)) : eq(projects.ownerUserId, session.user.id));
 
   return NextResponse.json(rows);
 }
@@ -40,11 +39,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const repositoryUrl = typeof body?.["repositoryUrl"] === "string" ? body["repositoryUrl"].slice(0, 500) : null;
   const defaultBranch = typeof body?.["defaultBranch"] === "string" ? body["defaultBranch"].slice(0, 120) : "main";
+  const organizationId = typeof body?.["organizationId"] === "string" && body["organizationId"].trim() ? body["organizationId"].trim() : null;
+  if (organizationId && !await canManageOrganization(session.user.id, organizationId)) {
+    return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+  }
 
   const [existing] = await db
     .select({ id: projects.id })
     .from(projects)
-    .where(and(eq(projects.ownerUserId, session.user.id), eq(projects.slug, slug)))
+    .where(organizationId ? and(eq(projects.organizationId, organizationId), eq(projects.slug, slug)) : and(eq(projects.ownerUserId, session.user.id), eq(projects.slug, slug)))
     .limit(1);
 
   if (existing) {
@@ -53,7 +56,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const [project] = await db
     .insert(projects)
-    .values({ ownerUserId: session.user.id, name, slug, repositoryUrl, defaultBranch })
+    .values({ ownerUserId: session.user.id, organizationId, name, slug, repositoryUrl, defaultBranch })
     .returning();
 
   return NextResponse.json(project, { status: 201 });

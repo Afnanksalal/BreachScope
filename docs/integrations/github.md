@@ -44,7 +44,9 @@ flowchart LR
   PR --> Scan
   Scan --> Findings["Findings and triage"]
   Scan --> Audit["Audit logs"]
-  Scan --> GitHub["Optional issue or PR comment"]
+  Scan --> Delivery["Delivery ledger"]
+  Delivery --> GitHub["Optional issue or PR comment"]
+  Delivery --> Other["Slack, Teams, PagerDuty, Jira, Linear, GitLab, Bitbucket"]
 ```
 
 The generated dashboard scan includes:
@@ -69,3 +71,5 @@ The generated dashboard scan includes:
 7. Open the generated dashboard scan for findings, probe activity, and report output.
 
 Delivery back to GitHub is opt-in per audit run. Enable `Create GitHub issue` to open an issue with the summary. Enable `Comment on PR` when a pull request number is supplied.
+
+Repository and PR audits are also saved as normal scans. That means the same project-level delivery pipeline can notify Slack or Teams, create Jira/Linear/GitLab/Bitbucket follow-up issues, and trigger PagerDuty for severe findings according to each integration's severity threshold.

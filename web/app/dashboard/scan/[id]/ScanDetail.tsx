@@ -85,6 +85,17 @@ interface ProbeActivity {
   sandbox?: SandboxActivity;
 }
 
+interface IntegrationDelivery {
+  id: string;
+  provider: string;
+  action: string;
+  status: string;
+  attempts: number;
+  maxAttempts: number;
+  externalUrl: string | null;
+  lastError: string | null;
+}
+
 // ─── Smart group types ────────────────────────────────────────────────────────
 
 type SmartGroupKey = "sandbox" | "secrets" | "injection" | "auth" | "supplychain" | "infra" | "code" | "other";
@@ -225,6 +236,58 @@ function Chip({ label, count, active, onClick }: { label: string; count: number;
       <span className={clsx("text-[10px] font-mono", active ? "text-white/60" : "text-white/25")}>{count}</span>
     </button>
   );
+}
+
+function PostScanActions({ deliveries, projectId }: { deliveries: IntegrationDelivery[]; projectId: string | null }) {
+  if (!projectId) {
+    return (
+      <div className="rounded-lg border border-amber-300/20 bg-amber-300/[0.055] p-4">
+        <p className="text-sm font-medium text-amber-100/80">No project route attached</p>
+        <p className="mt-1 text-xs leading-5 text-amber-50/55">Link the API key or scan project to a dashboard project to trigger configured post-scan actions.</p>
+      </div>
+    );
+  }
+
+  if (deliveries.length === 0) {
+    return (
+      <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-4">
+        <p className="text-sm font-medium text-white/70">Post-scan actions</p>
+        <p className="mt-1 text-xs leading-5 text-white/35">No provider deliveries were created for this scan. Add an integration or lower its severity threshold in Controls.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-4">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-white/75">Post-scan actions</p>
+          <p className="mt-1 text-xs text-white/32">Provider tickets, messages, incidents, and retry status.</p>
+        </div>
+        <a href="/dashboard/enterprise" className="text-xs text-white/42 transition-colors hover:text-white/70">Manage routes</a>
+      </div>
+      <div className="grid gap-2">
+        {deliveries.slice(0, 6).map((delivery) => (
+          <div key={delivery.id} className="flex flex-col gap-2 rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-white/65">{delivery.provider} - {delivery.action}</p>
+              <p className="mt-1 truncate text-xs text-white/32">{delivery.lastError || delivery.externalUrl || "Delivery recorded"}</p>
+            </div>
+            <span className={clsx("w-fit rounded border px-2 py-0.5 text-xs", deliveryStatusClass(delivery.status))}>
+              {delivery.status} {delivery.attempts}/{delivery.maxAttempts}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function deliveryStatusClass(status: string): string {
+  if (status === "delivered") return "border-green-400/20 bg-green-400/[0.04] text-green-300/70";
+  if (status === "failed") return "border-red-400/20 bg-red-400/[0.04] text-red-300/70";
+  if (status === "retrying" || status === "pending") return "border-amber-300/20 bg-amber-300/[0.04] text-amber-200/70";
+  return "border-white/[0.08] bg-white/[0.03] text-white/40";
 }
 
 // ─── Finding card ─────────────────────────────────────────────────────────────
@@ -2091,6 +2154,7 @@ export function ScanDetail({ scan }: { scan: Scan }) {
   const [catFilter, setCat]       = useState<string>("ALL");
   const [findingsView, setFindingsView] = useState<FindingsViewMode>("smart");
   const [findings, setFindings]   = useState<Finding[]>([]);
+  const [deliveries, setDeliveries] = useState<IntegrationDelivery[]>([]);
   const [findingsLoading, setFindingsLoading] = useState(true);
 
   useEffect(() => {
@@ -2102,6 +2166,14 @@ export function ScanDetail({ scan }: { scan: Scan }) {
       })
       .catch(() => setFindingsLoading(false));
   }, [scan.id]);
+
+  useEffect(() => {
+    if (!scan.projectId) return;
+    fetch(`/api/integration-deliveries?projectId=${scan.projectId}&scanId=${scan.id}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: IntegrationDelivery[]) => setDeliveries(Array.isArray(data) ? data : []))
+      .catch(() => setDeliveries([]));
+  }, [scan.id, scan.projectId]);
 
   const total    = scan.findingsTotal    ?? 0;
   const critical = scan.findingsCritical ?? 0;
@@ -2195,6 +2267,7 @@ export function ScanDetail({ scan }: { scan: Scan }) {
       {tab === "overview" && (
         <div className="space-y-6">
           {aiSynthesis && <AISynthesisSection synthesis={aiSynthesis} />}
+          <PostScanActions deliveries={deliveries} projectId={scan.projectId} />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
             {[

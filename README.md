@@ -20,7 +20,7 @@ It is built for teams that need both developer speed and governance:
 - Developers get one command that works in any project.
 - AppSec gets policy-as-code, baselines, SARIF, SBOM, OpenVEX, and audit trails.
 - Platform teams get CI templates, scoped API keys, integrations, and runtime event capture.
-- Security operations get triage, notification executors, and project-level evidence history.
+- Security operations get triage, post-scan delivery status, retry history, and project-level evidence history.
 
 ---
 
@@ -134,7 +134,7 @@ The dashboard adds operational control around CLI scans:
 - project-scoped scan history and findings
 - scoped API keys: `scan:write`, `config:read`, `secrets:read`, `settings:write`
 - project policies and audit logs
-- integration records and test dispatch endpoint
+- integration records, provider-specific setup, delivery status, and retryable post-scan actions
 - finding triage: status, assignee, due date, accepted-risk reason, suppression expiry, VEX status, compliance tags
 - optional encrypted OpenAI and Firecrawl settings supplied by the user
 - SCIM and SAML foundations for identity workflows
@@ -153,7 +153,7 @@ flowchart LR
   API --> Audit["Audit logs"]
   API --> Evidence["SARIF, SBOM, OpenVEX"]
   UserKeys["Customer-owned provider keys"] --> Settings["Encrypted settings"]
-  Settings --> Routing["Notification and ticket routing"]
+  Settings --> Routing["Post-scan messages, issues, incidents, and retries"]
 ```
 
 ---
@@ -179,6 +179,7 @@ flowchart LR
 - [Model-assisted analysis](docs/ai-agents.md)
 - [Legal docs](docs/legal)
 - [GitHub integration](docs/integrations/github.md)
+- [Provider integrations](docs/integrations/providers.md)
 - [Supabase integration](docs/integrations/supabase.md)
 - [Vercel integration](docs/integrations/vercel.md)
 - [Security policy](SECURITY.md)

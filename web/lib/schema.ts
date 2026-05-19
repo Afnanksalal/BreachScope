@@ -199,6 +199,32 @@ export const integrations = pgTable("integrations", {
   index("integrations_provider_idx").on(t.provider),
 ]);
 
+export const integrationDeliveries = pgTable("integration_deliveries", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  projectId:      uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  integrationId:  uuid("integration_id").references(() => integrations.id, { onDelete: "set null" }),
+  scanId:         uuid("scan_id").references(() => scans.id, { onDelete: "cascade" }),
+  provider:       text("provider").notNull(),
+  action:         text("action").notNull().default("notify"),
+  status:         text("status").notNull().default("pending"), // pending | delivered | retrying | failed | skipped
+  attempts:       integer("attempts").default(0).notNull(),
+  maxAttempts:    integer("max_attempts").default(3).notNull(),
+  nextAttemptAt:  timestamp("next_attempt_at"),
+  deliveredAt:    timestamp("delivered_at"),
+  externalUrl:    text("external_url"),
+  lastError:      text("last_error"),
+  payload:        jsonb("payload").$type<Record<string, unknown>>().default({}),
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+  updatedAt:      timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("integration_deliveries_project_idx").on(t.projectId),
+  index("integration_deliveries_scan_idx").on(t.scanId),
+  index("integration_deliveries_integration_idx").on(t.integrationId),
+  index("integration_deliveries_status_idx").on(t.status),
+  index("integration_deliveries_next_attempt_idx").on(t.nextAttemptAt),
+]);
+
 export const auditLogs = pgTable("audit_logs", {
   id:             uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
@@ -231,6 +257,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   scans: many(scans),
   policies: many(policies),
   integrations: many(integrations),
+  integrationDeliveries: many(integrationDeliveries),
   auditLogs: many(auditLogs),
 }));
 
@@ -241,6 +268,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   apiKeys: many(apiKeys),
   policies: many(policies),
   integrations: many(integrations),
+  integrationDeliveries: many(integrationDeliveries),
 }));
 
 export const scansRelations = relations(scans, ({ many, one }) => ({
@@ -255,6 +283,13 @@ export const findingsRelations = relations(findings, ({ one }) => ({
   scan: one(scans, { fields: [findings.scanId], references: [scans.id] }),
 }));
 
+export const integrationDeliveriesRelations = relations(integrationDeliveries, ({ one }) => ({
+  organization: one(organizations, { fields: [integrationDeliveries.organizationId], references: [organizations.id] }),
+  project: one(projects, { fields: [integrationDeliveries.projectId], references: [projects.id] }),
+  integration: one(integrations, { fields: [integrationDeliveries.integrationId], references: [integrations.id] }),
+  scan: one(scans, { fields: [integrationDeliveries.scanId], references: [scans.id] }),
+}));
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type User = typeof users.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
@@ -266,4 +301,5 @@ export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Policy = typeof policies.$inferSelect;
 export type Integration = typeof integrations.$inferSelect;
+export type IntegrationDelivery = typeof integrationDeliveries.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;

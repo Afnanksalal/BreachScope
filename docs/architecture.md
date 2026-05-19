@@ -15,6 +15,8 @@ flowchart LR
   API --> Audit["Audit logs"]
   API --> Settings["Encrypted settings"]
   Settings --> Integrations["Customer-owned providers"]
+  DB --> Delivery["Integration delivery ledger"]
+  Delivery --> Integrations
 ```
 
 ## Scan Pipeline
@@ -27,7 +29,10 @@ flowchart TD
   CLI --> API["Upload scan when authenticated"]
   API --> DB["Store scan and findings"]
   API --> Audit["Append audit event"]
-  API --> Provider["Dispatch when credentials are configured"]
+  API --> Delivery["Create post-scan delivery rows"]
+  Delivery --> Provider["Send provider request"]
+  Provider --> Retry["Retry failed deliveries"]
+  Retry --> Provider
 ```
 
 ## Data Boundaries

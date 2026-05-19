@@ -12,6 +12,8 @@ import {
   type GitHubAuditFinding,
 } from "@/lib/github-audit";
 import { buildGitHubAiSynthesis } from "@/lib/ai-audit";
+import { canManageProject } from "@/lib/access-control";
+import { dispatchScanIntegrations } from "@/lib/integration-pipeline";
 import { and, eq } from "drizzle-orm";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -124,6 +126,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   });
 
   const scanUrl = absoluteDashboardUrl(req, scan.id);
+  const integrationDeliveries = await dispatchScanIntegrations({
+    userId: session.user.id,
+    project: row.project,
+    scan: {
+      id: scan.id,
+      project: row.project.name,
+      mode: "deep",
+      scanMode: "breach",
+      target: audit.repoFullName,
+      url: audit.repositoryUrl,
+      findingsTotal: audit.findings.length,
+      findingsCritical: counts.critical,
+      findingsHigh: counts.high,
+      findingsMedium: counts.medium,
+      findingsLow: counts.low,
+      createdAt: startedAt,
+    },
+    findings: audit.findings,
+    origin: req.nextUrl.origin,
+  });
   const delivery = await deliverAuditBackToGitHub({
     body,
     token,
@@ -142,6 +164,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     findings: counts,
     totalFindings: audit.findings.length,
     delivery,
+    integrationDeliveries,
   });
 }
 
@@ -156,9 +179,9 @@ async function getOwnedGitHubIntegration(userId: string, integrationId: string) 
     .where(and(
       eq(integrations.id, integrationId),
       eq(integrations.provider, "github"),
-      eq(projects.ownerUserId, userId),
     ))
     .limit(1);
+  if (!row || !await canManageProject(userId, row.project.id)) return null;
   return row;
 }
 

@@ -8,6 +8,13 @@
       "when": 1779208681534,
       "tag": "0000_futuristic_tyger_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779223019339,
+      "tag": "0001_open_power_pack",
+      "breakpoints": true
     }
   ]
 }

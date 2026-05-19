@@ -5,7 +5,8 @@ import { integrations, projects } from "@/lib/schema";
 import { dispatchSecurityNotification } from "@/lib/integration-executors";
 import { decrypt } from "@/lib/crypto";
 import { testGitHubAccess } from "@/lib/github-audit";
-import { and, eq } from "drizzle-orm";
+import { canManageProject } from "@/lib/access-control";
+import { eq } from "drizzle-orm";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
@@ -24,10 +25,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
     .from(integrations)
     .innerJoin(projects, eq(integrations.projectId, projects.id))
-    .where(and(eq(integrations.id, integrationId), eq(projects.ownerUserId, session.user.id)))
+    .where(eq(integrations.id, integrationId))
     .limit(1);
 
-  if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!row || !await canManageProject(session.user.id, row.project.id)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const secret = decryptOptional(row.integration.secretRef);
   if (row.integration.provider === "github") {

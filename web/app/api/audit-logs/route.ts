@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { auditLogs, projects } from "@/lib/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { canManageProject } from "@/lib/access-control";
+import { auditLogs } from "@/lib/schema";
+import { and, desc, eq, ilike } from "drizzle-orm";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
@@ -13,20 +14,21 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const projectId = req.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json([]);
 
-  const [project] = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.ownerUserId, session.user.id)))
-    .limit(1);
-
-  if (!project) {
+  if (!await canManageProject(session.user.id, projectId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  const action = req.nextUrl.searchParams.get("action");
+  const targetType = req.nextUrl.searchParams.get("targetType");
 
   const rows = await db
     .select()
     .from(auditLogs)
-    .where(eq(auditLogs.projectId, projectId))
+    .where(and(
+      eq(auditLogs.projectId, projectId),
+      action ? ilike(auditLogs.action, `%${action}%`) : undefined,
+      targetType ? eq(auditLogs.targetType, targetType) : undefined,
+    ))
     .orderBy(desc(auditLogs.createdAt))
     .limit(200);
 

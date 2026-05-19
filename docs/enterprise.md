@@ -15,6 +15,7 @@ flowchart TD
   Project --> Findings["Findings and triage"]
   Project --> Audit["Audit logs"]
   Project --> Integrations["Customer-owned integrations"]
+  Integrations --> Delivery["Delivery ledger and retry worker"]
 ```
 
 ## CI Gates
@@ -98,7 +99,7 @@ The web application includes:
 - projects
 - project-scoped API keys
 - policy records
-- customer-owned integrations
+- customer-owned integrations with delivery status
 - audit logs
 - finding triage fields: status, assignee, due date, accepted-risk reason, suppression expiry, VEX status, compliance tags
 
@@ -112,6 +113,8 @@ Core endpoints:
 | `PATCH/DELETE /api/integrations` | Update or remove integration records |
 | `POST /api/integrations/test` | Test dispatch for a configured provider |
 | `POST /api/integrations/github/audit` | Run GitHub repository and PR audit and save it as scan evidence |
+| `GET /api/integration-deliveries?projectId=...` | Provider delivery status, external links, failures, and retry state |
+| `GET/POST /api/jobs/integration-deliveries` | Retry due provider deliveries from Vercel Cron or an operator-run job |
 | `GET /api/audit-logs?projectId=...` | Project audit trail |
 | `PATCH /api/findings/:id/triage` | Finding status and risk workflow |
 | `GET/POST /api/scim/v2/Users` | SCIM user lifecycle foundation |
@@ -134,16 +137,20 @@ The CLI device-flow key gets `scan:write`, `config:read`, and `settings:write`. 
 
 ## Integrations
 
-Provider executors are implemented for:
+Post-scan delivery is project-scoped. When a scan lands on a project, BreachScope builds a finding summary, checks each integration's severity threshold, creates a delivery ledger row, sends the provider request, stores external links or errors, and schedules retries for transient failures.
 
-- GitHub repository audit, PR audit, optional issue creation, optional PR comments
-- Slack
-- Microsoft Teams
-- PagerDuty
-- Jira
-- Linear
+Implemented provider workflows:
 
-SCM, SAML, and SCIM integration records are represented in the model for operational configuration. Provider credentials must be supplied per project before dispatching real notifications.
+- GitHub repository audit, PR audit, optional issue creation, optional PR comments, and scan-triggered issue creation
+- GitLab issue creation
+- Bitbucket issue creation
+- Jira issue creation with labels and severity-to-priority mapping
+- Linear issue creation with team, project, labels, and priority
+- Slack Block Kit notifications
+- Microsoft Teams message cards
+- PagerDuty Events API v2 incidents with deduplication keys
+
+SAML and SCIM records remain identity configuration surfaces. They do not receive scan notifications.
 
 ## Runtime Monitoring
 

@@ -147,7 +147,7 @@ export default function DocsPage() {
           </Section>
 
           <Section id="integrations" title="Integrations">
-            <p>Slack, Teams, PagerDuty, Jira, and Linear executors dispatch notification payloads from project integration records after a user connects their own provider credentials. Each project can test dispatch before enabling live routing.</p>
+            <p>Project integrations turn completed scans into provider work: Slack and Teams messages, PagerDuty incidents, Jira and Linear issues, GitHub/GitLab/Bitbucket issues, and audit-backed retry records. Each route uses customer-owned credentials and a configurable severity threshold.</p>
           </Section>
 
           <Divider label="Reference" />
