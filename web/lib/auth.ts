@@ -5,14 +5,16 @@ import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { db } from "./db";
+import { db, hasDatabaseUrl } from "./db";
 import { users, accounts } from "./schema";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: DrizzleAdapter(db, {
-    usersTable: users,
-    accountsTable: accounts,
-  }),
+  adapter: hasDatabaseUrl()
+    ? DrizzleAdapter(db, {
+      usersTable: users,
+      accountsTable: accounts,
+    })
+    : undefined,
   session: { strategy: "jwt" },
   providers: [
     Credentials({

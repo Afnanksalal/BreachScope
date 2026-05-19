@@ -1,7 +1,9 @@
 import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
 import { db } from "@/lib/db";
 import { scans, findings } from "@/lib/schema";
 import { eq, desc, and, gte, count } from "drizzle-orm";
+import { redirect } from "next/navigation";
 import { TopBar } from "@/components/dashboard/TopBar";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { ScanRow } from "@/components/dashboard/ScanRow";
@@ -18,36 +20,46 @@ function timeAgo(date: Date | string): string {
 
 export default async function DashboardPage() {
   const session = await auth();
-  const userId = session!.user!.id!;
+  const userId = session?.user?.id;
+  if (!userId) redirect("/login");
 
   // eslint-disable-next-line react-hooks/purity
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400 * 1000);
 
-  const [recentScans, monthlyScans, categoryStats] = await Promise.all([
-    db
-      .select()
-      .from(scans)
-      .where(eq(scans.userId, userId))
-      .orderBy(desc(scans.createdAt))
-      .limit(20),
+  let recentScans: Array<typeof scans.$inferSelect>;
+  let monthlyScans: Array<typeof scans.$inferSelect>;
+  let categoryStats: Array<{ category: string; total: number }>;
 
-    db
-      .select()
-      .from(scans)
-      .where(and(eq(scans.userId, userId), gte(scans.createdAt, thirtyDaysAgo)))
-      .orderBy(desc(scans.createdAt)),
+  try {
+    [recentScans, monthlyScans, categoryStats] = await Promise.all([
+      db
+        .select()
+        .from(scans)
+        .where(eq(scans.userId, userId))
+        .orderBy(desc(scans.createdAt))
+        .limit(20),
 
-    // Finding counts by category for the last 30 days
-    db
-      .select({
-        category: findings.category,
-        total:    count(findings.id),
-      })
-      .from(findings)
-      .innerJoin(scans, eq(findings.scanId, scans.id))
-      .where(and(eq(scans.userId, userId), gte(scans.createdAt, thirtyDaysAgo)))
-      .groupBy(findings.category),
-  ]);
+      db
+        .select()
+        .from(scans)
+        .where(and(eq(scans.userId, userId), gte(scans.createdAt, thirtyDaysAgo)))
+        .orderBy(desc(scans.createdAt)),
+
+      // Finding counts by category for the last 30 days
+      db
+        .select({
+          category: findings.category,
+          total:    count(findings.id),
+        })
+        .from(findings)
+        .innerJoin(scans, eq(findings.scanId, scans.id))
+        .where(and(eq(scans.userId, userId), gte(scans.createdAt, thirtyDaysAgo)))
+        .groupBy(findings.category),
+    ]);
+  } catch (error) {
+    console.error("[dashboard] failed to load dashboard data", error);
+    return <DashboardDataUnavailable session={session} />;
+  }
 
   const totalCritical = monthlyScans.reduce((a, s) => a + (s.findingsCritical ?? 0), 0);
   const totalHigh     = monthlyScans.reduce((a, s) => a + (s.findingsHigh    ?? 0), 0);
@@ -249,6 +261,26 @@ export default async function DashboardPage() {
             </div>
           </div>
         )}
+      </div>
+    </>
+  );
+}
+
+function DashboardDataUnavailable({ session }: { session: Session }) {
+  return (
+    <>
+      <TopBar session={session} title="Overview" subtitle="Dashboard data unavailable" />
+      <div className="flex-1 px-4 py-5 sm:px-6 md:px-8">
+        <section className="rounded-lg border border-amber-300/20 bg-amber-300/[0.055] p-6">
+          <p className="text-xs font-semibold uppercase text-amber-100/45">Setup needs attention</p>
+          <h2 className="mt-3 text-2xl font-semibold text-white">Dashboard data could not be loaded.</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-amber-50/65">
+            Your account session is valid, but the dashboard could not read scan tables from the database. On a new deployment, run the Drizzle migration and confirm `DATABASE_URL` points to the same database used by authentication.
+          </p>
+          <div className="mt-5 rounded-lg border border-white/[0.08] bg-black/35 p-4">
+            <code className="break-all font-mono text-xs text-white/58">cd web &amp;&amp; npm run db:migrate</code>
+          </div>
+        </section>
       </div>
     </>
   );

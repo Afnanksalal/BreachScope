@@ -4,7 +4,7 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
-  if (!session) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
 
   return (
     <div className="min-h-screen bg-[#020303] flex">

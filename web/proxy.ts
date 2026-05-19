@@ -6,7 +6,7 @@ export default auth((req: NextRequest & { auth: { user?: { id?: string } } | nul
   const { pathname } = req.nextUrl;
 
   if (pathname.startsWith("/dashboard") || pathname.startsWith("/cli-auth")) {
-    if (!req.auth?.user) {
+    if (!req.auth?.user?.id) {
       const loginUrl = new URL("/login", req.url);
       loginUrl.searchParams.set("callbackUrl", req.url);
       return NextResponse.redirect(loginUrl);
