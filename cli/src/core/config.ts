@@ -75,6 +75,7 @@ toolchain:
     token: ""        # or set VERCEL_TOKEN env var
   github:
     token: ""        # or set GITHUB_TOKEN env var
+    repo: ""         # owner/repo, or set GITHUB_REPO env var
 
 # AI multi-agent mode — runs automatically when OPENAI_API_KEY is set
 # Keys can also be set as environment variables

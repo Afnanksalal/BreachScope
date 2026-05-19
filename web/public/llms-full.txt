@@ -24,6 +24,7 @@ BreachScope is an open-source security workflow for developers and security team
 - Produces SARIF, CycloneDX, SPDX, OpenVEX, JSON, Markdown fix briefs, and dashboard records.
 - Stores scan history, findings, triage state, project policies, integration metadata, and audit logs.
 - Routes findings to customer-owned providers when users configure their own credentials.
+- Audits connected GitHub repositories and pull requests from the dashboard, then stores the result as scan evidence with findings and audit logs.
 
 ## Installation
 
@@ -126,6 +127,7 @@ The dashboard provides:
 - API key management.
 - Project settings.
 - Controls for projects, policies, integrations, and audit logs.
+- GitHub repository and pull request audits with optional issue creation or PR comments.
 - Customer-owned provider key settings.
 - SCIM user lifecycle endpoint foundations.
 - SAML metadata and fail-closed ACS foundations.

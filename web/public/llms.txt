@@ -41,7 +41,7 @@ breachscope init-ci
 - Blackbox HTTP checks for headers, CORS, exposed internal files, admin routes, debug endpoints, and error leakage.
 - Docker sandbox attack simulation and optional Tracee runtime evidence command.
 - Release evidence through SARIF, CycloneDX SBOM, SPDX SBOM, OpenVEX, JSON, and fix briefs.
-- Dashboard workflows for projects, scan history, finding triage, scoped API keys, audit logs, policies, and integrations.
+- Dashboard workflows for projects, scan history, finding triage, scoped API keys, audit logs, policies, integrations, GitHub repository audits, PR audits, and optional issue or PR comment delivery.
 
 ## Data And Credentials
 

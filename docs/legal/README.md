@@ -12,10 +12,10 @@ These documents mirror the public legal pages in the web app.
 
 ```mermaid
 flowchart LR
-  Terms[Terms] --> Use[Authorized use]
-  Privacy[Privacy] --> Data[Data categories and rights]
-  AUP[Acceptable use] --> Safety[Testing boundaries]
-  DPA[Data protection] --> Controls[Security safeguards]
-  Security[Security policy] --> Reports[Vulnerability reporting]
-  Controls --> Keys[Customer-owned provider keys]
+  Terms["Terms"] --> Use["Authorized use"]
+  Privacy["Privacy"] --> Data["Data categories and rights"]
+  AUP["Acceptable use"] --> Safety["Testing boundaries"]
+  DPA["Data protection"] --> Controls["Security safeguards"]
+  Security["Security policy"] --> Reports["Vulnerability reporting"]
+  Controls --> Keys["Customer-owned provider keys"]
 ```

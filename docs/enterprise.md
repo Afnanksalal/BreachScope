@@ -6,15 +6,15 @@ BreachScope connects local scans, CI gates, release evidence, dashboard triage, 
 
 ```mermaid
 flowchart TD
-  Dev[Developer workstation] --> CLI[breachscope scan]
-  CI[CI workflow] --> CLI
-  CLI --> Policy[Policy and baseline checks]
-  Policy --> Evidence[SARIF, SBOM, OpenVEX, JSON]
-  CLI --> API[Dashboard API]
-  API --> Project[Project record]
-  Project --> Findings[Findings and triage]
-  Project --> Audit[Audit logs]
-  Project --> Integrations[Customer-owned integrations]
+  Dev["Developer workstation"] --> CLI["breachscope scan"]
+  CI["CI workflow"] --> CLI
+  CLI --> Policy["Policy and baseline checks"]
+  Policy --> Evidence["SARIF, SBOM, OpenVEX, JSON"]
+  CLI --> API["Dashboard API"]
+  API --> Project["Project record"]
+  Project --> Findings["Findings and triage"]
+  Project --> Audit["Audit logs"]
+  Project --> Integrations["Customer-owned integrations"]
 ```
 
 ## CI Gates
@@ -109,7 +109,9 @@ Core endpoints:
 | `GET/POST /api/projects` | Project management |
 | `GET/POST /api/policies?projectId=...` | Project policy management |
 | `GET/POST /api/integrations?projectId=...` | Integration records |
+| `PATCH/DELETE /api/integrations` | Update or remove integration records |
 | `POST /api/integrations/test` | Test dispatch for a configured provider |
+| `POST /api/integrations/github/audit` | Run GitHub repository and PR audit and save it as scan evidence |
 | `GET /api/audit-logs?projectId=...` | Project audit trail |
 | `PATCH /api/findings/:id/triage` | Finding status and risk workflow |
 | `GET/POST /api/scim/v2/Users` | SCIM user lifecycle foundation |
@@ -134,6 +136,7 @@ The CLI device-flow key gets `scan:write`, `config:read`, and `settings:write`. 
 
 Provider executors are implemented for:
 
+- GitHub repository audit, PR audit, optional issue creation, optional PR comments
 - Slack
 - Microsoft Teams
 - PagerDuty

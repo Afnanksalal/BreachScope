@@ -147,13 +147,13 @@ Provider accounts and credentials are customer-owned. BreachScope does not provi
 
 ```mermaid
 flowchart LR
-  CLI[BreachScope CLI] -->|scan results| API[Dashboard API]
-  API --> DB[(PostgreSQL)]
-  UI[Next.js Dashboard] --> API
-  API --> Audit[Audit logs]
-  API --> Evidence[SARIF / SBOM / OpenVEX]
-  UserKeys[Customer-owned provider keys] --> Settings[Encrypted settings]
-  Settings --> Routing[Notification and ticket routing]
+  CLI["BreachScope CLI"] --> API["Dashboard API"]
+  UI["Next.js dashboard"] --> API
+  API --> DB["PostgreSQL"]
+  API --> Audit["Audit logs"]
+  API --> Evidence["SARIF, SBOM, OpenVEX"]
+  UserKeys["Customer-owned provider keys"] --> Settings["Encrypted settings"]
+  Settings --> Routing["Notification and ticket routing"]
 ```
 
 ---
@@ -178,6 +178,7 @@ flowchart LR
 - [Sandbox command](docs/commands/sandbox.md)
 - [Model-assisted analysis](docs/ai-agents.md)
 - [Legal docs](docs/legal)
+- [GitHub integration](docs/integrations/github.md)
 - [Supabase integration](docs/integrations/supabase.md)
 - [Vercel integration](docs/integrations/vercel.md)
 - [Security policy](SECURITY.md)

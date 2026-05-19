@@ -37,6 +37,19 @@ breachscope login
 
 The login command opens the dashboard in a browser and stores a local API token under `~/.config/breachscope/credentials.json`. Dashboard-connected scans can push results, use encrypted customer-supplied provider keys, and participate in project-level controls.
 
+## Connect A Repository
+
+Open `Dashboard -> Controls`, create a project, and add a GitHub integration with a customer-owned token. After the connection test passes, run a repository audit or enter a pull request number to save a PR-focused audit as a dashboard scan.
+
+For CLI toolchain scans, add the repository to `breachscope.yaml` or set environment variables:
+
+```yaml
+toolchain:
+  github:
+    token: "" # or GITHUB_TOKEN
+    repo: "owner/repo" # or GITHUB_REPO
+```
+
 ## Configure Defaults
 
 ```bash
@@ -106,3 +119,4 @@ This generates GitHub Actions workflows for pull-request scans, scheduled scans,
 - [Scan command reference](commands/scan.md)
 - [Sandbox command reference](commands/sandbox.md)
 - [Model-assisted analysis](ai-agents.md)
+- [GitHub integration](integrations/github.md)

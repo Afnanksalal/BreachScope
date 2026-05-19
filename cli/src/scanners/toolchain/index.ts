@@ -24,8 +24,9 @@ export async function runToolchainScanner(config: ToolchainConfig): Promise<Find
   }
 
   const githubToken = config.github?.token ?? process.env["GITHUB_TOKEN"];
+  const githubRepo = config.github?.repo ?? process.env["GITHUB_REPO"];
   if (githubToken) {
-    findings.push(...await scanGitHub(githubToken, config.github?.repo));
+    findings.push(...await scanGitHub(githubToken, githubRepo));
   } else {
     logger.debug("GitHub token not configured — skipping");
   }

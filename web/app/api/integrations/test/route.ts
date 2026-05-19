@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { integrations, projects } from "@/lib/schema";
 import { dispatchSecurityNotification } from "@/lib/integration-executors";
+import { decrypt } from "@/lib/crypto";
+import { testGitHubAccess } from "@/lib/github-audit";
 import { and, eq } from "drizzle-orm";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -27,10 +29,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const secret = decryptOptional(row.integration.secretRef);
+  if (row.integration.provider === "github") {
+    const repoFullName = stringConfig(row.integration.config, "repoFullName") || row.project.repositoryUrl || "";
+    if (!secret) return NextResponse.json({ provider: "github", ok: false, status: 400, error: "Missing GitHub token" }, { status: 400 });
+    const result = await testGitHubAccess(secret, repoFullName);
+    return NextResponse.json({
+      provider: "github",
+      ok: result.ok,
+      status: result.status,
+      message: result.message,
+      url: result.htmlUrl,
+    }, { status: result.ok ? 200 : 400 });
+  }
+
   const result = await dispatchSecurityNotification({
     provider: row.integration.provider,
     name: row.integration.name,
     config: row.integration.config,
+    secret,
   }, {
     project: row.project.name,
     title: "BreachScope integration test",
@@ -39,4 +56,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   });
 
   return NextResponse.json(result, { status: result.ok ? 200 : 400 });
+}
+
+function decryptOptional(value: string | null): string | null {
+  if (!value) return null;
+  try { return decrypt(value); } catch { return null; }
+}
+
+function stringConfig(config: Record<string, unknown> | null, key: string): string {
+  const value = config?.[key];
+  return typeof value === "string" ? value : "";
 }

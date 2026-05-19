@@ -11,6 +11,7 @@ export interface IntegrationConfig {
   provider: string;
   name: string;
   config: Record<string, unknown> | null;
+  secret?: string | null;
 }
 
 export interface IntegrationResult {
@@ -30,7 +31,8 @@ export async function dispatchSecurityNotification(
   if (provider === "pagerduty") return postPagerDuty(integration, notification);
   if (provider === "jira") return postJira(integration, notification);
   if (provider === "linear") return postLinear(integration, notification);
-  if (["github", "gitlab", "bitbucket", "saml", "scim"].includes(provider)) {
+  if (provider === "github") return postGitHubIssue(integration, notification);
+  if (["gitlab", "bitbucket", "saml", "scim"].includes(provider)) {
     return { provider, ok: true, status: 204 };
   }
   return { provider, ok: false, status: 400, error: "Unsupported integration provider" };
@@ -41,7 +43,7 @@ async function postWebhook(
   integration: IntegrationConfig,
   payload: Record<string, unknown>
 ): Promise<IntegrationResult> {
-  const webhookUrl = stringConfig(integration.config, "webhookUrl");
+  const webhookUrl = integration.secret || stringConfig(integration.config, "webhookUrl");
   if (!webhookUrl) return { provider, ok: false, status: 400, error: "Missing webhookUrl" };
   const res = await fetch(webhookUrl, {
     method: "POST",
@@ -55,7 +57,7 @@ async function postPagerDuty(
   integration: IntegrationConfig,
   notification: SecurityNotification
 ): Promise<IntegrationResult> {
-  const routingKey = stringConfig(integration.config, "routingKey");
+  const routingKey = integration.secret || stringConfig(integration.config, "routingKey");
   if (!routingKey) return { provider: "pagerduty", ok: false, status: 400, error: "Missing routingKey" };
   const res = await fetch("https://events.pagerduty.com/v2/enqueue", {
     method: "POST",
@@ -81,7 +83,7 @@ async function postJira(
 ): Promise<IntegrationResult> {
   const siteUrl = stringConfig(integration.config, "siteUrl");
   const email = stringConfig(integration.config, "email");
-  const apiToken = stringConfig(integration.config, "apiToken");
+  const apiToken = integration.secret || stringConfig(integration.config, "apiToken");
   const projectKey = stringConfig(integration.config, "projectKey");
   if (!siteUrl || !email || !apiToken || !projectKey) {
     return { provider: "jira", ok: false, status: 400, error: "Missing Jira siteUrl, email, apiToken, or projectKey" };
@@ -112,7 +114,7 @@ async function postLinear(
   integration: IntegrationConfig,
   notification: SecurityNotification
 ): Promise<IntegrationResult> {
-  const apiKey = stringConfig(integration.config, "apiKey");
+  const apiKey = integration.secret || stringConfig(integration.config, "apiKey");
   const teamId = stringConfig(integration.config, "teamId");
   if (!apiKey || !teamId) return { provider: "linear", ok: false, status: 400, error: "Missing Linear apiKey or teamId" };
   const res = await fetch("https://api.linear.app/graphql", {
@@ -133,6 +135,39 @@ async function postLinear(
     }),
   });
   return { provider: "linear", ok: res.ok, status: res.status, error: res.ok ? undefined : await safeText(res) };
+}
+
+async function postGitHubIssue(
+  integration: IntegrationConfig,
+  notification: SecurityNotification
+): Promise<IntegrationResult> {
+  const repoFullName = stringConfig(integration.config, "repoFullName");
+  const token = integration.secret || stringConfig(integration.config, "token");
+  const createIssues = integration.config?.["createIssues"] === true;
+
+  if (!repoFullName || !token) {
+    return { provider: "github", ok: false, status: 400, error: "Missing GitHub repoFullName or token" };
+  }
+  if (!createIssues) {
+    return { provider: "github", ok: true, status: 204 };
+  }
+
+  const res = await fetch(`https://api.github.com/repos/${repoFullName}/issues`, {
+    method: "POST",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2026-03-10",
+    },
+    body: JSON.stringify({
+      title: notification.title.slice(0, 240),
+      body: `${notification.summary}${notification.url ? `\n\n${notification.url}` : ""}`,
+      labels: ["security", "breachscope"],
+    }),
+  });
+
+  return { provider: "github", ok: res.ok, status: res.status, error: res.ok ? undefined : await safeText(res) };
 }
 
 function slackPayload(notification: SecurityNotification): Record<string, unknown> {

@@ -13,6 +13,8 @@ breachscope scan --mode major --url https://app.example.com
 
 The dashboard can store customer-supplied OpenAI and Firecrawl keys. API keys need `secrets:read` to retrieve those encrypted values.
 
+GitHub repository audits also use the configured OpenAI key when available. Without it, BreachScope still creates a deterministic summary from the repository and pull request signals.
+
 ## Agent Roles
 
 | Agent | Role |
