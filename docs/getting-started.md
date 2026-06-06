@@ -4,7 +4,7 @@ This guide gets BreachScope running locally, connected to the dashboard, and rea
 
 ## Prerequisites
 
-- Node.js 18 or higher
+- Node.js 20.19 or higher
 - npm, pnpm, yarn, or bun
 - Docker Desktop for `breachscope sandbox`
 - Optional: customer-owned OpenAI and Firecrawl keys for model-assisted analysis and web research
@@ -35,7 +35,7 @@ BreachScope auto-detects manifests, source files, lockfiles, and supported servi
 breachscope login
 ```
 
-The login command opens the dashboard in a browser and stores a local API token under `~/.config/breachscope/credentials.json`. Dashboard-connected scans can push results, use encrypted customer-supplied provider keys, and participate in project-level controls.
+The login command opens the dashboard in a browser and stores a local API token under `~/.config/breachscope/credentials.json`. Dashboard-connected scans can push results, use encrypted customer-supplied provider keys, and participate in project-level controls. Use `--no-upload` on `scan` or `sandbox` when authenticated runs should stay local.
 
 ## Connect A Repository
 
@@ -110,7 +110,7 @@ Sandbox secret handling is safe by default: `.env` files are excluded from model
 breachscope init-ci
 ```
 
-This generates GitHub Actions workflows for pull-request scans, scheduled scans, sandbox scans, and safe Dependabot automation.
+This generates GitHub Actions workflows for pull-request scans, scheduled scans, sandbox scans, and safe Dependabot automation. Set `BREACHSCOPE_API_KEY` in repository secrets, and set `BREACHSCOPE_DASHBOARD_URL` if your dashboard is self-hosted.
 
 ## Next Steps
 

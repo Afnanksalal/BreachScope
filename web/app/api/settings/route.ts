@@ -66,16 +66,28 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   if (typeof payload.firecrawlKey === "string" && payload.firecrawlKey.trim()) {
     updates.firecrawlKeyEnc = encrypt(payload.firecrawlKey.trim());
   }
-  if (typeof payload.defaultMode === "string" && ["basic", "major", "deep"].includes(payload.defaultMode)) {
+  if ("defaultMode" in payload) {
+    if (typeof payload.defaultMode !== "string" || !["basic", "major", "deep"].includes(payload.defaultMode)) {
+      return NextResponse.json({ error: "Invalid defaultMode" }, { status: 400 });
+    }
     updates.defaultMode = payload.defaultMode;
   }
-  if (typeof payload.defaultScanMode === "string" && ["all", "breach", "bug"].includes(payload.defaultScanMode)) {
+  if ("defaultScanMode" in payload) {
+    if (typeof payload.defaultScanMode !== "string" || !["all", "breach", "bug"].includes(payload.defaultScanMode)) {
+      return NextResponse.json({ error: "Invalid defaultScanMode" }, { status: 400 });
+    }
     updates.defaultScanMode = payload.defaultScanMode;
   }
-  if (typeof payload.sandboxScanMode === "string" && ["all", "breach", "bug"].includes(payload.sandboxScanMode)) {
+  if ("sandboxScanMode" in payload) {
+    if (typeof payload.sandboxScanMode !== "string" || !["all", "breach", "bug", "full"].includes(payload.sandboxScanMode)) {
+      return NextResponse.json({ error: "Invalid sandboxScanMode" }, { status: 400 });
+    }
     updates.sandboxScanMode = payload.sandboxScanMode;
   }
-  if (typeof payload.sandboxDeep === "boolean") {
+  if ("sandboxDeep" in payload) {
+    if (typeof payload.sandboxDeep !== "boolean") {
+      return NextResponse.json({ error: "Invalid sandboxDeep" }, { status: 400 });
+    }
     updates.sandboxDeep = payload.sandboxDeep ? "true" : "false";
   }
 

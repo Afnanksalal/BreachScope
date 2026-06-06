@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cliAuthStates } from "@/lib/schema";
-import { eq, and, isNull } from "drizzle-orm";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,9 +26,9 @@ export async function GET(req: NextRequest): Promise<NextResponse<PollResponse |
 
   const [record] = await db
     .select({
-      token:     cliAuthStates.token,
+      token: cliAuthStates.token,
       expiresAt: cliAuthStates.expiresAt,
-      usedAt:    cliAuthStates.usedAt,
+      usedAt: cliAuthStates.usedAt,
     })
     .from(cliAuthStates)
     .where(eq(cliAuthStates.state, state))
@@ -50,16 +50,25 @@ export async function GET(req: NextRequest): Promise<NextResponse<PollResponse |
     return NextResponse.json({ status: "authorization_pending" }, { status: 202 });
   }
 
-  // Atomically mark the device flow as used so parallel poll requests cannot replay the token.
   const [consumed] = await db
     .update(cliAuthStates)
     .set({ usedAt: new Date() })
-    .where(and(eq(cliAuthStates.state, state), isNull(cliAuthStates.usedAt)))
+    .where(and(
+      eq(cliAuthStates.state, state),
+      isNull(cliAuthStates.usedAt),
+      isNotNull(cliAuthStates.token),
+      gt(cliAuthStates.expiresAt, new Date())
+    ))
     .returning({ token: cliAuthStates.token });
 
   if (!consumed?.token) {
     return NextResponse.json({ status: "expired" }, { status: 410 });
   }
+
+  await db
+    .update(cliAuthStates)
+    .set({ token: null })
+    .where(eq(cliAuthStates.state, state));
 
   return NextResponse.json({ status: "complete", token: consumed.token });
 }

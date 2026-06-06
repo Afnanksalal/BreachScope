@@ -7,7 +7,8 @@ import { useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import { motion } from "framer-motion";
 
-type Status = "loading" | "unauthenticated" | "authenticating" | "complete" | "error";
+type Status = "loading" | "unauthenticated" | "ready" | "authenticating" | "complete" | "error";
+type OAuthProvider = "github" | "google";
 
 export default function CliAuthPage() {
   return (
@@ -23,15 +24,30 @@ function CliAuthContent() {
   const { data: session, status } = useSession();
   const [pageStatus, setPageStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
 
-  const completeCliAuth = useCallback(async (userId: string) => {
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/auth/providers")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data: unknown) => {
+        if (!mounted || typeof data !== "object" || data === null) return;
+        const providers = Object.keys(data as Record<string, unknown>)
+          .filter((provider): provider is OAuthProvider => provider === "github" || provider === "google");
+        setOauthProviders(providers);
+      })
+      .catch(() => undefined);
+    return () => { mounted = false; };
+  }, []);
+
+  const completeCliAuth = useCallback(async () => {
+    if (!state) return;
     setPageStatus("authenticating");
     try {
-      // Generate a CLI token tied to this state
       const res = await fetch("/api/cli/auth/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state, userId }),
+        body: JSON.stringify({ state }),
       });
 
       if (!res.ok) {
@@ -63,14 +79,14 @@ function CliAuthContent() {
     }
 
     if (status === "authenticated" && session?.user?.id) {
-      completeCliAuth(session.user.id);
+      setPageStatus("ready");
     }
-  }, [status, session, state, completeCliAuth]);
+  }, [status, session, state]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-0 px-4 py-10 sm:px-6">
       {/* Background radial */}
-      <div className="absolute inset-0 bg-radial-surface pointer-events-none" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(220,38,38,0.16),transparent_34%),radial-gradient(circle_at_50%_100%,rgba(255,255,255,0.08),transparent_28%)]" />
 
       <motion.div
         initial={{ opacity: 0, y: 24 }}
@@ -79,14 +95,15 @@ function CliAuthContent() {
         className="relative w-full max-w-md"
       >
         {/* Card */}
-        <div className="border-glow rounded-lg bg-surface-50/80 p-5 backdrop-blur-sm sm:p-8">
+        <div className="rounded-lg border border-white/[0.10] bg-surface-50/80 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-sm sm:p-8">
           {/* Logo */}
           <div className="mb-8">
             <span className="font-serif italic text-lg text-white">BreachScope</span>
           </div>
 
           {pageStatus === "loading" && <LoadingState />}
-          {pageStatus === "unauthenticated" && <SignInState />}
+          {pageStatus === "unauthenticated" && <SignInState providers={oauthProviders} />}
+          {pageStatus === "ready" && <AuthorizeState onAuthorize={completeCliAuth} />}
           {pageStatus === "authenticating" && <AuthenticatingState />}
           {pageStatus === "complete" && <CompleteState />}
           {pageStatus === "error" && <ErrorState message={error ?? "Unknown error"} />}
@@ -111,7 +128,7 @@ function LoadingState() {
   );
 }
 
-function SignInState() {
+function SignInState({ providers }: { providers: OAuthProvider[] }) {
   return (
     <div>
       <h1 className="text-2xl font-serif italic text-white mb-2">Sign in to continue</h1>
@@ -119,21 +136,52 @@ function SignInState() {
         Authorize the BreachScope CLI to access your account.
       </p>
       <div className="space-y-3">
-        <button
-          onClick={() => signIn("github", { callbackUrl: window.location.href })}
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-white/8 border border-white/10 text-white/80 text-sm font-medium hover:bg-white/12 hover:border-white/20 transition-all"
-        >
-          <GithubIcon />
-          Continue with GitHub
-        </button>
-        <button
-          onClick={() => signIn("google", { callbackUrl: window.location.href })}
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-white/8 border border-white/10 text-white/80 text-sm font-medium hover:bg-white/12 hover:border-white/20 transition-all"
-        >
-          <GoogleIcon />
-          Continue with Google
-        </button>
+        {providers.includes("github") && (
+          <button
+            onClick={() => signIn("github", { callbackUrl: window.location.href })}
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-white/[0.08] border border-white/10 text-white/80 text-sm font-medium hover:bg-white/[0.12] hover:border-white/20 transition-all"
+          >
+            <GithubIcon />
+            Continue with GitHub
+          </button>
+        )}
+        {providers.includes("google") && (
+          <button
+            onClick={() => signIn("google", { callbackUrl: window.location.href })}
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-white/[0.08] border border-white/10 text-white/80 text-sm font-medium hover:bg-white/[0.12] hover:border-white/20 transition-all"
+          >
+            <GoogleIcon />
+            Continue with Google
+          </button>
+        )}
+        {providers.length === 0 && (
+          <button
+            type="button"
+            onClick={() => { window.location.href = `/login?callbackUrl=${encodeURIComponent(window.location.href)}`; }}
+            className="w-full rounded-lg bg-white px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-white/40"
+          >
+            Continue to sign in
+          </button>
+        )}
       </div>
+    </div>
+  );
+}
+
+function AuthorizeState({ onAuthorize }: { onAuthorize: () => void }) {
+  return (
+    <div>
+      <h1 className="text-2xl font-serif italic text-white mb-2">Authorize CLI access</h1>
+      <p className="text-white/45 text-sm mb-8">
+        This creates a scoped BreachScope CLI key for this device.
+      </p>
+      <button
+        type="button"
+        onClick={onAuthorize}
+        className="w-full rounded-lg bg-white px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-white/40"
+      >
+        Authorize BreachScope CLI
+      </button>
     </div>
   );
 }

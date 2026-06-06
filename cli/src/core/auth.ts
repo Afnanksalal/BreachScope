@@ -4,6 +4,7 @@ import os from "os";
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "breachscope");
 const CREDS_FILE = path.join(CONFIG_DIR, "credentials.json");
+export const DEFAULT_DASHBOARD_URL = "https://breachscope.vercel.app";
 
 interface Credentials {
   token: string;
@@ -33,6 +34,18 @@ export function loadCredentials(): Credentials | null {
   }
 }
 
+export function resolveCredentials(): Credentials | null {
+  const token = process.env.BREACHSCOPE_API_KEY || process.env.BS_API_KEY;
+  if (token?.trim()) {
+    return {
+      token: token.trim(),
+      dashboardUrl: normalizeDashboardUrl(process.env.BREACHSCOPE_DASHBOARD_URL || DEFAULT_DASHBOARD_URL),
+      savedAt: "env",
+    };
+  }
+  return loadCredentials();
+}
+
 export function clearCredentials() {
   if (fs.existsSync(CREDS_FILE)) {
     fs.unlinkSync(CREDS_FILE);
@@ -40,5 +53,9 @@ export function clearCredentials() {
 }
 
 export function isAuthenticated(): boolean {
-  return loadCredentials() !== null;
+  return resolveCredentials() !== null;
+}
+
+function normalizeDashboardUrl(value: string): string {
+  return value.replace(/\/+$/, "");
 }

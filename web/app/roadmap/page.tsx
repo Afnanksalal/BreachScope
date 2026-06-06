@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
+import { APP_URL } from "@/lib/site";
 
-const APP_URL = "https://breachscoope.vercel.app";
 const LLM_ALTERNATES = {
   "text/plain": `${APP_URL}/llms.txt`,
   "text/plain; profile=llms-full": `${APP_URL}/llms-full.txt`,

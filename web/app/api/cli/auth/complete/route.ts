@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { cliAuthStates, apiKeys } from "@/lib/schema";
 import { generateApiKey } from "@/lib/api-keys";
-import { eq, and, isNull, gt } from "drizzle-orm";
+import { apiKeys, cliAuthStates } from "@/lib/schema";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -23,25 +23,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Missing or invalid state" }, { status: 400 });
   }
 
-  // Atomically mark the state as used — prevents duplicate key generation
-  // if the page loads twice (Strict Mode, retry, etc.)
-  const updated = await db
+  const [claimed] = await db
     .update(cliAuthStates)
-    .set({ userId: session.user.id, usedAt: new Date() })
+    .set({ userId: session.user.id })
     .where(
       and(
         eq(cliAuthStates.state, state),
+        isNull(cliAuthStates.userId),
+        isNull(cliAuthStates.token),
         isNull(cliAuthStates.usedAt),
         gt(cliAuthStates.expiresAt, new Date())
       )
     )
     .returning({ id: cliAuthStates.id });
 
-  if (updated.length === 0) {
+  if (!claimed) {
     return NextResponse.json({ error: "State expired, already used, or invalid" }, { status: 410 });
   }
 
-  // Revoke any existing CLI device-flow keys for this user so we never accumulate them
   await db
     .update(apiKeys)
     .set({ revokedAt: new Date() })
@@ -56,18 +55,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { fullKey, prefix, hash } = generateApiKey();
 
   await db.insert(apiKeys).values({
-    userId:    session.user.id,
-    name:      "CLI (device flow)",
-    scopes:    ["scan:write", "config:read", "settings:write"],
-    keyHash:   hash,
+    userId: session.user.id,
+    name: "CLI (device flow)",
+    scopes: ["scan:write", "config:read", "settings:write"],
+    keyHash: hash,
     keyPrefix: prefix,
   });
 
-  // Store the token so the polling endpoint can return it once
   await db
     .update(cliAuthStates)
     .set({ token: fullKey })
-    .where(eq(cliAuthStates.state, state));
+    .where(and(eq(cliAuthStates.state, state), isNull(cliAuthStates.usedAt)));
 
   return NextResponse.json({ ok: true });
 }

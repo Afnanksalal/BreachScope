@@ -5,9 +5,11 @@ import { auditLogs, integrations, projects } from "@/lib/schema";
 import { encrypt } from "@/lib/crypto";
 import { parseGitHubRepo } from "@/lib/github-audit";
 import { canManageProject, getProjectForUser } from "@/lib/access-control";
+import { normalizeOutboundUrl } from "@/lib/outbound-url";
 import { eq } from "drizzle-orm";
 
-const PROVIDERS = new Set(["github", "gitlab", "bitbucket", "jira", "linear", "slack", "teams", "pagerduty", "saml", "scim"]);
+const IDENTITY_PROVIDERS = process.env.ENABLE_IDENTITY_INTEGRATIONS === "true" ? ["saml", "scim"] : [];
+const PROVIDERS = new Set(["github", "gitlab", "bitbucket", "jira", "linear", "slack", "teams", "pagerduty", ...IDENTITY_PROVIDERS]);
 const SECRET_KEYS = new Set(["secret", "token", "apiToken", "webhookUrl", "routingKey", "accessToken", "pat"]);
 
 interface SanitizedIntegration {
@@ -64,7 +66,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const rawConfig = objectBody(body, "config");
   const secret = extractSecret(body, rawConfig);
-  const config = normalizeProviderConfig(provider, rawConfig, project.repositoryUrl, project.defaultBranch);
+  const config = tryNormalizeProviderConfig(provider, rawConfig, project.repositoryUrl, project.defaultBranch);
+  if (isConfigError(config)) return NextResponse.json({ error: config.error }, { status: 400 });
   const validationError = validateProviderConfig(provider, config);
   if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
@@ -104,7 +107,8 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   const rawConfig = objectBody(body, "config");
   const mergedConfig = { ...(row.integration.config ?? {}), ...rawConfig };
   const secret = extractSecret(body, rawConfig);
-  const config = normalizeProviderConfig(row.integration.provider, mergedConfig, row.project.repositoryUrl, row.project.defaultBranch);
+  const config = tryNormalizeProviderConfig(row.integration.provider, mergedConfig, row.project.repositoryUrl, row.project.defaultBranch);
+  if (isConfigError(config)) return NextResponse.json({ error: config.error }, { status: 400 });
   const validationError = validateProviderConfig(row.integration.provider, config);
   if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
@@ -153,6 +157,7 @@ async function ownsProject(userId: string, projectId: string): Promise<boolean> 
 }
 
 async function getOwnedProject(userId: string, projectId: string) {
+  if (!await canManageProject(userId, projectId)) return null;
   return getProjectForUser(userId, projectId);
 }
 
@@ -215,7 +220,7 @@ function normalizeProviderConfig(
   }
   if (provider === "gitlab") {
     return {
-      instanceUrl: trimUrl(stringConfig(clean, "instanceUrl")) || "https://gitlab.com",
+      instanceUrl: normalizeHttpsConfig(stringConfig(clean, "instanceUrl") || "https://gitlab.com", "GitLab instance URL"),
       projectPath: stringConfig(clean, "projectPath") || parseGitHubRepo(projectRepositoryUrl || ""),
       createIssues: clean["createIssues"] !== false,
       labels: arrayConfig(clean, "labels").slice(0, 10),
@@ -234,7 +239,7 @@ function normalizeProviderConfig(
   }
   if (provider === "jira") {
     return {
-      siteUrl: trimUrl(stringConfig(clean, "siteUrl")),
+      siteUrl: normalizeHttpsConfig(stringConfig(clean, "siteUrl"), "Jira site URL"),
       email: stringConfig(clean, "email"),
       projectKey: stringConfig(clean, "projectKey").toUpperCase(),
       issueType: stringConfig(clean, "issueType") || "Bug",
@@ -257,6 +262,23 @@ function normalizeProviderConfig(
   if (provider === "saml") return { entityId: stringConfig(clean, "entityId"), ssoUrl: trimUrl(stringConfig(clean, "ssoUrl")) };
   if (provider === "scim") return { tenant: stringConfig(clean, "tenant") };
   return clean;
+}
+
+function tryNormalizeProviderConfig(
+  provider: string,
+  config: Record<string, unknown>,
+  projectRepositoryUrl?: string | null,
+  projectDefaultBranch?: string | null,
+): Record<string, unknown> | { error: string } {
+  try {
+    return normalizeProviderConfig(provider, config, projectRepositoryUrl, projectDefaultBranch);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Invalid integration configuration" };
+  }
+}
+
+function isConfigError(value: Record<string, unknown> | { error: string }): value is { error: string } {
+  return typeof (value as { error?: unknown }).error === "string" && Object.keys(value).length === 1;
 }
 
 function validateProviderConfig(provider: string, config: Record<string, unknown>): string | null {
@@ -327,6 +349,11 @@ function parseRepoParts(value: string): { owner: string; repo: string } {
 
 function trimUrl(value: string): string {
   return value.replace(/\/+$/, "");
+}
+
+function normalizeHttpsConfig(value: string, label: string): string {
+  if (!value) return "";
+  return trimUrl(normalizeOutboundUrl(value, { label, requireHttps: true }));
 }
 
 function removeSecretKeys(config: Record<string, unknown>): Record<string, unknown> {

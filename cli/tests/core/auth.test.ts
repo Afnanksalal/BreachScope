@@ -35,9 +35,12 @@ function setupFs(fileExists: boolean, fileContent?: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  delete process.env.BREACHSCOPE_API_KEY;
+  delete process.env.BS_API_KEY;
+  delete process.env.BREACHSCOPE_DASHBOARD_URL;
 });
 
-import { saveCredentials, loadCredentials, clearCredentials, isAuthenticated }
+import { DEFAULT_DASHBOARD_URL, saveCredentials, loadCredentials, resolveCredentials, clearCredentials, isAuthenticated }
   from "../../src/core/auth.js";
 
 // ─── saveCredentials ──────────────────────────────────────────────────────────
@@ -106,6 +109,27 @@ describe("loadCredentials", () => {
 });
 
 // ─── clearCredentials ─────────────────────────────────────────────────────────
+
+describe("resolveCredentials", () => {
+  it("prefers BREACHSCOPE_API_KEY for CI environments", () => {
+    setupFs(false);
+    process.env.BREACHSCOPE_API_KEY = "bs_live_env";
+    process.env.BREACHSCOPE_DASHBOARD_URL = "https://app.breachscope.test/";
+
+    expect(resolveCredentials()).toEqual({
+      token: "bs_live_env",
+      dashboardUrl: "https://app.breachscope.test",
+      savedAt: "env",
+    });
+  });
+
+  it("uses the default dashboard URL for env tokens without an override", () => {
+    setupFs(false);
+    process.env.BREACHSCOPE_API_KEY = "bs_live_env";
+
+    expect(resolveCredentials()?.dashboardUrl).toBe(DEFAULT_DASHBOARD_URL);
+  });
+});
 
 describe("clearCredentials", () => {
   it("removes credentials file when it exists", () => {

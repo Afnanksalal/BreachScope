@@ -15,6 +15,7 @@ const SEVERITY_COLOR: Record<Severity, (s: string) => string> = {
 
 export function renderConsoleReport(result: ScanResult): void {
   const { findings, summary } = result;
+  const triage = getTriageMetadata(result);
 
   logger.blank();
   console.log(chalk.bold.white("━".repeat(60)));
@@ -22,7 +23,10 @@ export function renderConsoleReport(result: ScanResult): void {
   console.log(chalk.bold.white("━".repeat(60)));
 
   if (findings.length === 0) {
-    console.log(chalk.green("\n  ✓ No issues detected.\n"));
+    const hiddenText = triage && (triage.review > 0 || triage.hidden > 0)
+      ? chalk.gray(` ${triage.review} review item(s), ${triage.hidden} hidden noise item(s).`)
+      : "";
+    console.log(chalk.green("\n  ✓ No actionable issues detected.") + hiddenText + "\n");
     return;
   }
 
@@ -32,6 +36,12 @@ export function renderConsoleReport(result: ScanResult): void {
     .filter((s) => summary[s] > 0)
     .map((s) => SEVERITY_COLOR[s](` ${summary[s]} ${s.toUpperCase()} `));
   console.log("  " + summaryParts.join("  "));
+  if (triage && (triage.review > 0 || triage.hidden > 0)) {
+    console.log(chalk.gray(`  Triage: ${triage.review} review item(s), ${triage.hidden} hidden by default. Use --show-noise to include all findings or --all-cves for suppressed CVE detail.`));
+    for (const title of triage.reviewTitles.slice(0, 5)) {
+      console.log(chalk.gray(`    review: ${title}`));
+    }
+  }
   console.log();
 
   // Group by severity
@@ -73,11 +83,35 @@ function renderFinding(f: Finding): void {
   console.log(`  ${chalk.bold(f.title)}`);
   if (f.file) console.log(`  ${chalk.gray("File:")} ${f.file}${f.line ? `:${f.line}` : ""}`);
   if (f.tool) console.log(`  ${chalk.gray("Tool:")} ${f.tool}`);
+  if (f.triageDecision || f.confidence || f.evidenceStrength) {
+    const bits = [
+      f.triageDecision ? `triage=${f.triageDecision}` : null,
+      f.confidence ? `confidence=${f.confidence}` : null,
+      f.evidenceStrength ? `evidence=${f.evidenceStrength}` : null,
+    ].filter(Boolean);
+    console.log(`  ${chalk.gray("Signal:")} ${bits.join(" | ")}`);
+  }
   console.log(`  ${chalk.gray("Desc:")} ${f.description}`);
+  if (f.triageReason) console.log(`  ${chalk.gray("Reason:")} ${f.triageReason}`);
   if (f.detail) console.log(`  ${chalk.gray("Code:")} ${chalk.italic(f.detail)}`);
   if (f.remediation) console.log(`  ${chalk.green("Fix: ")} ${f.remediation}`);
   if (f.references?.length) {
     console.log(`  ${chalk.blue("Refs:")} ${f.references.join(", ")}`);
   }
   console.log();
+}
+
+function getTriageMetadata(result: ScanResult): { review: number; hidden: number; reviewTitles: string[] } | null {
+  const governance = result.metadata["governance"];
+  if (!governance || typeof governance !== "object") return null;
+  const triage = (governance as Record<string, unknown>)["triage"];
+  if (!triage || typeof triage !== "object") return null;
+  const record = triage as Record<string, unknown>;
+  const review = typeof record["review"] === "number" ? record["review"] : 0;
+  const hidden = typeof record["hidden"] === "number" ? record["hidden"] : 0;
+  const reviewFindings = Array.isArray(record["reviewFindings"]) ? record["reviewFindings"] : [];
+  const reviewTitles = reviewFindings
+    .map((item) => typeof item === "object" && item !== null ? (item as Record<string, unknown>)["title"] : null)
+    .filter((title): title is string => typeof title === "string");
+  return { review, hidden, reviewTitles };
 }

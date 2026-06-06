@@ -1,8 +1,10 @@
 import path from "path";
-import { loadCredentials } from "./auth.js";
+import { resolveCredentials } from "./auth.js";
 import { logger } from "./logger.js";
 import type { Finding, ScanResult } from "./types.js";
 import type { AttackLogEntry, SandboxMemorySnapshot } from "../agents/sandbox-agent.js";
+
+const DASHBOARD_PUSH_TIMEOUT_MS = 10000;
 
 export interface ToolRiskEntry {
   name: string;
@@ -45,7 +47,7 @@ export async function pushScanToDashboard(
     aiReport?: string;
   }
 ): Promise<string | null> {
-  const creds = loadCredentials();
+  const creds = resolveCredentials();
   if (!creds) return null;
 
   const project = path.basename(result.target);
@@ -67,7 +69,7 @@ export async function pushScanToDashboard(
       severity:    f.severity,
       category:    f.category,
       description: f.description,
-      detail:      f.detail      ?? undefined,
+      detail:      formatFindingDetail(f),
       remediation: f.remediation ?? undefined,
       tool:        f.tool        ?? undefined,
       file:        f.file        ?? undefined,
@@ -88,6 +90,7 @@ export async function pushScanToDashboard(
         "Authorization": `Bearer ${creds.token}`,
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(DASHBOARD_PUSH_TIMEOUT_MS),
     });
 
     if (!res.ok) {
@@ -102,4 +105,17 @@ export async function pushScanToDashboard(
     logger.debug(`Dashboard push error: ${e}`);
     return null;
   }
+}
+
+function formatFindingDetail(finding: Finding): string | undefined {
+  const triage = [
+    finding.triageDecision ? `Triage: ${finding.triageDecision}` : null,
+    finding.triageReason ? `Reason: ${finding.triageReason}` : null,
+    finding.confidence ? `Confidence: ${finding.confidence}` : null,
+    finding.evidenceStrength ? `Evidence: ${finding.evidenceStrength}` : null,
+    finding.signals?.length ? `Signals: ${finding.signals.join(", ")}` : null,
+  ].filter(Boolean).join("\n");
+
+  const detail = [finding.detail, triage || null].filter(Boolean).join("\n\n");
+  return detail || undefined;
 }

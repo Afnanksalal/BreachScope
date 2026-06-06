@@ -1,3 +1,5 @@
+import { safeOutboundFetch } from "./outbound-url";
+
 export type SecuritySeverity = "critical" | "high" | "medium" | "low" | "info";
 
 export interface SecurityFindingSummary {
@@ -72,12 +74,16 @@ async function postWebhook(
 ): Promise<IntegrationResult> {
   const webhookUrl = integration.secret || stringConfig(integration.config, "webhookUrl");
   if (!webhookUrl) return { provider, ok: false, status: 400, action: "notification", error: "Missing webhookUrl" };
-  const res = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return { provider, ok: res.ok, status: res.status, action: "notification", error: res.ok ? undefined : await safeText(res) };
+  try {
+    const res = await safeOutboundFetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }, { label: `${provider} webhook URL` });
+    return { provider, ok: res.ok, status: res.status, action: "notification", error: res.ok ? undefined : await safeText(res) };
+  } catch (error) {
+    return { provider, ok: false, status: 400, action: "notification", error: errorMessage(error) };
+  }
 }
 
 async function postPagerDuty(
@@ -143,14 +149,19 @@ async function postJira(
   const priorityName = stringConfig(integration.config, "priorityName") || jiraPriority(notification.severity);
   if (priorityName) fields["priority"] = { name: priorityName };
 
-  const res = await fetch(`${siteUrl.replace(/\/$/, "")}/rest/api/3/issue`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${email}:${apiToken}`).toString("base64")}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ fields }),
-  });
+  let res: Response;
+  try {
+    res = await safeOutboundFetch(`${siteUrl.replace(/\/$/, "")}/rest/api/3/issue`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${email}:${apiToken}`).toString("base64")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ fields }),
+    }, { label: "Jira site URL" });
+  } catch (error) {
+    return { provider: "jira", ok: false, status: 400, action: "issue", error: errorMessage(error) };
+  }
   const body = await safeJson(res);
   const key = stringValue(body?.["key"]);
   return {
@@ -266,19 +277,24 @@ async function postGitLabIssue(
     return { provider: "gitlab", ok: true, status: 204, action: "skipped", skipped: true, error: "Issue creation is disabled for this integration." };
   }
 
-  const res = await fetch(`${instanceUrl.replace(/\/$/, "")}/api/v4/projects/${encodeURIComponent(projectPath)}/issues`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "PRIVATE-TOKEN": token,
-    },
-    body: JSON.stringify({
-      title: notification.title.slice(0, 240),
-      description: markdownDescription(notification),
-      labels: mergeLabels(arrayConfig(integration.config, "labels"), ["security", "breachscope"]).join(","),
-      issue_type: "issue",
-    }),
-  });
+  let res: Response;
+  try {
+    res = await safeOutboundFetch(`${instanceUrl.replace(/\/$/, "")}/api/v4/projects/${encodeURIComponent(projectPath)}/issues`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "PRIVATE-TOKEN": token,
+      },
+      body: JSON.stringify({
+        title: notification.title.slice(0, 240),
+        description: markdownDescription(notification),
+        labels: mergeLabels(arrayConfig(integration.config, "labels"), ["security", "breachscope"]).join(","),
+        issue_type: "issue",
+      }),
+    }, { label: "GitLab instance URL" });
+  } catch (error) {
+    return { provider: "gitlab", ok: false, status: 400, action: "issue", error: errorMessage(error) };
+  }
   const body = await safeJson(res);
   return {
     provider: "gitlab",
@@ -511,5 +527,10 @@ async function safeJson(res: Response): Promise<Record<string, unknown> | null> 
 }
 
 async function safeText(res: Response): Promise<string> {
-  return (await res.clone().text().catch(() => "")).slice(0, 500);
+  await res.clone().text().catch(() => "");
+  return `Provider returned HTTP ${res.status}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Outbound provider request was blocked";
 }

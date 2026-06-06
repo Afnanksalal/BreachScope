@@ -1,4 +1,4 @@
-import { loadCredentials } from "./auth.js";
+import { resolveCredentials } from "./auth.js";
 import { logger } from "./logger.js";
 
 export interface RemoteConfig {
@@ -20,16 +20,18 @@ function isRemoteConfig(v: unknown): v is RemoteConfig {
 }
 
 let cached: RemoteConfig | null = null;
+const REMOTE_CONFIG_TIMEOUT_MS = 5000;
 
 export async function fetchRemoteConfig(): Promise<RemoteConfig | null> {
   if (cached) return cached;
 
-  const creds = loadCredentials();
+  const creds = resolveCredentials();
   if (!creds) return null;
 
   try {
     const res = await fetch(`${creds.dashboardUrl}/api/cli/config`, {
       headers: { Authorization: `Bearer ${creds.token}` },
+      signal: AbortSignal.timeout(REMOTE_CONFIG_TIMEOUT_MS),
     });
 
     if (!res.ok) {
@@ -58,7 +60,7 @@ export function clearRemoteConfigCache(): void {
 }
 
 export async function syncRemoteConfig(mode: string, scanMode: string): Promise<void> {
-  const creds = loadCredentials();
+  const creds = resolveCredentials();
   if (!creds) return;
 
   try {
@@ -69,6 +71,7 @@ export async function syncRemoteConfig(mode: string, scanMode: string): Promise<
         "Authorization": `Bearer ${creds.token}`,
       },
       body: JSON.stringify({ defaultMode: mode, defaultScanMode: scanMode }),
+      signal: AbortSignal.timeout(REMOTE_CONFIG_TIMEOUT_MS),
     });
   } catch {
     // fire-and-forget — never block a scan over this

@@ -2,11 +2,11 @@
 
 This file is for crawlers, AI agents, documentation indexers, and web scrapers that need public information about BreachScope without accessing private dashboard data.
 
-Canonical product URL: https://breachscoope.vercel.app
-Documentation URL: https://breachscoope.vercel.app/docs
-Roadmap URL: https://breachscoope.vercel.app/roadmap
-Legal center URL: https://breachscoope.vercel.app/legal
-Security policy URL: https://breachscoope.vercel.app/security
+Canonical product URL: https://breachscope.vercel.app
+Documentation URL: https://breachscope.vercel.app/docs
+Roadmap URL: https://breachscope.vercel.app/roadmap
+Legal center URL: https://breachscope.vercel.app/legal
+Security policy URL: https://breachscope.vercel.app/security
 Repository URL: https://github.com/Afnanksalal/BreachScope
 Package name: breachscope
 License: MIT
@@ -220,4 +220,4 @@ Evidence formats: SARIF, CycloneDX SBOM, SPDX SBOM, OpenVEX, JSON, Markdown, PDF
 Crawler files: robots.txt, sitemap.xml, llms.txt, llms-full.txt
 Public routes: /, /docs, /roadmap, /legal, /terms, /privacy, /acceptable-use, /data-protection, /security
 Private routes: /dashboard, /api, /cli-auth, /login
-Canonical origin: https://breachscoope.vercel.app
+Canonical origin: https://breachscope.vercel.app

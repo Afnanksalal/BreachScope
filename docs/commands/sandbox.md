@@ -23,6 +23,7 @@ bs sandbox [options]
 | `--include-secrets` | off | Include `.env` files and local secrets in the sandbox context |
 | `--ci` | off | Exit non-zero on high or critical sandbox findings |
 | `--no-cleanup` | off | Keep the container after the scan |
+| `--no-upload` | off | Keep sandbox results local even when dashboard credentials are configured |
 | `-u, --url <url>` | none | URL context for dashboard reporting |
 | `-o, --output <format>` | `console` | `console` or `json` |
 | `-f, --file <path>` | none | Write results to file |
@@ -54,6 +55,9 @@ breachscope sandbox --bug --ci
 
 # Keep the container for manual inspection
 breachscope sandbox --no-cleanup
+
+# Authenticated local-only sandbox run
+breachscope sandbox --no-upload
 ```
 
 ## What It Produces

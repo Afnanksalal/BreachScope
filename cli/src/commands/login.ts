@@ -1,13 +1,17 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
-import { randomUUID } from "crypto";
-import { saveCredentials, loadCredentials, clearCredentials } from "../core/auth.js";
+import {
+  DEFAULT_DASHBOARD_URL,
+  clearCredentials,
+  loadCredentials,
+  resolveCredentials,
+  saveCredentials,
+} from "../core/auth.js";
 import { logger } from "../core/logger.js";
 
-const DASHBOARD_URL = process.env.BREACHSCOPE_DASHBOARD_URL ?? "https://breachscoope.vercel.app";
 const POLL_INTERVAL_MS = 2000;
-const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
 async function openBrowser(url: string) {
   const { default: open } = await import("open").catch(() => ({ default: null }));
@@ -22,11 +26,12 @@ export function makeLoginCommand(): Command {
   return new Command("login")
     .description("Authenticate the CLI with your BreachScope dashboard")
     .option("--token <token>", "Authenticate directly with an API key (skip browser flow)")
-    .option("--dashboard <url>", "Dashboard URL (default: https://breachscoope.vercel.app)")
+    .option("--dashboard <url>", `Dashboard URL (default: ${DEFAULT_DASHBOARD_URL})`)
     .action(async (opts) => {
-      const dashboardUrl = opts.dashboard ?? DASHBOARD_URL;
+      const dashboardUrl = normalizeDashboardUrl(
+        opts.dashboard ?? process.env.BREACHSCOPE_DASHBOARD_URL ?? DEFAULT_DASHBOARD_URL
+      );
 
-      // Direct token flow
       if (opts.token) {
         saveCredentials(opts.token, dashboardUrl);
         logger.success("Authenticated with provided API key.");
@@ -34,24 +39,20 @@ export function makeLoginCommand(): Command {
         return;
       }
 
-      // Check existing credentials
       const existing = loadCredentials();
       if (existing) {
         logger.info("Already authenticated. Run `breachscope logout` first to switch accounts.");
         return;
       }
 
-      // Device flow
-      const state = randomUUID();
-
-      const initSpinner = ora("Initiating authentication…").start();
+      const initSpinner = ora("Initiating authentication...").start();
       let authUrl: string;
+      let state: string;
 
       try {
         const res = await fetch(`${dashboardUrl}/api/cli/auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ state }),
         });
 
         if (!res.ok) {
@@ -63,12 +64,14 @@ export function makeLoginCommand(): Command {
         if (
           typeof data !== "object" ||
           data === null ||
-          typeof (data as Record<string, unknown>)["authUrl"] !== "string"
+          typeof (data as Record<string, unknown>)["authUrl"] !== "string" ||
+          typeof (data as Record<string, unknown>)["state"] !== "string"
         ) {
           initSpinner.fail("Dashboard returned an unexpected response format.");
           process.exit(1);
         }
         authUrl = (data as Record<string, unknown>)["authUrl"] as string;
+        state = (data as Record<string, unknown>)["state"] as string;
         initSpinner.succeed("Authentication session created.");
       } catch {
         initSpinner.fail(`Cannot reach dashboard at ${dashboardUrl}`);
@@ -76,22 +79,21 @@ export function makeLoginCommand(): Command {
       }
 
       console.log();
-      console.log(chalk.white("  Opening browser to complete authentication…"));
+      console.log(chalk.white("  Opening browser to complete authentication..."));
       console.log(chalk.gray(`  URL: ${authUrl}`));
       console.log();
 
       await openBrowser(authUrl);
 
-      const pollSpinner = ora("Waiting for browser authentication…").start();
-
+      const pollSpinner = ora("Waiting for browser authentication...").start();
       const deadline = Date.now() + POLL_TIMEOUT_MS;
       let token: string | null = null;
 
       while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
 
         try {
-          const res = await fetch(`${dashboardUrl}/api/cli/auth/poll?state=${state}`);
+          const res = await fetch(`${dashboardUrl}/api/cli/auth/poll?state=${encodeURIComponent(state)}`);
           if (!res.ok) continue;
 
           const raw: unknown = await res.json();
@@ -108,7 +110,7 @@ export function makeLoginCommand(): Command {
             process.exit(1);
           }
         } catch {
-          // network blip — keep polling
+          // Network blips should not abort a device-flow login.
         }
       }
 
@@ -140,13 +142,17 @@ export function makeWhoamiCommand(): Command {
   return new Command("whoami")
     .description("Show current authentication status")
     .action(() => {
-      const creds = loadCredentials();
+      const creds = resolveCredentials();
       if (!creds) {
-        logger.warn("Not authenticated. Run `breachscope login`.");
+        logger.warn("Not authenticated. Run `breachscope login` or set BREACHSCOPE_API_KEY.");
         return;
       }
       logger.info(`Authenticated to: ${creds.dashboardUrl}`);
-      logger.info(`Token: ${creds.token.slice(0, 20)}…`);
-      logger.info(`Saved: ${new Date(creds.savedAt).toLocaleString()}`);
+      logger.info(`Token: ${creds.token.slice(0, 20)}...`);
+      logger.info(creds.savedAt === "env" ? "Source: environment" : `Saved: ${new Date(creds.savedAt).toLocaleString()}`);
     });
+}
+
+function normalizeDashboardUrl(value: string): string {
+  return value.replace(/\/+$/, "");
 }

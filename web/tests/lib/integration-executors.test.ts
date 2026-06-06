@@ -25,6 +25,26 @@ describe("dispatchSecurityNotification", () => {
     expect(fetchMock).toHaveBeenCalledWith("https://hooks.slack.test", expect.objectContaining({ method: "POST" }));
   });
 
+  it("blocks private webhook URLs before dispatch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await dispatchSecurityNotification({
+      provider: "slack",
+      name: "Slack",
+      config: { webhookUrl: "https://127.0.0.1/hook" },
+    }, {
+      project: "app",
+      title: "Critical finding",
+      severity: "critical",
+      summary: "A critical issue was found.",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("private network");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rejects missing provider configuration", async () => {
     const result = await dispatchSecurityNotification({
       provider: "pagerduty",

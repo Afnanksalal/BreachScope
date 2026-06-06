@@ -24,6 +24,20 @@ export type DetectionSource =
   | "config-file"
   | "sub-dependency";
 
+export type FindingConfidence = "high" | "medium" | "low";
+export type EvidenceStrength = "confirmed" | "strong" | "moderate" | "weak";
+export type TriageDecision = "show" | "review" | "hide";
+
+export interface RelatedVulnerability {
+  id: string;
+  aliases?: string[];
+  summary?: string;
+  severity?: Severity;
+  fixedVersion?: string;
+  modified?: string;
+  references?: string[];
+}
+
 // ─── Finding ─────────────────────────────────────────────────────────────────
 
 export interface Finding {
@@ -45,6 +59,18 @@ export interface Finding {
   suppressedUntil?: string;
   compliance?: string[];
   vexStatus?: "affected" | "not_affected" | "fixed" | "under_investigation";
+  confidence?: FindingConfidence;
+  evidenceStrength?: EvidenceStrength;
+  triageDecision?: TriageDecision;
+  triageReason?: string;
+  showByDefault?: boolean;
+  signals?: string[];
+  relatedVulnerabilities?: RelatedVulnerability[];
+  packageName?: string;
+  packageVersion?: string;
+  fixedVersion?: string;
+  dependencyDepth?: number;
+  dependencyScope?: "production" | "development" | "optional" | "unknown";
 }
 
 // ─── Detected tool model ──────────────────────────────────────────────────────
@@ -258,6 +284,10 @@ export interface ScanOptions {
   newFindingsOnly?: boolean;
   failOn?: Severity;
   policy?: string;
+  upload?: boolean;
+  showNoise?: boolean;
+  allCves?: boolean;
+  llmTriage?: boolean;
 }
 
 // ─── AI / Agent layer ─────────────────────────────────────────────────────────

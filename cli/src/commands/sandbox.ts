@@ -36,6 +36,7 @@ import type { AgentContext } from "../core/types.js";
 import { renderConsoleReport } from "../reporters/console.js";
 import { renderJsonReport } from "../reporters/json.js";
 import { pushScanToDashboard } from "../core/push-scan.js";
+import { DEFAULT_DASHBOARD_URL, resolveCredentials } from "../core/auth.js";
 
 export interface SandboxOptions {
   port?: number;
@@ -50,6 +51,7 @@ export interface SandboxOptions {
   verbose?: boolean;
   output?: string;
   noCleanup?: boolean;
+  upload?: boolean;
   includeSecrets?: boolean;
   ci?: boolean;
 }
@@ -1610,7 +1612,9 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
       if (opts.file) renderJsonReport(result, opts.file);
     }
 
-    try {
+    if (opts.upload === false) {
+      logger.info("Dashboard upload skipped (--no-upload).");
+    } else try {
       const sandboxProbeData = sandboxAgentResult ? {
         sandbox: {
           projectType,
@@ -1632,7 +1636,8 @@ export async function runSandbox(opts: SandboxOptions): Promise<void> {
         aiReport: lastSynthesis ? JSON.stringify(lastSynthesis) : undefined,
       });
       if (scanId) {
-        console.log(chalk.gray(`\n  Results saved — view at ${chalk.white(`https://breachscoope.vercel.app/dashboard/scan/${scanId}`)}`));
+        const dashboardUrl = resolveCredentials()?.dashboardUrl ?? DEFAULT_DASHBOARD_URL;
+        console.log(chalk.gray(`\n  Results saved - view at ${chalk.white(`${dashboardUrl}/dashboard/scan/${scanId}`)}`));
       }
     } catch { /* dashboard push is optional */ }
 

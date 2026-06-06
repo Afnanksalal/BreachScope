@@ -28,7 +28,11 @@ export async function scanAdditionalEcosystems(cwd: string): Promise<Finding[]> 
   const results = await queryOSVBatch(packages);
   const findings: Finding[] = [];
   for (const pkg of packages) {
-    findings.push(...osvToFindings(results.get(pkg.name) ?? [], pkg.name));
+    findings.push(...osvToFindings(results.get(pkg.name) ?? [], pkg.name, {
+      packageVersion: pkg.version,
+      dependencyDepth: 0,
+      dependencyScope: "unknown",
+    }));
   }
   return findings;
 }

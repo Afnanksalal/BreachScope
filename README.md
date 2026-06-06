@@ -5,7 +5,7 @@
 **Open-source security workflow for code, dependencies, SaaS posture, runtime evidence, release gates, and dashboard triage.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js >=18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+[![Node.js >=20.19](https://img.shields.io/badge/node-%3E%3D20.19-brightgreen)](https://nodejs.org)
 
 </div>
 
@@ -35,6 +35,12 @@ breachscope scan
 # Full static coverage with CI failure behavior
 breachscope scan --mode deep --breach --bug --ci
 
+# Keep authenticated scan results local
+breachscope scan --no-upload
+
+# Inspect CVEs hidden from the default actionable report
+breachscope scan --target dependency --all-cves --output json --file breachscope-full.json
+
 # Docker attack arena
 breachscope sandbox --deep
 ```
@@ -48,6 +54,7 @@ Both `breachscope` and `bs` are available after install.
 | Area | Capability |
 | --- | --- |
 | Dependency security | OSV matching across npm, PyPI, Go, crates.io, RubyGems, Maven, Packagist, NuGet, Hex, and Pub |
+| Noise triage | Groups CVEs by package/fix path and classifies findings as show, review, or hide using exploitability, depth, VEX, EPSS, KEV, and evidence strength |
 | Supply-chain scoring | Deterministic 0-100 risk score from CVEs, OpenSSF, deps.dev, maintainers, downloads, source audit hits, deprecation, and license metadata |
 | Code audit | Mode-aware static patterns for secrets, injection, auth bypass, deserialization, SSRF, XSS, weak crypto, and more |
 | Docker attack arena | Isolated app runtime with hardened Docker flags and active exploit probes |
@@ -55,7 +62,7 @@ Both `breachscope` and `bs` are available after install.
 | Evidence outputs | Console, JSON, SARIF, CycloneDX, SPDX, OpenVEX, and Markdown fix briefs |
 | Governance | Policy-as-code, baselines, expiring suppressions, thresholds, budgets, blocked packages |
 | Dashboard | Projects, scoped API keys, policies, integrations, audit logs, scan history, triage fields |
-| Identity foundations | SCIM user endpoints and SAML metadata with fail-closed ACS until IdP validation is configured |
+| Identity foundations | Tenant-gated SCIM endpoints and SAML metadata with fail-closed ACS until IdP validation is configured |
 | Runtime monitoring | Tracee/eBPF command for Linux runtime event collection |
 
 ---
@@ -78,6 +85,16 @@ Both `breachscope` and `bs` are available after install.
 | `--breach` | `breach` | CVEs, hijacked packages, leaked credentials, exposed infrastructure |
 | `--bug` | `bug` | Injection, auth bypass, deserialization, SSRF, XSS, logic bugs |
 | `--breach --bug` | `full` | Maximum coverage across breach and bug classes |
+
+---
+
+## Finding Noise Triage
+
+BreachScope keeps the default report focused on actionable findings. Low-signal CVEs, duplicate advisory aliases, weak probe observations, and browser-hardening notes are preserved in JSON metadata but hidden from console, SARIF, dashboard upload, and CI gates unless you ask for them.
+
+- Use `--all-cves` to include CVE advisories hidden by default.
+- Use `--show-noise` to include all review and hidden findings.
+- Use `--llm-triage` to let the configured LLM add reasoning for borderline findings. Deterministic guardrails prevent it from hiding confirmed exploit, CISA KEV, high EPSS, direct high/critical dependency, or confirmed sensitive-exposure findings.
 
 ---
 
@@ -137,7 +154,7 @@ The dashboard adds operational control around CLI scans:
 - integration records, provider-specific setup, delivery status, and retryable post-scan actions
 - finding triage: status, assignee, due date, accepted-risk reason, suppression expiry, VEX status, compliance tags
 - optional encrypted OpenAI and Firecrawl settings supplied by the user
-- SCIM and SAML foundations for identity workflows
+- SCIM and SAML foundations for identity workflows, disabled unless explicitly configured
 
 Apply the generated Drizzle migration before using the dashboard schema in production.
 
@@ -162,6 +179,7 @@ flowchart LR
 
 - Scan upload payloads are size-limited and validated.
 - CLI auth polling is replay-safe.
+- CLI and CI can authenticate with `breachscope login` or `BREACHSCOPE_API_KEY`.
 - API keys enforce scopes on scan upload and CLI config endpoints.
 - Registration avoids account enumeration and enforces stronger passwords.
 - Sandbox excludes `.env` files from model context, Docker context, and container env by default. Use `--include-secrets` only in disposable test environments.

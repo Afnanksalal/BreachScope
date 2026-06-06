@@ -139,7 +139,7 @@ describe("PUT /api/settings", () => {
     }
   });
 
-  it("ignores invalid defaultMode silently and still returns 200", async () => {
+  it("rejects invalid defaultMode values", async () => {
     authedSession();
     makeInsertChain();
     const req = new NextRequest("http://localhost/api/settings", {
@@ -147,7 +147,7 @@ describe("PUT /api/settings", () => {
       body: JSON.stringify({ defaultMode: "ultra-mode" }),
     });
     const res = await PUT(req);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
   });
 
   it("accepts valid defaultScanMode values", async () => {

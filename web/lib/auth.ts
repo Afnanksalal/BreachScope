@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db, hasDatabaseUrl } from "./db";
 import { users, accounts } from "./schema";
+import { rateLimit } from "./rate-limit";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: hasDatabaseUrl()
@@ -24,11 +25,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       async authorize(credentials) {
         if (typeof credentials.email !== "string" || typeof credentials.password !== "string") return null;
+        const email = credentials.email.trim().toLowerCase();
+        const limited = await rateLimit(`credentials:${email}`, 8, 15 * 60 * 1000);
+        if (!limited.ok) return null;
 
         const [user] = await db
           .select()
           .from(users)
-          .where(eq(users.email, credentials.email))
+          .where(eq(users.email, email))
           .limit(1);
 
         if (!user?.passwordHash) return null;

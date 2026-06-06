@@ -28,6 +28,8 @@ import type { SubchainScanResult } from "../core/types.js";
 import { attachFingerprints, filterNewFindings, loadBaseline, writeBaseline } from "../core/baseline.js";
 import { evaluatePolicy, loadPolicy, meetsSeverityThreshold } from "../core/policy.js";
 import { attachCompliance } from "../core/compliance.js";
+import { DEFAULT_DASHBOARD_URL, resolveCredentials } from "../core/auth.js";
+import { applyNoiseGate } from "../core/noise-gate.js";
 
 const BANNER = `
   ██████╗ ██████╗ ███████╗ █████╗  ██████╗██╗  ██╗
@@ -44,6 +46,9 @@ const BANNER = `
   ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝     ╚══════╝
 `;
 
+const VALID_TARGETS = new Set(["all", "dependency", "toolchain", "code", "blackbox", "smoke"]);
+const VALID_MODES = new Set(["basic", "major", "deep"]);
+
 export async function runScan(opts: ScanOptions): Promise<void> {
   const config = loadConfig(opts.config);
   const cwd = process.cwd();
@@ -53,6 +58,16 @@ export async function runScan(opts: ScanOptions): Promise<void> {
   const url = opts.url;
 
   if (opts.verbose) logger.setVerbose(true);
+  if (!VALID_TARGETS.has(target)) {
+    logger.error(`Invalid scan target "${target}". Use all, dependency, toolchain, code, blackbox, or smoke.`);
+    process.exitCode = 1;
+    return;
+  }
+  if (!VALID_MODES.has(mode)) {
+    logger.error(`Invalid scan mode "${mode}". Use basic, major, or deep.`);
+    process.exitCode = 1;
+    return;
+  }
 
   // Always fetch remote config — apply dashboard defaults when no local flags set,
   // and pull API keys for AI mode
@@ -293,26 +308,38 @@ export async function runScan(opts: ScanOptions): Promise<void> {
 
     renderAIReport(agentResults, lastSynthesis, mergedFindings);
 
-    const prepared = prepareFindings(mergedFindings, opts, config);
+    const prepared = await prepareFindings(mergedFindings, opts, config);
     const aiResult = buildResult(cwd, startedAt, prepared.findings, { mode, url, governance: prepared.metadata }, url);
     renderSelectedReport(aiResult, opts.output ?? config.output.format, opts.file);
     if (opts.writeBaseline) writeBaseline(opts.writeBaseline, prepared.baselineSource);
 
-    await pushScan(aiResult, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, aiReport: lastSynthesis ? JSON.stringify(lastSynthesis) : undefined });
+    await maybePushScan(opts, aiResult, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices, aiReport: lastSynthesis ? JSON.stringify(lastSynthesis) : undefined });
     exitOnThreshold(opts, prepared.ciFindings, prepared.failOn);
     return;
   }
 
   // ── Fallback output (no API key) ──────────────────────────────────────────
   logger.warn("Set OPENAI_API_KEY for full AI-powered analysis (threat intel, code audit, web search).");
-  const prepared = prepareFindings(findings, opts, config);
+  const prepared = await prepareFindings(findings, opts, config);
   const result = buildResult(cwd, startedAt, prepared.findings, { config: opts.config ?? "default", mode, url, governance: prepared.metadata }, url);
   const format = opts.output ?? config.output.format;
   renderSelectedReport(result, format, opts.file);
   if (opts.writeBaseline) writeBaseline(opts.writeBaseline, prepared.baselineSource);
 
-  await pushScan(result, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices });
+  await maybePushScan(opts, result, { mode, scanMode, url, explicitFlags: !!(opts.mode || opts.target), subchainResult, probeServices });
   exitOnThreshold(opts, prepared.ciFindings, prepared.failOn);
+}
+
+async function maybePushScan(
+  scanOpts: ScanOptions,
+  result: ScanResult,
+  pushOpts: Parameters<typeof pushScan>[1],
+): Promise<void> {
+  if (scanOpts.upload === false) {
+    logger.info("Dashboard upload skipped (--no-upload).");
+    return;
+  }
+  await pushScan(result, pushOpts);
 }
 
 async function pushScan(
@@ -366,7 +393,8 @@ async function pushScan(
   ]);
 
   if (scanId) {
-    spinner.succeed(`Saved to dashboard — view at ${chalk.white(`https://breachscoope.vercel.app/dashboard/scan/${scanId}`)}`);
+    const dashboardUrl = resolveCredentials()?.dashboardUrl ?? DEFAULT_DASHBOARD_URL;
+    spinner.succeed(`Saved to dashboard - view at ${chalk.white(`${dashboardUrl}/dashboard/scan/${scanId}`)}`);
   } else {
     spinner.stop();
   }
@@ -420,17 +448,17 @@ function renderSelectedReport(result: ScanResult, format: string, outputFile?: s
   if (outputFile) renderJsonReport(result, outputFile);
 }
 
-function prepareFindings(
+async function prepareFindings(
   findings: Finding[],
   opts: ScanOptions,
   config: Pick<BreachScopeConfig, "policy" | "thresholds">
-): {
+): Promise<{
   findings: Finding[];
   ciFindings: Finding[];
   baselineSource: Finding[];
   failOn: Finding["severity"];
   metadata: Record<string, unknown>;
-} {
+}> {
   const loadedPolicy = opts.policy ? loadPolicy(opts.policy) : {};
   const policy = { ...(config.policy ?? {}), ...loadedPolicy };
   const failOn = opts.failOn ?? policy.failOn ?? config.thresholds.failOn;
@@ -449,7 +477,13 @@ function prepareFindings(
     }
   }
 
-  const policyResult = evaluatePolicy(activeFindings, { ...policy, suppressions: [] });
+  const noiseResult = await applyNoiseGate(activeFindings, {
+    showNoise: opts.showNoise,
+    allCves: opts.allCves,
+    llmTriage: opts.llmTriage,
+  });
+
+  const policyResult = evaluatePolicy(noiseResult.findings, { ...policy, suppressions: [] });
   const reportFindings = attachFingerprints([...policyResult.findings, ...policyResult.violations]);
 
   return {
@@ -468,6 +502,7 @@ function prepareFindings(
         violations: policyResult.violations.length,
         suppressed: suppressionOnly.suppressed.length,
       },
+      triage: noiseResult.metadata,
     },
   };
 }

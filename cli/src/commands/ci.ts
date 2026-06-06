@@ -39,7 +39,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install -g breachscope
-      - run: breachscope scan --ci --fail-on high --new-findings-only --baseline breachscope-baseline.json
+      - run: breachscope scan --ci --fail-on high
         env:
           BREACHSCOPE_API_KEY: \${{ secrets.BREACHSCOPE_API_KEY }}
       - run: gh pr merge --auto --squash "$PR_URL"
@@ -76,7 +76,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install -g breachscope
-      - run: breachscope scan --ci --fail-on high --baseline breachscope-baseline.json --new-findings-only --output sarif --file breachscope.sarif
+      - run: breachscope scan --ci --fail-on high --output sarif --file breachscope.sarif
         env:
           BREACHSCOPE_API_KEY: \${{ secrets.BREACHSCOPE_API_KEY }}
       - uses: github/codeql-action/upload-sarif@v3

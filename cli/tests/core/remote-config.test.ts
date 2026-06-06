@@ -2,16 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../../src/core/auth.js", () => ({
   loadCredentials: vi.fn(),
+  resolveCredentials: vi.fn(),
 }));
 
 vi.mock("../../src/core/logger.js", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
-import { loadCredentials } from "../../src/core/auth.js";
+import { loadCredentials, resolveCredentials } from "../../src/core/auth.js";
 import { fetchRemoteConfig, clearRemoteConfigCache } from "../../src/core/remote-config.js";
 
 const mockLoadCredentials = vi.mocked(loadCredentials);
+const mockResolveCredentials = vi.mocked(resolveCredentials);
 
 const VALID_CREDS = {
   token: "bs_live_testtoken",
@@ -35,12 +37,14 @@ beforeEach(() => {
 describe("fetchRemoteConfig", () => {
   it("returns null when no credentials saved", async () => {
     mockLoadCredentials.mockReturnValue(null);
+    mockResolveCredentials.mockReturnValue(null);
     const result = await fetchRemoteConfig();
     expect(result).toBeNull();
   });
 
   it("fetches config with Authorization header", async () => {
     mockLoadCredentials.mockReturnValue(VALID_CREDS);
+    mockResolveCredentials.mockReturnValue(VALID_CREDS);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: async () => VALID_CONFIG,
@@ -50,12 +54,13 @@ describe("fetchRemoteConfig", () => {
 
     expect(fetch).toHaveBeenCalledWith(
       `${VALID_CREDS.dashboardUrl}/api/cli/config`,
-      { headers: { Authorization: `Bearer ${VALID_CREDS.token}` } },
+      { headers: { Authorization: `Bearer ${VALID_CREDS.token}` }, signal: expect.any(AbortSignal) },
     );
   });
 
   it("returns parsed config on success", async () => {
     mockLoadCredentials.mockReturnValue(VALID_CREDS);
+    mockResolveCredentials.mockReturnValue(VALID_CREDS);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: async () => VALID_CONFIG,
@@ -70,6 +75,7 @@ describe("fetchRemoteConfig", () => {
 
   it("caches result and does not fetch twice", async () => {
     mockLoadCredentials.mockReturnValue(VALID_CREDS);
+    mockResolveCredentials.mockReturnValue(VALID_CREDS);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: async () => VALID_CONFIG,
@@ -83,6 +89,7 @@ describe("fetchRemoteConfig", () => {
 
   it("clears cache after clearRemoteConfigCache()", async () => {
     mockLoadCredentials.mockReturnValue(VALID_CREDS);
+    mockResolveCredentials.mockReturnValue(VALID_CREDS);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: async () => VALID_CONFIG,
@@ -97,6 +104,7 @@ describe("fetchRemoteConfig", () => {
 
   it("returns null on 401 response", async () => {
     mockLoadCredentials.mockReturnValue(VALID_CREDS);
+    mockResolveCredentials.mockReturnValue(VALID_CREDS);
     vi.mocked(fetch).mockResolvedValue({
       ok: false,
       status: 401,
@@ -108,6 +116,7 @@ describe("fetchRemoteConfig", () => {
 
   it("returns null on non-OK response", async () => {
     mockLoadCredentials.mockReturnValue(VALID_CREDS);
+    mockResolveCredentials.mockReturnValue(VALID_CREDS);
     vi.mocked(fetch).mockResolvedValue({
       ok: false,
       status: 500,
@@ -119,6 +128,7 @@ describe("fetchRemoteConfig", () => {
 
   it("returns null when response does not match RemoteConfig shape", async () => {
     mockLoadCredentials.mockReturnValue(VALID_CREDS);
+    mockResolveCredentials.mockReturnValue(VALID_CREDS);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: async () => ({ unexpectedField: true }),
@@ -130,6 +140,7 @@ describe("fetchRemoteConfig", () => {
 
   it("returns null when fetch throws (network error)", async () => {
     mockLoadCredentials.mockReturnValue(VALID_CREDS);
+    mockResolveCredentials.mockReturnValue(VALID_CREDS);
     vi.mocked(fetch).mockRejectedValue(new Error("ECONNREFUSED"));
 
     const result = await fetchRemoteConfig();

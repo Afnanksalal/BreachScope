@@ -2,11 +2,10 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import { Analytics } from "@vercel/analytics/next";
+import { APP_URL, REPO_URL } from "@/lib/site";
 
-const APP_URL = "https://breachscoope.vercel.app";
 const TITLE = "BreachScope - Security Workbench for Modern Teams";
 const DESC = "Detect supply chain, code, SaaS toolchain, runtime, and release risk before it becomes an incident. Scan locally, enforce policy in CI, and manage evidence in the dashboard.";
-const REPO_URL = "https://github.com/Afnanksalal/BreachScope";
 
 const structuredData = {
   "@context": "https://schema.org",

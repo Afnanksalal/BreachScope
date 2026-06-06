@@ -1,6 +1,7 @@
 {
   "name": "breachscope",
   "version": "0.3.0",
+  "type": "module",
   "description": "Supply chain & toolchain breach scanner — audit your stack before it audits you.",
   "bin": {
     "breachscope": "./dist/index.js",
@@ -16,14 +17,13 @@
     "type": "git",
     "url": "https://github.com/Afnanksalal/BreachScope.git"
   },
-  "homepage": "https://breachscoope.vercel.app",
+  "homepage": "https://breachscope.vercel.app",
   "author": "afnanksalal",
   "scripts": {
     "build": "tsc",
     "build:bundle": "node bundle.mjs",
     "build:binary": "npm run build:bundle && pkg bundle/index.cjs --config package.json --compress GZip --output bin/breachscope --no-bytecode --public",
     "build:binary:win": "npm run build:bundle && pkg bundle/index.cjs --targets node20-win-x64 --compress GZip --output bin/breachscope --no-bytecode --public",
-    "postinstall": "patch-package",
     "dev": "ts-node src/index.ts",
     "lint": "eslint src tests --ext .ts",
     "test": "vitest run",
@@ -76,13 +76,12 @@
     "@yao-pkg/pkg": "^6.14.2",
     "esbuild": "^0.28.0",
     "eslint": "^9.9.0",
-    "patch-package": "^8.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4",
     "vitest": "^4.1.6"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.19.0"
   },
   "keywords": [
     "security",

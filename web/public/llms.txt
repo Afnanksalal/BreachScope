@@ -6,18 +6,18 @@ BreachScope combines a Node.js CLI with a Next.js dashboard. It scans code, depe
 
 ## Canonical Links
 
-- Homepage: https://breachscoope.vercel.app
-- Documentation: https://breachscoope.vercel.app/docs
-- Roadmap: https://breachscoope.vercel.app/roadmap
-- Legal center: https://breachscoope.vercel.app/legal
-- Terms: https://breachscoope.vercel.app/terms
-- Privacy: https://breachscoope.vercel.app/privacy
-- Acceptable use: https://breachscoope.vercel.app/acceptable-use
-- Data protection: https://breachscoope.vercel.app/data-protection
-- Security policy: https://breachscoope.vercel.app/security
-- Full machine-readable context: https://breachscoope.vercel.app/llms-full.txt
-- Sitemap: https://breachscoope.vercel.app/sitemap.xml
-- Robots policy: https://breachscoope.vercel.app/robots.txt
+- Homepage: https://breachscope.vercel.app
+- Documentation: https://breachscope.vercel.app/docs
+- Roadmap: https://breachscope.vercel.app/roadmap
+- Legal center: https://breachscope.vercel.app/legal
+- Terms: https://breachscope.vercel.app/terms
+- Privacy: https://breachscope.vercel.app/privacy
+- Acceptable use: https://breachscope.vercel.app/acceptable-use
+- Data protection: https://breachscope.vercel.app/data-protection
+- Security policy: https://breachscope.vercel.app/security
+- Full machine-readable context: https://breachscope.vercel.app/llms-full.txt
+- Sitemap: https://breachscope.vercel.app/sitemap.xml
+- Robots policy: https://breachscope.vercel.app/robots.txt
 - GitHub repository: https://github.com/Afnanksalal/BreachScope
 
 ## Core Commands

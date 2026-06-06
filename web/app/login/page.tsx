@@ -1,11 +1,12 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 
 type Mode = "signin" | "register";
+type OAuthProvider = "github" | "google";
 
 export default function LoginPage() {
   const [mode, setMode]       = useState<Mode>("signin");
@@ -13,8 +14,24 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [name, setName]       = useState("");
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
+  const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
+  const [callbackUrl] = useState(() => initialCallbackUrl());
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/auth/providers")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data: unknown) => {
+        if (!mounted || typeof data !== "object" || data === null) return;
+        const providers = Object.keys(data as Record<string, unknown>)
+          .filter((provider): provider is OAuthProvider => provider === "github" || provider === "google");
+        setOauthProviders(providers);
+      })
+      .catch(() => undefined);
+    return () => { mounted = false; };
+  }, []);
 
   function switchMode(next: Mode) {
     setMode(next);
@@ -24,7 +41,7 @@ export default function LoginPage() {
 
   async function handleOAuth(provider: "github" | "google") {
     setOauthLoading(provider);
-    await signIn(provider, { callbackUrl: "/dashboard" });
+    await signIn(provider, { callbackUrl });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -53,7 +70,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError(mode === "signin" ? "Invalid email or password" : "Account created but sign-in failed - try again");
       } else {
-        window.location.href = "/dashboard";
+        window.location.href = callbackUrl;
       }
     } catch {
       setError("Something went wrong. Please try again.");
@@ -91,67 +108,80 @@ export default function LoginPage() {
           transition={{ duration: 0.45, delay: 0.08 }}
           className="space-y-3"
         >
-          {/* OAuth */}
-          <button
-            type="button"
-            onClick={() => handleOAuth("github")}
-            disabled={!!oauthLoading || loading}
-            className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-white/75 text-sm font-medium hover:bg-white/[0.09] hover:text-white/95 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {oauthLoading === "github" ? <SpinnerIcon /> : <GitHubIcon />}
-            Continue with GitHub
-          </button>
+          {oauthProviders.includes("github") && (
+            <button
+              type="button"
+              onClick={() => handleOAuth("github")}
+              disabled={!!oauthLoading || loading}
+              className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-white/75 text-sm font-medium hover:bg-white/[0.09] hover:text-white/95 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {oauthLoading === "github" ? <SpinnerIcon /> : <GitHubIcon />}
+              Continue with GitHub
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => handleOAuth("google")}
-            disabled={!!oauthLoading || loading}
-            className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-white/75 text-sm font-medium hover:bg-white/[0.09] hover:text-white/95 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {oauthLoading === "google" ? <SpinnerIcon /> : <GoogleIcon />}
-            Continue with Google
-          </button>
+          {oauthProviders.includes("google") && (
+            <button
+              type="button"
+              onClick={() => handleOAuth("google")}
+              disabled={!!oauthLoading || loading}
+              className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-white/75 text-sm font-medium hover:bg-white/[0.09] hover:text-white/95 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {oauthLoading === "google" ? <SpinnerIcon /> : <GoogleIcon />}
+              Continue with Google
+            </button>
+          )}
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 py-1">
-            <div className="flex-1 h-px bg-white/[0.07]" />
-            <span className="text-white/25 text-xs">or</span>
-            <div className="flex-1 h-px bg-white/[0.07]" />
-          </div>
+          {oauthProviders.length > 0 && (
+            <div className="flex items-center gap-3 py-1">
+              <div className="flex-1 h-px bg-white/[0.07]" />
+              <span className="text-white/25 text-xs">or</span>
+              <div className="flex-1 h-px bg-white/[0.07]" />
+            </div>
+          )}
 
           {/* Email/password form */}
           <form onSubmit={handleSubmit} className="space-y-2.5">
             {mode === "register" && (
-              <input
-                type="text"
-                placeholder="Name (optional)"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoComplete="name"
-                className="w-full px-4 py-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
-              />
+              <label className="block">
+                <span className="sr-only">Name</span>
+                <input
+                  type="text"
+                  placeholder="Name (optional)"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  autoComplete="name"
+                  className="w-full px-4 py-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
+                />
+              </label>
             )}
 
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-              className="w-full px-4 py-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
-            />
+            <label className="block">
+              <span className="sr-only">Email</span>
+              <input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                className="w-full px-4 py-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
+              />
+            </label>
 
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={mode === "register" ? 8 : 1}
-              autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              className="w-full px-4 py-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
-            />
+            <label className="block">
+              <span className="sr-only">Password</span>
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={mode === "register" ? 8 : 1}
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                className="w-full px-4 py-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/85 placeholder-white/25 text-sm outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-150"
+              />
+            </label>
 
             {error && (
               <p className="text-red-400/80 text-xs px-1">{error}</p>
@@ -237,4 +267,16 @@ function SpinnerIcon({ dark }: { dark?: boolean }) {
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
     </svg>
   );
+}
+
+function initialCallbackUrl(): string {
+  if (typeof window === "undefined") return "/dashboard";
+  const requested = new URLSearchParams(window.location.search).get("callbackUrl");
+  if (!requested) return "/dashboard";
+  try {
+    const url = new URL(requested, window.location.origin);
+    return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : "/dashboard";
+  } catch {
+    return "/dashboard";
+  }
 }

@@ -40,10 +40,16 @@ program
   .option("--write-baseline <path>", "write current findings to a baseline file")
   .option("--new-findings-only", "with --baseline, report and fail only on new findings")
   .option("--policy <path>", "path to policy-as-code YAML/JSON file")
+  .option("--show-noise", "include hidden/review findings in the report")
+  .option("--all-cves", "include CVE advisories that are hidden by default")
+  .option("--llm-triage", "use the configured LLM to reason over borderline findings")
   .option("--breach", "focus on CVE, supply chain, and SaaS incident intelligence")
   .option("--bug", "focus on code audit, static analysis, and vulnerability testing")
+  .option("--no-upload", "keep results local even when dashboard credentials are configured")
   .option("-v, --verbose", "verbose debug output")
-  .action(async (opts) => {
+  .action(async (opts, command) => {
+    if (command.getOptionValueSource("mode") === "default") delete opts.mode;
+    if (command.getOptionValueSource("target") === "default") delete opts.target;
     if (opts.breach && opts.bug) opts.scanMode = "full";
     else if (opts.breach) opts.scanMode = "breach";
     else if (opts.bug) opts.scanMode = "bug";
@@ -95,6 +101,8 @@ program
   .command("probe <url>")
   .description("Blackbox security probe against a live URL")
   .option("-o, --output <format>", "output format: console | json", "console")
+  .option("--show-noise", "include hidden/review probe findings in the report")
+  .option("--llm-triage", "use the configured LLM to reason over borderline probe findings")
   .option("-v, --verbose")
   .action(async (url: string, opts) => {
     await runScan({ ...opts, target: "blackbox", mode: "basic", url });
@@ -104,6 +112,8 @@ program
 program
   .command("smoke <url>")
   .description("Smoke tests against a live URL — reachability, error leakage, auth bypass")
+  .option("--show-noise", "include hidden/review smoke findings in the report")
+  .option("--llm-triage", "use the configured LLM to reason over borderline smoke findings")
   .option("-v, --verbose")
   .action(async (url: string, opts) => {
     await runScan({ ...opts, target: "smoke", mode: "basic", url });
@@ -115,6 +125,9 @@ program
   .description("Dependency and lockfile supply chain scan")
   .option("-m, --mode <mode>", "scan depth: basic | major | deep", "basic")
   .option("-o, --output <format>", "output format: console | json", "console")
+  .option("--show-noise", "include hidden/review dependency findings in the report")
+  .option("--all-cves", "include CVE advisories that are hidden by default")
+  .option("--llm-triage", "use the configured LLM to reason over borderline dependency findings")
   .option("-v, --verbose")
   .action(async (opts) => {
     await runScan({ ...opts, target: "dependency" });
@@ -126,9 +139,12 @@ program
   .description("Detect and audit every tool in the codebase — OSS + SaaS pipelines")
   .option("-m, --mode <mode>", "scan depth: basic | major | deep", "basic")
   .option("-o, --output <format>", "output format: console | json", "console")
+  .option("--show-noise", "include hidden/review toolchain findings in the report")
+  .option("--all-cves", "include CVE advisories that are hidden by default")
+  .option("--llm-triage", "use the configured LLM to reason over borderline toolchain findings")
   .option("-v, --verbose")
   .action(async (opts) => {
-    await runScan({ ...opts, target: "all" });
+    await runScan({ ...opts, target: "toolchain" });
   });
 
 // ─── sandbox ─────────────────────────────────────────────────────────────────
@@ -145,6 +161,7 @@ program
   .option("--include-secrets", "allow sandbox AI and Docker context to include .env files and local secrets")
   .option("--ci", "set exit code 1 when sandbox finds critical or high findings")
   .option("--no-cleanup", "keep the container running after the scan (for manual inspection)")
+  .option("--no-upload", "keep sandbox results local even when dashboard credentials are configured")
   .option("-u, --url <url>", "target URL context (for dashboard reporting)")
   .option("-o, --output <format>", "output format: console | json", "console")
   .option("-f, --file <path>", "write results to a file")

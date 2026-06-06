@@ -58,7 +58,7 @@ export async function scanRuby(cwd: string): Promise<Finding[]> {
   const findings: Finding[] = [];
   for (const gem of gems.slice(0, 60)) {
     const vulns = await queryOSV(gem.name, gem.version, "RubyGems");
-    findings.push(...osvToFindings(vulns, gem.name));
+    findings.push(...osvToFindings(vulns, gem.name, { packageVersion: gem.version, dependencyDepth: 0, dependencyScope: "unknown" }));
   }
   return findings;
 }

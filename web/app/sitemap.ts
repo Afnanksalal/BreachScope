@@ -1,72 +1,72 @@
 import type { MetadataRoute } from "next";
+import { APP_URL } from "@/lib/site";
 
-const BASE = "https://breachscoope.vercel.app";
 const UPDATED = new Date("2026-05-20");
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
     {
-      url: BASE,
+      url: APP_URL,
       lastModified: UPDATED,
       changeFrequency: "weekly",
       priority: 1.0,
     },
     {
-      url: `${BASE}/docs`,
+      url: `${APP_URL}/docs`,
       lastModified: UPDATED,
       changeFrequency: "weekly",
       priority: 0.95,
     },
     {
-      url: `${BASE}/roadmap`,
+      url: `${APP_URL}/roadmap`,
       lastModified: UPDATED,
       changeFrequency: "monthly",
       priority: 0.7,
     },
     {
-      url: `${BASE}/legal`,
+      url: `${APP_URL}/legal`,
       lastModified: UPDATED,
       changeFrequency: "monthly",
       priority: 0.65,
     },
     {
-      url: `${BASE}/terms`,
+      url: `${APP_URL}/terms`,
       lastModified: UPDATED,
       changeFrequency: "monthly",
       priority: 0.6,
     },
     {
-      url: `${BASE}/privacy`,
+      url: `${APP_URL}/privacy`,
       lastModified: UPDATED,
       changeFrequency: "monthly",
       priority: 0.6,
     },
     {
-      url: `${BASE}/acceptable-use`,
+      url: `${APP_URL}/acceptable-use`,
       lastModified: UPDATED,
       changeFrequency: "monthly",
       priority: 0.55,
     },
     {
-      url: `${BASE}/data-protection`,
+      url: `${APP_URL}/data-protection`,
       lastModified: UPDATED,
       changeFrequency: "monthly",
       priority: 0.55,
     },
     {
-      url: `${BASE}/security`,
+      url: `${APP_URL}/security`,
       lastModified: UPDATED,
       changeFrequency: "monthly",
       priority: 0.6,
     },
     {
-      url: `${BASE}/llms.txt`,
+      url: `${APP_URL}/llms.txt`,
       lastModified: UPDATED,
       changeFrequency: "weekly",
       priority: 0.85,
     },
     {
-      url: `${BASE}/llms-full.txt`,
+      url: `${APP_URL}/llms-full.txt`,
       lastModified: UPDATED,
       changeFrequency: "weekly",
       priority: 0.85,

@@ -1,25 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users } from "@/lib/schema";
-import { eq } from "drizzle-orm";
+import { organizationMembers, users } from "@/lib/schema";
+import { authorizeScim, isScimAuthorized } from "@/lib/scim";
 
 interface Params {
   params: Promise<{ id: string }>;
 }
 
-function authorize(req: NextRequest): boolean {
-  const token = process.env.SCIM_BEARER_TOKEN;
-  return Boolean(token && req.headers.get("authorization") === `Bearer ${token}`);
-}
-
 export async function PATCH(req: NextRequest, ctx: Params): Promise<NextResponse> {
-  if (!authorize(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = authorizeScim(req);
+  if (!isScimAuthorized(auth)) return auth;
+
   const { id } = await ctx.params;
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
-
   const active = typeof body?.["active"] === "boolean" ? body["active"] : true;
+
+  if (!await hasMembership(auth.organizationId, id)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   if (!active) {
-    await db.update(users).set({ passwordHash: null }).where(eq(users.id, id));
+    await db
+      .delete(organizationMembers)
+      .where(and(eq(organizationMembers.organizationId, auth.organizationId), eq(organizationMembers.userId, id)));
     return NextResponse.json({ id, active: false });
   }
 
@@ -29,8 +33,21 @@ export async function PATCH(req: NextRequest, ctx: Params): Promise<NextResponse
 }
 
 export async function DELETE(req: NextRequest, ctx: Params): Promise<NextResponse> {
-  if (!authorize(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = authorizeScim(req);
+  if (!isScimAuthorized(auth)) return auth;
+
   const { id } = await ctx.params;
-  await db.update(users).set({ passwordHash: null }).where(eq(users.id, id));
+  await db
+    .delete(organizationMembers)
+    .where(and(eq(organizationMembers.organizationId, auth.organizationId), eq(organizationMembers.userId, id)));
   return new NextResponse(null, { status: 204 });
+}
+
+async function hasMembership(organizationId: string, userId: string): Promise<boolean> {
+  const [membership] = await db
+    .select({ userId: organizationMembers.userId })
+    .from(organizationMembers)
+    .where(and(eq(organizationMembers.organizationId, organizationId), eq(organizationMembers.userId, userId)))
+    .limit(1);
+  return Boolean(membership);
 }

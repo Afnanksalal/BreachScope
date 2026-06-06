@@ -111,7 +111,10 @@ async function osvScanPython(pkgs: PythonPackage[]): Promise<Finding[]> {
     const findings: Finding[] = [];
     for (let i = 0; i < pkgs.length; i++) {
       const vulns = res.data.results[i]?.vulns ?? [];
-      if (vulns.length > 0) findings.push(...osvToFindings(vulns, pkgs[i]!.name));
+      if (vulns.length > 0) {
+        const pkg = pkgs[i]!;
+        findings.push(...osvToFindings(vulns, pkg.name, { packageVersion: pkg.version, dependencyDepth: 0, dependencyScope: "unknown" }));
+      }
     }
     return findings;
   } catch (e) {
@@ -120,7 +123,7 @@ async function osvScanPython(pkgs: PythonPackage[]): Promise<Finding[]> {
     const findings: Finding[] = [];
     for (const pkg of pkgs.slice(0, 20)) {
       const vulns = await queryOSV(pkg.name, pkg.version, "PyPI");
-      findings.push(...osvToFindings(vulns, pkg.name));
+      findings.push(...osvToFindings(vulns, pkg.name, { packageVersion: pkg.version, dependencyDepth: 0, dependencyScope: "unknown" }));
     }
     return findings;
   }

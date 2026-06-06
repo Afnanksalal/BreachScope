@@ -41,7 +41,7 @@ export async function scanGo(cwd: string): Promise<Finding[]> {
   // Query OSV in batches of 20 (Go modules can be many)
   for (const mod of mods.slice(0, 50)) {
     const vulns = await queryOSV(mod.name, mod.version, "Go");
-    findings.push(...osvToFindings(vulns, mod.name));
+    findings.push(...osvToFindings(vulns, mod.name, { packageVersion: mod.version, dependencyDepth: 0, dependencyScope: "production" }));
   }
   return findings;
 }

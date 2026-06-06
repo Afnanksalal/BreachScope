@@ -15,8 +15,13 @@ export interface RateLimitResult {
 const buckets = new Map<string, Bucket>();
 
 export function clientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || req.headers.get("x-real-ip") || "unknown";
+  const platformIp =
+    req.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("cf-connecting-ip")?.trim() ||
+    req.headers.get("fly-client-ip")?.trim() ||
+    req.headers.get("x-real-ip")?.trim();
+  if (platformIp) return platformIp;
+  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 }
 
 export async function rateLimit(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {

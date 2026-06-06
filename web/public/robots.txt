@@ -70,4 +70,4 @@ Allow: /llms-full.txt
 Disallow: /api/
 Disallow: /dashboard
 
-Sitemap: https://breachscoope.vercel.app/sitemap.xml
+Sitemap: https://breachscope.vercel.app/sitemap.xml

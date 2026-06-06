@@ -33,19 +33,19 @@ async function checkSecurityHeaders(base: string): Promise<Finding[]> {
     const required: Array<{ header: string; description: string; remediation: string; severity: Finding["severity"] }> = [
       {
         header: "strict-transport-security",
-        severity: "high",
+        severity: "medium",
         description: "Missing HSTS header — browsers may downgrade to HTTP, enabling MITM attacks.",
         remediation: "Add: Strict-Transport-Security: max-age=63072000; includeSubDomains; preload",
       },
       {
         header: "x-frame-options",
-        severity: "medium",
+        severity: "low",
         description: "Missing X-Frame-Options — the application may be embeddable in iframes, enabling clickjacking.",
         remediation: "Add: X-Frame-Options: DENY or use CSP frame-ancestors directive.",
       },
       {
         header: "x-content-type-options",
-        severity: "medium",
+        severity: "low",
         description: "Missing X-Content-Type-Options — browsers may MIME-sniff responses, enabling content injection.",
         remediation: "Add: X-Content-Type-Options: nosniff",
       },
@@ -57,7 +57,7 @@ async function checkSecurityHeaders(base: string): Promise<Finding[]> {
       },
       {
         header: "permissions-policy",
-        severity: "low",
+        severity: "info",
         description: "Missing Permissions-Policy — browser features like camera/microphone are unrestricted.",
         remediation: "Add: Permissions-Policy: geolocation=(), camera=(), microphone=()",
       },
@@ -72,6 +72,9 @@ async function checkSecurityHeaders(base: string): Promise<Finding[]> {
           category: "blackbox",
           description,
           remediation,
+          confidence: "high",
+          evidenceStrength: "weak",
+          signals: ["browser-hardening-header"],
         });
       }
     }
@@ -102,15 +105,29 @@ async function checkCommonExposedPaths(base: string): Promise<Finding[]> {
         const res = await axios.get(`${base}${p}`, { validateStatus: () => true, timeout: 5000 });
         if (res.status === 200) {
           const isSecret = [".env", ".git"].some((s) => p.includes(s));
+          const body = bodyToText(res.data);
+          const confirmedSecret = p.includes(".env")
+            ? hasEnvLikeSecret(body)
+            : p.includes(".git")
+            ? looksLikeGitConfig(body)
+            : false;
+          const severity: Finding["severity"] = confirmedSecret ? "critical" : isSecret ? "medium" : "info";
+          const signals = confirmedSecret
+            ? ["confirmed-sensitive-exposure"]
+            : ["public-path"];
           findings.push({
             id: `exposed-path-${p.replace(/\//g, "-")}`,
             title: `${label} is accessible: ${p}`,
-            severity: isSecret ? "critical" : "low",
+            severity,
             category: "blackbox",
-            description: `The path ${p} returned HTTP 200. ${isSecret ? "This may expose sensitive configuration data." : "Verify this exposure is intentional."}`,
+            description: `The path ${p} returned HTTP 200. ${confirmedSecret ? "BreachScope confirmed sensitive-looking content." : isSecret ? "No secret-shaped content was confirmed, but the path should be reviewed." : "Verify this exposure is intentional."}`,
+            detail: body.slice(0, 300),
             remediation: isSecret
               ? "Block access to this path via web server config or middleware. Do not commit .env files."
               : "Restrict access if not intentionally public.",
+            confidence: confirmedSecret ? "high" : "low",
+            evidenceStrength: confirmedSecret ? "confirmed" : "weak",
+            signals,
           });
         }
       } catch {
@@ -143,15 +160,21 @@ async function checkCORSMisconfiguration(base: string): Promise<Finding[]> {
         description: "The server reflects the request Origin and allows credentials. Any website can make authenticated cross-origin requests.",
         remediation: "Maintain an explicit allowlist of trusted origins. Never reflect the Origin header directly.",
         references: ["https://portswigger.net/web-security/cors"],
+        confidence: "high",
+        evidenceStrength: "confirmed",
+        signals: ["confirmed-cors-credentials"],
       });
     } else if (acao === "*" && acac === "true") {
       findings.push({
         id: "cors-wildcard-credentials",
         title: "CORS wildcard with credentials allowed",
-        severity: "critical",
+        severity: "medium",
         category: "blackbox",
         description: "CORS wildcard and credentials are simultaneously enabled, which browsers typically block, but indicates a configuration error.",
         remediation: "Do not combine * with credentials:true. Use explicit trusted origins.",
+        confidence: "medium",
+        evidenceStrength: "moderate",
+        signals: ["cors-hardening"],
       });
     }
   } catch {
@@ -179,10 +202,31 @@ async function checkMethodOverride(base: string): Promise<Finding[]> {
         category: "blackbox",
         description: "TRACE is enabled, which can facilitate Cross-Site Tracing (XST) attacks to bypass HttpOnly cookies.",
         remediation: "Disable TRACE and TRACK methods in your web server configuration.",
+        confidence: "high",
+        evidenceStrength: "strong",
+        signals: ["confirmed-dangerous-method"],
       });
     }
   } catch {
     // no-op
   }
   return findings;
+}
+
+function bodyToText(body: unknown): string {
+  if (typeof body === "string") return body;
+  try {
+    return JSON.stringify(body);
+  } catch {
+    return "";
+  }
+}
+
+function hasEnvLikeSecret(body: string): boolean {
+  return /(?:^|\n)\s*[A-Z0-9_]{4,}\s*=\s*["']?[^"'\s]{8,}/.test(body) &&
+    /(SECRET|TOKEN|KEY|PASSWORD|DATABASE_URL|PRIVATE)/i.test(body);
+}
+
+function looksLikeGitConfig(body: string): boolean {
+  return /\[core\]/i.test(body) || /\[remote\s+"origin"\]/i.test(body) || /repositoryformatversion\s*=/.test(body);
 }

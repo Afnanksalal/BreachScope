@@ -78,7 +78,7 @@ export async function scanRust(cwd: string): Promise<Finding[]> {
   const findings: Finding[] = [];
   for (const crate of crates.slice(0, 80)) {
     const vulns = await queryOSV(crate.name, crate.version, "crates.io");
-    findings.push(...osvToFindings(vulns, crate.name));
+    findings.push(...osvToFindings(vulns, crate.name, { packageVersion: crate.version, dependencyDepth: 0, dependencyScope: "unknown" }));
   }
   return findings;
 }

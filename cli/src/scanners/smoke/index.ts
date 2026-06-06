@@ -49,6 +49,9 @@ async function checkReachability(base: string): Promise<Finding[]> {
         category: "smoke",
         description: `The application root returned HTTP ${res.status}. The service may be in a degraded or broken state.`,
         remediation: "Investigate server logs for the underlying error. Do not deploy to production in this state.",
+        confidence: "high",
+        evidenceStrength: "confirmed",
+        signals: ["service-health-failure"],
       }];
     }
   } catch {
@@ -59,6 +62,9 @@ async function checkReachability(base: string): Promise<Finding[]> {
       category: "smoke",
       description: "The target URL could not be reached within the timeout period.",
       remediation: "Verify the URL is correct and the service is running.",
+      confidence: "high",
+      evidenceStrength: "confirmed",
+      signals: ["service-health-failure"],
     }];
   }
   return [];
@@ -84,6 +90,9 @@ async function checkErrorLeakage(base: string): Promise<Finding[]> {
             description: `Requesting "${p}" returned a response containing stack trace or internal error information.`,
             detail: body.slice(0, 300),
             remediation: "Add a global error handler that returns generic messages. Log details server-side only.",
+            confidence: "high",
+            evidenceStrength: "confirmed",
+            signals: ["confirmed-stack-trace"],
           });
           break;
         }
@@ -109,10 +118,13 @@ async function checkLargePayload(base: string): Promise<Finding[]> {
       return [{
         id: "smoke-no-payload-limit",
         title: "No request body size limit enforced",
-        severity: "medium",
+        severity: "low",
         category: "smoke",
         description: "A 10MB POST body was accepted without rejection. Lack of body size limits enables DoS via memory exhaustion.",
         remediation: "Configure a body size limit (e.g., express body-parser limit option, nginx client_max_body_size).",
+        confidence: "medium",
+        evidenceStrength: "weak",
+        signals: ["resource-limit-hardening"],
       }];
     }
   } catch {
@@ -138,14 +150,21 @@ async function checkAuthBypass(base: string): Promise<Finding[]> {
       if (res.status === 200) {
         const body = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
         const hasData = body.length > 50 && !body.includes("Not Found") && !body.includes("404");
+        const hasSensitiveData = hasData && looksSensitiveUnauthBody(body);
         if (hasData) {
           findings.push({
             id: `smoke-unauth-access-${p.replace(/\//g, "-")}`,
             title: `Unauthenticated access to ${p}`,
-            severity: "high",
+            severity: hasSensitiveData ? "high" : "low",
             category: "smoke",
-            description: `"${p}" returned HTTP 200 with non-trivial content without authentication headers.`,
+            description: hasSensitiveData
+              ? `"${p}" returned HTTP 200 with sensitive-looking content without authentication headers.`
+              : `"${p}" returned HTTP 200 with non-trivial content, but BreachScope did not confirm sensitive data.`,
+            detail: body.slice(0, 300),
             remediation: "Ensure all sensitive routes require authentication. Add middleware checks before route handlers.",
+            confidence: hasSensitiveData ? "high" : "low",
+            evidenceStrength: hasSensitiveData ? "confirmed" : "weak",
+            signals: hasSensitiveData ? ["confirmed-auth-bypass", "confirmed-sensitive-exposure"] : ["possible-public-route"],
           });
         }
       }
@@ -155,4 +174,13 @@ async function checkAuthBypass(base: string): Promise<Finding[]> {
   }
 
   return findings;
+}
+
+function looksSensitiveUnauthBody(body: string): boolean {
+  const lowered = body.toLowerCase();
+  if (/(password|secret|token|api[_-]?key|private[_-]?key|session|jwt|authorization)/i.test(body)) return true;
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(body) && /(user|email|account|admin)/i.test(body)) return true;
+  if (lowered.includes('"role"') && lowered.includes('"admin"')) return true;
+  if (lowered.includes('"users"') || lowered.includes('"accounts"')) return true;
+  return false;
 }

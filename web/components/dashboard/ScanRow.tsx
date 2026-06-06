@@ -1,12 +1,13 @@
 "use client";
 
 import { clsx } from "clsx";
+import Link from "next/link";
 import type { Scan } from "@/lib/schema";
 
 const MODE_BADGE: Record<string, string> = {
   breach: "bg-red-500/15 text-red-300 border-red-500/20",
   bug:    "bg-blue-500/15 text-blue-300 border-blue-500/20",
-  all:    "bg-white/8 text-white/50 border-white/10",
+  all:    "bg-white/[0.08] text-white/50 border-white/10",
 };
 
 function elapsed(start: Date | string, end?: Date | string | null): string {
@@ -30,10 +31,7 @@ export function ScanRow({ scan }: { scan: Scan }) {
   const modeBadge = MODE_BADGE[scan.scanMode] ?? MODE_BADGE.all;
 
   return (
-    <tr
-      className="border-b border-white/5 hover:bg-white/[0.04] transition-colors group cursor-pointer"
-      onClick={() => { window.location.href = `/dashboard/scan/${scan.id}`; }}
-    >
+    <tr className="border-b border-white/5 transition-colors hover:bg-white/[0.04]">
       <td className="px-5 py-4">
         <div className="flex items-center gap-3">
           <div className={clsx(
@@ -41,9 +39,12 @@ export function ScanRow({ scan }: { scan: Scan }) {
             hasIssues ? "bg-red-500 animate-pulse" : "bg-green-500"
           )} />
           <div>
-            <p className="text-white/80 text-sm font-medium truncate max-w-[180px]">
+            <Link
+              href={`/dashboard/scan/${scan.id}`}
+              className="block max-w-[180px] truncate text-sm font-medium text-white/80 outline-none transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-white/30"
+            >
               {scan.project ?? "Unnamed project"}
-            </p>
+            </Link>
             {scan.url && (
               <p className="text-white/30 text-xs truncate max-w-[180px]">{scan.url}</p>
             )}

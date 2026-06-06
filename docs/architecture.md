@@ -24,9 +24,11 @@ flowchart LR
 ```mermaid
 flowchart TD
   Dev["Developer"] --> CLI["breachscope scan --ci"]
-  CLI --> Policy["Evaluate thresholds and suppressions"]
+  CLI --> Scanners["Static scanners, dependency scans, URL probes"]
+  Scanners --> NoiseGate["Noise gate: group CVEs, score evidence, classify show/review/hide"]
+  NoiseGate --> Policy["Evaluate thresholds and suppressions on actionable findings"]
   Policy --> Result["Pass or fail decision"]
-  CLI --> API["Upload scan when authenticated"]
+  CLI --> API["Upload scan when authenticated unless --no-upload is set"]
   API --> DB["Store scan and findings"]
   API --> Audit["Append audit event"]
   API --> Delivery["Create post-scan delivery rows"]
@@ -34,6 +36,8 @@ flowchart TD
   Provider --> Retry["Retry failed deliveries"]
   Retry --> Provider
 ```
+
+The noise gate keeps CI and dashboard totals focused on actionable findings. Review and hidden records remain in local JSON metadata, and can be included with `--show-noise` or `--all-cves`.
 
 ## Data Boundaries
 
@@ -59,3 +63,4 @@ flowchart TB
 - Authentication keys are hashed where they are used for authentication.
 - Saved provider keys are encrypted before storage.
 - Secret retrieval requires an API key with `secrets:read`.
+- SCIM is disabled unless `ENABLE_SCIM`, `SCIM_ORGANIZATION_ID`, and `SCIM_BEARER_TOKEN` are configured.

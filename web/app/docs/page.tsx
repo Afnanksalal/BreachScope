@@ -3,8 +3,8 @@ import { Footer } from "@/components/Footer";
 import { DocsSidebar } from "./DocsSidebar";
 import { CodeBlock, Callout } from "./DocsBlocks";
 import type { Metadata } from "next";
+import { APP_URL } from "@/lib/site";
 
-const APP_URL = "https://breachscoope.vercel.app";
 const LLM_ALTERNATES = {
   "text/plain": `${APP_URL}/llms.txt`,
   "text/plain; profile=llms-full": `${APP_URL}/llms-full.txt`,

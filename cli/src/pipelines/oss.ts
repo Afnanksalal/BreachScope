@@ -217,7 +217,13 @@ export async function runOssPipeline(
   }
 
   if (scorecard) findings.push(...scorecardToFindings(scorecard, tool.name, { osvVulnCount: osvVulns.length }));
-  if (osvVulns.length > 0) findings.push(...osvToFindings(osvVulns, tool.name));
+  if (osvVulns.length > 0) {
+    findings.push(...osvToFindings(osvVulns, tool.name, {
+      packageVersion: tool.version,
+      dependencyDepth: tool.depth,
+      dependencyScope: tool.depth === 0 ? "production" : "unknown",
+    }));
+  }
   if (depsDevData && github) findings.push(...depsDevToFindings(depsDevData, tool.name, github));
   if (npmMeta)  findings.push(...npmMetaToFindings(npmMeta, tool.name));
   if (pypiMeta) findings.push(...pypiMetaToFindings(pypiMeta, tool.name));

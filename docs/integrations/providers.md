@@ -1,6 +1,7 @@
 # Provider Integrations
 
 BreachScope routes completed scans through project integrations. Provider accounts, tokens, webhooks, and incident keys are supplied by the customer.
+Provider URLs must use HTTPS and cannot target localhost or private network addresses. Production deployments also validate DNS resolution before outbound provider requests.
 
 ## Delivery Flow
 

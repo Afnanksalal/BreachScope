@@ -117,8 +117,8 @@ Core endpoints:
 | `GET/POST /api/jobs/integration-deliveries` | Retry due provider deliveries from Vercel Cron or an operator-run job |
 | `GET /api/audit-logs?projectId=...` | Project audit trail |
 | `PATCH /api/findings/:id/triage` | Finding status and risk workflow |
-| `GET/POST /api/scim/v2/Users` | SCIM user lifecycle foundation |
-| `PATCH/DELETE /api/scim/v2/Users/:id` | SCIM user update and deactivation |
+| `GET/POST /api/scim/v2/Users` | Tenant-scoped SCIM user lifecycle foundation; disabled unless SCIM env is configured |
+| `PATCH/DELETE /api/scim/v2/Users/:id` | Tenant-scoped SCIM user update and deprovisioning |
 | `GET /api/saml/metadata` | SAML metadata |
 | `POST /api/saml/acs` | Fail-closed ACS until validation is configured |
 
@@ -150,7 +150,7 @@ Implemented provider workflows:
 - Microsoft Teams message cards
 - PagerDuty Events API v2 incidents with deduplication keys
 
-SAML and SCIM records remain identity configuration surfaces. They do not receive scan notifications.
+SAML and SCIM records remain identity configuration surfaces. They do not receive scan notifications. SCIM requires `ENABLE_SCIM=true`, `SCIM_ORGANIZATION_ID`, and `SCIM_BEARER_TOKEN`.
 
 ## Runtime Monitoring
 

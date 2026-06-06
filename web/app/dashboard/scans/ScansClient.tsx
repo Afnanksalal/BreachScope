@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
+import Link from "next/link";
 import type { Scan } from "@/lib/schema";
 
 const MODE_BADGE: Record<string, string> = {
@@ -79,6 +80,8 @@ export function ScansClient({ scans }: { scans: Scan[] }) {
           {["all", "full", "breach", "bug"].map((m) => (
             <button
               key={m}
+              type="button"
+              aria-pressed={modeFilter === m}
               onClick={() => setModeFilter(m)}
               className={clsx(
                 "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-all",
@@ -96,6 +99,8 @@ export function ScansClient({ scans }: { scans: Scan[] }) {
           {["all", "basic", "major", "deep"].map((d) => (
             <button
               key={d}
+              type="button"
+              aria-pressed={depthFilter === d}
               onClick={() => setDepthFilter(d)}
               className={clsx(
                 "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-all",
@@ -127,54 +132,57 @@ export function ScansClient({ scans }: { scans: Scan[] }) {
                 const depthBadge = DEPTH_BADGE[scan.mode] ?? "bg-white/5 text-white/40";
 
                 return (
-                  <motion.button
+                  <motion.div
                     key={scan.id}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.01 }}
-                    className="rounded-lg border border-white/[0.07] bg-black/20 p-4 text-left transition-colors hover:bg-white/[0.04]"
-                    onClick={() => window.location.href = `/dashboard/scan/${scan.id}`}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <div className={clsx(
-                          "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-                          hasIssues ? "bg-red-500 animate-pulse" : "bg-green-500"
-                        )} />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-white/80">
-                            {scan.project ?? "Unnamed project"}
-                          </p>
-                          {scan.url && (
-                            <p className="truncate text-xs text-white/30">{scan.url}</p>
-                          )}
+                    <Link
+                      href={`/dashboard/scan/${scan.id}`}
+                      className="block rounded-lg border border-white/[0.07] bg-black/20 p-4 text-left outline-none transition-colors hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-white/30"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className={clsx(
+                            "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                            hasIssues ? "bg-red-500 animate-pulse" : "bg-green-500"
+                          )} />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-white/80">
+                              {scan.project ?? "Unnamed project"}
+                            </p>
+                            {scan.url && (
+                              <p className="truncate text-xs text-white/30">{scan.url}</p>
+                            )}
+                          </div>
                         </div>
+                        <span className={clsx("shrink-0 rounded-full border px-2 py-0.5 text-xs", modeBadge)}>
+                          {scan.scanMode}
+                        </span>
                       </div>
-                      <span className={clsx("shrink-0 rounded-full border px-2 py-0.5 text-xs", modeBadge)}>
-                        {scan.scanMode}
-                      </span>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className={clsx("rounded px-2 py-0.5 font-mono text-xs", depthBadge)}>{scan.mode}</span>
-                        {(scan.findingsCritical ?? 0) > 0 && (
-                          <span className="text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded-full">
-                            {scan.findingsCritical} crit
-                          </span>
-                        )}
-                        {(scan.findingsHigh ?? 0) > 0 && (
-                          <span className="text-xs text-orange-400/80">+{scan.findingsHigh} high</span>
-                        )}
-                        {(scan.findingsTotal ?? 0) > 0 && (scan.findingsCritical ?? 0) === 0 && (scan.findingsHigh ?? 0) === 0 && (
-                          <span className="text-xs text-yellow-400/70">{scan.findingsTotal} total</span>
-                        )}
-                        {(scan.findingsTotal ?? 0) === 0 && (
-                          <span className="text-xs text-green-400/70">Clean</span>
-                        )}
-                      <span className="text-xs text-white/30">{scan.toolsScanned ?? 0} tools</span>
-                      <span className="font-mono text-xs text-white/30">{elapsed(scan.startedAt, scan.completedAt)}</span>
-                    </div>
-                    <p className="mt-2 text-xs text-white/25">{fmtDate(scan.createdAt)}</p>
-                  </motion.button>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className={clsx("rounded px-2 py-0.5 font-mono text-xs", depthBadge)}>{scan.mode}</span>
+                          {(scan.findingsCritical ?? 0) > 0 && (
+                            <span className="text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded-full">
+                              {scan.findingsCritical} crit
+                            </span>
+                          )}
+                          {(scan.findingsHigh ?? 0) > 0 && (
+                            <span className="text-xs text-orange-400/80">+{scan.findingsHigh} high</span>
+                          )}
+                          {(scan.findingsTotal ?? 0) > 0 && (scan.findingsCritical ?? 0) === 0 && (scan.findingsHigh ?? 0) === 0 && (
+                            <span className="text-xs text-yellow-400/70">{scan.findingsTotal} total</span>
+                          )}
+                          {(scan.findingsTotal ?? 0) === 0 && (
+                            <span className="text-xs text-green-400/70">Clean</span>
+                          )}
+                        <span className="text-xs text-white/30">{scan.toolsScanned ?? 0} tools</span>
+                        <span className="font-mono text-xs text-white/30">{elapsed(scan.startedAt, scan.completedAt)}</span>
+                      </div>
+                      <p className="mt-2 text-xs text-white/25">{fmtDate(scan.createdAt)}</p>
+                    </Link>
+                  </motion.div>
                 );
               })}
             </div>
@@ -201,8 +209,7 @@ export function ScansClient({ scans }: { scans: Scan[] }) {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: i * 0.01 }}
-                        className="cursor-pointer border-b border-white/[0.05] transition-colors last:border-0 hover:bg-white/[0.02]"
-                        onClick={() => window.location.href = `/dashboard/scan/${scan.id}`}
+                        className="border-b border-white/[0.05] transition-colors last:border-0 hover:bg-white/[0.02]"
                       >
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
@@ -211,9 +218,12 @@ export function ScansClient({ scans }: { scans: Scan[] }) {
                               hasIssues ? "animate-pulse bg-red-500" : "bg-green-500"
                             )} />
                             <div className="min-w-0">
-                              <p className="max-w-[180px] truncate text-sm font-medium text-white/80">
+                              <Link
+                                href={`/dashboard/scan/${scan.id}`}
+                                className="block max-w-[180px] truncate text-sm font-medium text-white/80 outline-none transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-white/30"
+                              >
                                 {scan.project ?? "Unnamed project"}
-                              </p>
+                              </Link>
                               {scan.url && (
                                 <p className="max-w-[180px] truncate text-xs text-white/30">{scan.url}</p>
                               )}

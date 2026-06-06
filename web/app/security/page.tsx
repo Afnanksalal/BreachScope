@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { LegalPage, LegalSection } from "@/components/LegalPage";
-
-const APP_URL = "https://breachscoope.vercel.app";
+import { APP_URL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Security Policy - BreachScope",
